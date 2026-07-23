@@ -8,8 +8,8 @@ export function renderAdapters(): string {
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((spec) => `${spec.id.padEnd(10)} audit-only  ${spec.displayName}`),
     "",
-    "git        planned     Git worktrees",
-    "docker     planned     Docker resources",
+    "git        audit-only  Git worktrees (explicit root)",
+    "docker     audit-only  Docker images and containers (opt-in)",
     "",
   ];
 
