@@ -121,6 +121,11 @@ describe("applyCleanupPlan", () => {
             mountBoundaries: 0,
           },
         }),
+        execute: async (action, isolationId) =>
+          executeArtifactRemove(action, {
+            id: () => isolationId,
+            processProbe: async () => ({ status: "idle", matches: [] }),
+          }),
       },
     });
 
@@ -181,6 +186,7 @@ describe("applyCleanupPlan", () => {
             remove: async () => {
               throw new Error("injected removal failure");
             },
+            processProbe: async () => ({ status: "idle", matches: [] }),
           }),
       },
     });
@@ -376,6 +382,11 @@ describe("applyCleanupPlan", () => {
               mountBoundaries: 0,
             },
           }),
+          execute: async (action, isolationId) =>
+            executeArtifactRemove(action, {
+              id: () => isolationId,
+              processProbe: async () => ({ status: "idle", matches: [] }),
+            }),
         },
       }),
     ).rejects.toThrow("injected applied journal persistence failure");

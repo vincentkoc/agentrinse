@@ -63,6 +63,46 @@ describe("findProcessesUsingPath", () => {
     expect(result).toEqual({ status: "idle", matches: [] });
   });
 
+  it("uses lsof when hardened procfs blocks a same-user process scan", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-proc-"));
+    const procRoot = join(root, "proc");
+    const processRoot = join(procRoot, "303");
+    const target = join(root, "project", "build");
+    await mkdir(join(processRoot, "fd"), { recursive: true });
+    await mkdir(target, { recursive: true });
+    await writeFile(join(processRoot, "status"), "Name:\tfixture\nUid:\t501\t501\t501\t501\n");
+    await writeFile(join(processRoot, "cwd"), "not a symlink");
+
+    const result = await findProcessesUsingPath(target, {
+      platform: "linux",
+      procRoot,
+      uid: 501,
+      runLsof: async () => ({ stdout: "", stderr: "" }),
+    });
+
+    expect(result).toEqual({ status: "idle", matches: [] });
+  });
+
+  it("keeps Linux process ownership unknown when lsof fallback is incomplete", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-proc-"));
+    const procRoot = join(root, "proc");
+    const processRoot = join(procRoot, "404");
+    const target = join(root, "project", "build");
+    await mkdir(join(processRoot, "fd"), { recursive: true });
+    await mkdir(target, { recursive: true });
+    await writeFile(join(processRoot, "status"), "Name:\tfixture\nUid:\t501\t501\t501\t501\n");
+    await writeFile(join(processRoot, "cwd"), "not a symlink");
+
+    const result = await findProcessesUsingPath(target, {
+      platform: "linux",
+      procRoot,
+      uid: 501,
+      runLsof: async () => ({ stdout: "", stderr: "permission denied" }),
+    });
+
+    expect(result).toMatchObject({ status: "unknown" });
+  });
+
   it("fails closed on unsupported platforms", async () => {
     const result = await findProcessesUsingPath("/tmp/fixture", {
       platform: "win32",
