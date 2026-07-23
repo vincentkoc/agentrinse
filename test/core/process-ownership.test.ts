@@ -28,9 +28,7 @@ describe("findProcessesUsingPath", () => {
     const procRoot = join(root, "proc");
     const target = join(root, "project", "node_modules");
     await mkdir(target, { recursive: true });
-    await fakeProcess(procRoot, 101, 501, target, [
-      join(target, "package.json"),
-    ]);
+    await fakeProcess(procRoot, 101, 501, target, [join(target, "package.json")]);
 
     const result = await findProcessesUsingPath(target, {
       platform: "linux",
@@ -71,5 +69,16 @@ describe("findProcessesUsingPath", () => {
     });
 
     expect(result.status).toBe("unknown");
+  });
+
+  it("treats macOS lsof exit status 1 with no output as idle", async () => {
+    await expect(
+      findProcessesUsingPath("/tmp/fixture", {
+        platform: "darwin",
+        runLsof: async () => {
+          throw { code: 1, stdout: "" };
+        },
+      }),
+    ).resolves.toEqual({ status: "idle", matches: [] });
   });
 });

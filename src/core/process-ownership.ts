@@ -20,6 +20,7 @@ export type ProcessOwnershipOptions = {
   platform?: NodeJS.Platform;
   procRoot?: string;
   uid?: number;
+  runLsof?: (target: string) => Promise<{ stdout: string }>;
 };
 
 function isInside(root: string, candidate: string): boolean {
@@ -28,26 +29,20 @@ function isInside(root: string, candidate: string): boolean {
 }
 
 function cleanProcLink(value: string): string {
-  return value.endsWith(" (deleted)")
-    ? value.slice(0, -" (deleted)".length)
-    : value;
+  return value.endsWith(" (deleted)") ? value.slice(0, -" (deleted)".length) : value;
 }
 
 function isGone(error: unknown): boolean {
   return (
     error instanceof Error &&
     "code" in error &&
-    ["ENOENT", "ESRCH"].includes(
-      (error as NodeJS.ErrnoException).code ?? "",
-    )
+    ["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")
   );
 }
 
 async function readProcessUid(statusPath: string): Promise<number | undefined> {
   const status = await readFile(statusPath, "utf8");
-  const uidLine = status
-    .split("\n")
-    .find((line) => line.startsWith("Uid:"));
+  const uidLine = status.split("\n").find((line) => line.startsWith("Uid:"));
   const uid = uidLine?.split(/\s+/)[1];
   return uid === undefined ? undefined : Number.parseInt(uid, 10);
 }
@@ -79,9 +74,7 @@ async function inspectLinux(
     const processRoot = resolve(procRoot, entry.name);
 
     try {
-      const processUid = await readProcessUid(
-        resolve(processRoot, "status"),
-      );
+      const processUid = await readProcessUid(resolve(processRoot, "status"));
       if (processUid !== uid) {
         continue;
       }
@@ -94,9 +87,7 @@ async function inspectLinux(
       const descriptors = await readdir(resolve(processRoot, "fd"));
       for (const descriptor of descriptors) {
         try {
-          const path = cleanProcLink(
-            await readlink(resolve(processRoot, "fd", descriptor)),
-          );
+          const path = cleanProcLink(await readlink(resolve(processRoot, "fd", descriptor)));
           if (isAbsolute(path) && isInside(target, path)) {
             matches.push({ pid, source: "fd", path });
           }
@@ -126,17 +117,19 @@ async function inspectLinux(
   return { status: "idle", matches: [] };
 }
 
-async function inspectDarwin(target: string): Promise<ProcessOwnershipResult> {
+async function inspectDarwin(
+  target: string,
+  options: ProcessOwnershipOptions,
+): Promise<ProcessOwnershipResult> {
   try {
-    const result = await execFileAsync(
-      "lsof",
-      ["-nP", "+D", target, "-Fpcfn"],
-      {
-        encoding: "utf8",
-        maxBuffer: 4 * 1024 * 1024,
-        timeout: 10_000,
-      },
-    );
+    const result =
+      options.runLsof === undefined
+        ? await execFileAsync("lsof", ["-nP", "+D", target, "-Fpcfn"], {
+            encoding: "utf8",
+            maxBuffer: 4 * 1024 * 1024,
+            timeout: 10_000,
+          })
+        : await options.runLsof(target);
     const matches: ProcessPathMatch[] = [];
     let pid: number | undefined;
 
@@ -151,12 +144,13 @@ async function inspectDarwin(target: string): Promise<ProcessOwnershipResult> {
       }
     }
 
-    return matches.length > 0
-      ? { status: "busy", matches }
-      : { status: "idle", matches: [] };
+    return matches.length > 0 ? { status: "busy", matches } : { status: "idle", matches: [] };
   } catch (error) {
-    const commandError = error as NodeJS.ErrnoException & { stdout?: string };
-    if (commandError.code === "1" && (commandError.stdout ?? "") === "") {
+    const commandError = error as {
+      code?: string | number;
+      stdout?: string;
+    };
+    if (Number(commandError.code) === 1 && (commandError.stdout ?? "") === "") {
       return { status: "idle", matches: [] };
     }
     return {
@@ -176,7 +170,7 @@ export async function findProcessesUsingPath(
     return inspectLinux(resolve(target), options);
   }
   if (platform === "darwin") {
-    return inspectDarwin(resolve(target));
+    return inspectDarwin(resolve(target), options);
   }
   return {
     status: "unknown",
