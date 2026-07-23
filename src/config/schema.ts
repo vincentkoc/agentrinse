@@ -1,3 +1,5 @@
+import { isAbsolute } from "node:path";
+
 import { z } from "zod";
 
 export const adapterIdSchema = z.enum([
@@ -31,8 +33,11 @@ export const artifactNameSchema = z.enum([
 ]);
 
 export const artifactProjectSchema = z.object({
-  root: z.string().min(1),
-  names: z.array(artifactNameSchema).min(1),
+  root: z.string().min(1).refine(isAbsolute, "artifact project root must be absolute"),
+  names: z
+    .array(artifactNameSchema)
+    .min(1)
+    .refine((names) => new Set(names).size === names.length, "artifact names must be unique"),
 });
 
 export const agentRinseConfigSchema = z.object({

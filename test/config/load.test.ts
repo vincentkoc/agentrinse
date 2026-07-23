@@ -56,4 +56,41 @@ describe("loadConfig", () => {
     expect(config.artifacts.minAgeMinutes).toBe(24 * 60);
     expect(config.artifacts.minBytes).toBe(1);
   });
+
+  it("rejects relative artifact roots", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        artifacts: {
+          projects: [{ root: "./project", names: ["node_modules"] }],
+        },
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow("artifact project root must be absolute");
+  });
+
+  it("rejects duplicate artifact names", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        artifacts: {
+          projects: [
+            {
+              root: "/tmp/project",
+              names: ["dist", "dist"],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow("artifact names must be unique");
+  });
 });
