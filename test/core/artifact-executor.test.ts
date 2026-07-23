@@ -370,4 +370,30 @@ describe("executeArtifactRemove", () => {
     expect(await exists(value.target)).toBe(false);
     expect(await exists(isolationPath)).toBe(true);
   });
+
+  it("restores the artifact when final metadata drifts on the planned inode", async () => {
+    const value = await fixture();
+    let removed = false;
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "final-metadata",
+        finalInspect: (path) => {
+          const stats = lstatSync(path);
+          Object.defineProperty(stats, "mtimeMs", { value: stats.mtimeMs + 1 });
+          return stats;
+        },
+        remove: async () => {
+          removed = true;
+        },
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      isolationPath: value.target,
+    });
+
+    expect(removed).toBe(false);
+    expect(await exists(value.target)).toBe(true);
+  });
 });

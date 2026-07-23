@@ -79,13 +79,11 @@
                   "minLength": 1
                 }
               },
-              "required": ["severity", "code", "message"],
-              "additionalProperties": false
+              "required": ["severity", "code", "message"]
             }
           }
         },
-        "required": ["adapter", "status", "detail", "diagnostics"],
-        "additionalProperties": false
+        "required": ["adapter", "status", "detail", "diagnostics"]
       }
     },
     "findings": {
@@ -156,8 +154,7 @@
                 "minLength": 1
               }
             },
-            "required": ["id", "adapter", "kind", "canonicalKey", "displayName"],
-            "additionalProperties": false
+            "required": ["id", "adapter", "kind", "canonicalKey", "displayName"]
           },
           "state": {
             "type": "string",
@@ -194,8 +191,7 @@
                   "minLength": 1
                 }
               },
-              "required": ["code", "source", "observedAt", "detail"],
-              "additionalProperties": false
+              "required": ["code", "source", "observedAt", "detail"]
             }
           },
           "facts": {
@@ -304,8 +300,7 @@
                         "measuredBytes",
                         "newestMtimeMs",
                         "fingerprint"
-                      ],
-                      "additionalProperties": false
+                      ]
                     }
                   },
                   "required": [
@@ -317,8 +312,7 @@
                     "description",
                     "expectedReclaimBytes",
                     "target"
-                  ],
-                  "additionalProperties": false
+                  ]
                 }
               ]
             }
@@ -363,8 +357,7 @@
                   "minLength": 1
                 }
               },
-              "required": ["severity", "code", "message"],
-              "additionalProperties": false
+              "required": ["severity", "code", "message"]
             }
           }
         },
@@ -378,10 +371,8 @@
           "confidence",
           "roots",
           "facts",
-          "candidateActions",
           "warnings"
-        ],
-        "additionalProperties": false
+        ]
       }
     },
     "diagnostics": {
@@ -414,8 +405,7 @@
             "minLength": 1
           }
         },
-        "required": ["severity", "code", "message"],
-        "additionalProperties": false
+        "required": ["severity", "code", "message"]
       }
     }
   },
@@ -429,7 +419,6 @@
     "findings",
     "diagnostics"
   ],
-  "additionalProperties": false,
   "$id": "https://agentrinse.com/schemas/audit.schema.json",
   "title": "AgentRinse audit schema"
 }

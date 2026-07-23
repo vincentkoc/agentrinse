@@ -41,7 +41,7 @@ await mkdir(outputDirectory, { recursive: true });
 
 for (const [filename, name, schema] of schemas) {
   const value = {
-    ...z.toJSONSchema(schema, { target: "draft-2020-12" }),
+    ...z.toJSONSchema(schema, { target: "draft-2020-12", io: "input" }),
     $id: `https://agentrinse.com/schemas/${name}.schema.json`,
     title: `AgentRinse ${name} schema`,
   };

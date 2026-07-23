@@ -142,8 +142,7 @@
                   "measuredBytes",
                   "newestMtimeMs",
                   "fingerprint"
-                ],
-                "additionalProperties": false
+                ]
               }
             },
             "required": [
@@ -155,8 +154,7 @@
               "description",
               "expectedReclaimBytes",
               "target"
-            ],
-            "additionalProperties": false
+            ]
           }
         ]
       }
@@ -181,7 +179,6 @@
     "actions",
     "expectedReclaimBytes"
   ],
-  "additionalProperties": false,
   "$id": "https://agentrinse.com/schemas/plan.schema.json",
   "title": "AgentRinse plan schema"
 }

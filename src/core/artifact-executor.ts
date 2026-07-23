@@ -62,12 +62,15 @@ function isMissing(error: unknown): boolean {
 }
 
 function matchesIdentity(stats: Stats, action: ArtifactRemoveAction): boolean {
+  return matchesFilesystemObject(stats, action) && stats.mtimeMs === action.target.mtimeMs;
+}
+
+function matchesFilesystemObject(stats: Stats, action: ArtifactRemoveAction): boolean {
   return (
     stats.isDirectory() &&
     !stats.isSymbolicLink() &&
     stats.dev === action.target.device &&
-    stats.ino === action.target.inode &&
-    stats.mtimeMs === action.target.mtimeMs
+    stats.ino === action.target.inode
   );
 }
 
@@ -273,11 +276,20 @@ export async function executeArtifactRemove(
 
   try {
     const finalStats = (dependencies.finalInspect ?? lstatSync)(isolationPath);
-    if (!matchesIdentity(finalStats, action)) {
+    if (!matchesFilesystemObject(finalStats, action)) {
       throw new ArtifactExecutionError(
         `isolated artifact identity changed before removal; inspect ${isolationPath}`,
         "partially-applied",
         isolationPath,
+      );
+    }
+    if (finalStats.mtimeMs !== action.target.mtimeMs) {
+      await rollbackBeforeRemoval(
+        "artifact metadata changed before removal",
+        action,
+        isolationPath,
+        inspect,
+        move,
       );
     }
 

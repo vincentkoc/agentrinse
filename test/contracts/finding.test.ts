@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import { findingSchema } from "../../src/contracts/finding.js";
@@ -24,5 +26,19 @@ describe("findingSchema", () => {
     });
 
     expect(finding.candidateActions).toEqual([]);
+  });
+
+  it("publishes candidate actions as optional input", async () => {
+    const schema = JSON.parse(await readFile("schemas/audit.schema.json", "utf8")) as {
+      properties: {
+        findings: {
+          items: {
+            required: string[];
+          };
+        };
+      };
+    };
+
+    expect(schema.properties.findings.items.required).not.toContain("candidateActions");
   });
 });

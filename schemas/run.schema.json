@@ -101,12 +101,10 @@
                 "minLength": 1
               }
             },
-            "required": ["severity", "code", "message"],
-            "additionalProperties": false
+            "required": ["severity", "code", "message"]
           }
         },
-        "required": ["actionId", "type", "status"],
-        "additionalProperties": false
+        "required": ["actionId", "type", "status"]
       }
     },
     "reclaimedBytes": {
@@ -144,8 +142,7 @@
             "minLength": 1
           }
         },
-        "required": ["severity", "code", "message"],
-        "additionalProperties": false
+        "required": ["severity", "code", "message"]
       }
     }
   },
@@ -159,7 +156,6 @@
     "reclaimedBytes",
     "diagnostics"
   ],
-  "additionalProperties": false,
   "$id": "https://agentrinse.com/schemas/run.schema.json",
   "title": "AgentRinse run schema"
 }
