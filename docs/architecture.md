@@ -52,4 +52,3 @@ permissions.
 Executors, locks, revalidation, quarantine, journals, and undo do not exist
 yet. They must land before the first cleanup action and remain separate from
 collectors.
-

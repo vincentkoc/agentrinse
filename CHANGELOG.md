@@ -25,4 +25,3 @@ The project follows semantic versioning after its first published release.
 - pre-alpha builds refuse the real home directory and `/`
 - provider state remains protected
 - no cleanup or apply command exists
-
