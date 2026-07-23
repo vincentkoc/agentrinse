@@ -45,4 +45,3 @@ A mutating action is not ready until it has:
 10. interruption and race tests
 
 No adapter may bypass this gate.
-

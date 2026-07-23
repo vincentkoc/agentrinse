@@ -1,11 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import type {
-  AuditAdapter,
-  AuditContext,
-  CollectionResult,
-} from "../../contracts/adapter.js";
+import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import type { Finding } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceKind, ResourceSnapshot } from "../../contracts/resource.js";
@@ -32,10 +28,7 @@ function parseJsonLines(input: string): Record<string, unknown>[] {
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
-function stringField(
-  record: Record<string, unknown>,
-  key: string,
-): string | undefined {
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === "string" && value !== "" ? value : undefined;
 }
@@ -48,9 +41,7 @@ export class DockerAuditAdapter implements AuditAdapter {
   async probe(_context: AuditContext): Promise<AdapterProbe> {
     try {
       const dockerContext = (await this.runDocker(["context", "show"])).trim();
-      const version = (
-        await this.runDocker(["version", "--format", "{{.Server.Version}}"])
-      ).trim();
+      const version = (await this.runDocker(["version", "--format", "{{.Server.Version}}"])).trim();
 
       return {
         adapter: this.id,
@@ -76,32 +67,16 @@ export class DockerAuditAdapter implements AuditAdapter {
     }
   }
 
-  async collect(
-    context: AuditContext,
-    probe: AdapterProbe,
-  ): Promise<CollectionResult> {
+  async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
     if (probe.status !== "available") {
       return { resources: [], diagnostics: [] };
     }
 
     const images = parseJsonLines(
-      await this.runDocker([
-        "image",
-        "ls",
-        "--no-trunc",
-        "--format",
-        "{{json .}}",
-      ]),
+      await this.runDocker(["image", "ls", "--no-trunc", "--format", "{{json .}}"]),
     );
     const containers = parseJsonLines(
-      await this.runDocker([
-        "container",
-        "ls",
-        "-a",
-        "--no-trunc",
-        "--format",
-        "{{json .}}",
-      ]),
+      await this.runDocker(["container", "ls", "-a", "--no-trunc", "--format", "{{json .}}"]),
     );
 
     return {
@@ -110,13 +85,7 @@ export class DockerAuditAdapter implements AuditAdapter {
           this.toResource(context, "docker-image", image, "ID", "Repository"),
         ),
         ...containers.flatMap((container) =>
-          this.toResource(
-            context,
-            "docker-container",
-            container,
-            "ID",
-            "Names",
-          ),
+          this.toResource(context, "docker-container", container, "ID", "Names"),
         ),
       ],
       diagnostics: [],
@@ -156,10 +125,7 @@ export class DockerAuditAdapter implements AuditAdapter {
     ];
   }
 
-  async classify(
-    context: AuditContext,
-    resource: ResourceSnapshot,
-  ): Promise<Finding> {
+  async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const observedAt = context.now.toISOString();
     return {
       schemaVersion: 1,
@@ -174,8 +140,7 @@ export class DockerAuditAdapter implements AuditAdapter {
           code: "docker-audit-only",
           source: "docker",
           observedAt,
-          detail:
-            "The pre-alpha Docker adapter inventories resources but cannot prune them.",
+          detail: "The pre-alpha Docker adapter inventories resources but cannot prune them.",
         },
       ],
       facts: resource.facts,

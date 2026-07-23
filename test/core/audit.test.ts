@@ -52,8 +52,6 @@ describe("runAudit", () => {
     const config = structuredClone(DEFAULT_CONFIG);
     config.adapters.docker = { enabled: true };
 
-    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain(
-      "docker",
-    );
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("docker");
   });
 });

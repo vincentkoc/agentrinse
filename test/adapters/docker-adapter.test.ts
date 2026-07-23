@@ -51,17 +51,14 @@ describe("DockerAuditAdapter", () => {
     const probe = await adapter.probe(CONTEXT);
     const collection = await adapter.collect(CONTEXT, probe);
     const findings = await Promise.all(
-      collection.resources.map((resource) =>
-        adapter.classify(CONTEXT, resource),
-      ),
+      collection.resources.map((resource) => adapter.classify(CONTEXT, resource)),
     );
 
     expect(probe.status).toBe("available");
-    expect(collection.resources.map((resource) => resource.resource.kind)).toEqual(
-      ["docker-image", "docker-container"],
-    );
-    expect(findings.every((finding) => finding.state === "protected")).toBe(
-      true,
-    );
+    expect(collection.resources.map((resource) => resource.resource.kind)).toEqual([
+      "docker-image",
+      "docker-container",
+    ]);
+    expect(findings.every((finding) => finding.state === "protected")).toBe(true);
   });
 });

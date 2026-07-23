@@ -43,4 +43,3 @@ If real provider shape is required:
 5. destroy the remote fixture after proof
 
 No development command should point AgentRinse at a workstation home.
-

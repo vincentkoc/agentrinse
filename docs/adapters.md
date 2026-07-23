@@ -2,17 +2,17 @@
 
 All provider adapters are read-only in the current release.
 
-| Adapter | Current capability | Protected state |
-| --- | --- | --- |
-| Codex | sessions, archived sessions, worktrees, diagnostic DB size | all |
-| Claude | project sessions, debug logs, managed worktrees | all |
-| Cursor | workspace state, global state, logs | all |
-| GitHub Copilot | CLI sessions and logs | all |
-| Zed | user-data root | all |
-| OpenCode | database, logs, snapshots | all |
-| Grok Build | version-gated data root | all |
-| Git | explicit repository worktree porcelain | all |
-| Docker | opt-in structured image/container inventory | all |
+| Adapter        | Current capability                                         | Protected state |
+| -------------- | ---------------------------------------------------------- | --------------- |
+| Codex          | sessions, archived sessions, worktrees, diagnostic DB size | all             |
+| Claude         | project sessions, debug logs, managed worktrees            | all             |
+| Cursor         | workspace state, global state, logs                        | all             |
+| GitHub Copilot | CLI sessions and logs                                      | all             |
+| Zed            | user-data root                                             | all             |
+| OpenCode       | database, logs, snapshots                                  | all             |
+| Grok Build     | version-gated data root                                    | all             |
+| Git            | explicit repository worktree porcelain                     | all             |
+| Docker         | opt-in structured image/container inventory                | all             |
 
 ## Provider Rules
 
