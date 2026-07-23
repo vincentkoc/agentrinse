@@ -12,7 +12,7 @@ describe("formatBytes", () => {
 });
 
 describe("renderAudit", () => {
-  it("states that the current release is report-only", () => {
+  it("reports when no cleanup action is eligible", () => {
     const report: AuditReport = {
       schemaVersion: 1,
       auditId: "audit-1",
@@ -24,6 +24,6 @@ describe("renderAudit", () => {
       diagnostics: [],
     };
 
-    expect(renderAudit(report)).toContain("No cleanup actions are implemented.");
+    expect(renderAudit(report)).toContain("No cleanup actions are eligible.");
   });
 });

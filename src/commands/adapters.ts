@@ -10,6 +10,7 @@ export function renderAdapters(): string {
     "",
     "git        audit-only  Git worktrees (explicit root)",
     "docker     audit-only  Docker images and containers (opt-in)",
+    "artifacts  safe-clean  Explicit rebuildable project directories",
     "",
   ];
 

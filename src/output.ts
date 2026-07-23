@@ -16,12 +16,17 @@ export function formatBytes(bytes: number): string {
 }
 
 export function renderAudit(report: AuditReport): string {
+  const actionCount = report.findings.reduce(
+    (total, finding) => total + finding.candidateActions.length,
+    0,
+  );
   const lines = [
-    "AgentRinse audit (pre-alpha, report-only)",
+    "AgentRinse audit",
     "",
-    `Synthetic home: ${report.home}`,
+    `Home: ${report.home}`,
     `Adapters: ${report.probes.length}`,
     `Resources: ${report.findings.length}`,
+    `Eligible actions: ${actionCount}`,
     "",
   ];
 
@@ -29,18 +34,19 @@ export function renderAudit(report: AuditReport): string {
     lines.push(`${probe.adapter.padEnd(10)} ${probe.status.padEnd(10)} ${probe.detail}`);
   }
 
-  if (report.findings.length > 0) {
-    lines.push("", "PROTECTED RESOURCES");
-  }
-
   for (const finding of report.findings) {
     const bytes =
       finding.measuredBytes === undefined ? "unknown" : formatBytes(finding.measuredBytes);
     lines.push(
-      `${bytes.padStart(10)}  ${finding.resource.adapter}/${finding.resource.displayName}`,
+      `${finding.state.padEnd(10)} ${bytes.padStart(10)}  ${finding.resource.adapter}/${finding.resource.displayName}`,
     );
   }
 
-  lines.push("", "No cleanup actions are implemented.");
+  lines.push(
+    "",
+    actionCount === 0
+      ? "No cleanup actions are eligible."
+      : "Save this audit and create a plan before applying.",
+  );
   return `${lines.join("\n")}\n`;
 }
