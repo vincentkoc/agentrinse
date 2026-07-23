@@ -1,0 +1,60 @@
+{
+  "name": "agentrinse",
+  "version": "0.0.0",
+  "description": "Safe, local-first cleanup planning for agentic development.",
+  "license": "MIT",
+  "author": "Vincent Koc",
+  "type": "module",
+  "private": false,
+  "bin": {
+    "agentrinse": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.2.2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vincentkoc/agentrinse.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vincentkoc/agentrinse/issues"
+  },
+  "homepage": "https://agentrinse.com",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint src test",
+    "pack:check": "pnpm build && publint && pnpm pack --dry-run",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "commander": "15.0.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "oxfmt": "0.60.0",
+    "oxlint": "1.75.0",
+    "publint": "0.3.22",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10"
+  }
+}
