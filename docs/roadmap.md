@@ -10,7 +10,7 @@ Shipped:
 - versioned actions, plans, and run journals
 - content-addressed plans and bounded expiry
 - immediate revalidation
-- exclusive lock and stale-lock recovery
+- exclusive lock with ownership-checked release
 - atomic same-parent isolation
 - rebuildable artifact removal
 - generated JSON Schemas
@@ -18,6 +18,7 @@ Shipped:
 ## 0.2: Operational Visibility
 
 - run history and journal inspection commands
+- explicit stale-lock inspection and recovery command
 - explicit partial-run recovery guidance
 - richer provider diagnostics
 - NDJSON event output

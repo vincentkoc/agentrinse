@@ -47,59 +47,25 @@ async function readOwner(path: string): Promise<LockOwner | undefined> {
   return undefined;
 }
 
-function processExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (
-      error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code !== "ESRCH"
-    );
-  }
-}
-
-async function removeStaleLocalLock(path: string, locksDirectory: string): Promise<boolean> {
-  const owner = await readOwner(path);
-  if (owner === undefined || owner.hostname !== hostname() || processExists(owner.pid)) {
-    return false;
-  }
-  await rm(path, { force: true });
-  await syncDirectory(locksDirectory);
-  return true;
-}
-
 export async function acquireApplyLock(locksDirectory: string, planId: string): Promise<StateLock> {
   await mkdir(locksDirectory, { recursive: true, mode: 0o700 });
   const path = join(locksDirectory, "apply.lock");
   const token = randomUUID();
 
-  let handle: FileHandle | undefined;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      handle = await open(path, "wx", 0o600);
-      break;
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "EEXIST" &&
-        attempt === 0 &&
-        (await removeStaleLocalLock(path, locksDirectory))
-      ) {
-        continue;
-      }
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "EEXIST"
-      ) {
-        throw new LockHeldError(`another AgentRinse apply run owns ${path}`);
-      }
-      throw error;
+  let handle: FileHandle;
+  try {
+    handle = await open(path, "wx", 0o600);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "EEXIST"
+    ) {
+      throw new LockHeldError(
+        `apply lock exists at ${path}; verify its recorded process before removing a stale lock`,
+      );
     }
-  }
-  if (handle === undefined) {
-    throw new LockHeldError(`another AgentRinse apply run owns ${path}`);
+    throw error;
   }
 
   try {

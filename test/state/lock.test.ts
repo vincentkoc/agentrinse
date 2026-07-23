@@ -26,7 +26,7 @@ describe("apply state lock", () => {
     await lock.release();
   });
 
-  it("reclaims a stale lock from a dead process on this host", async () => {
+  it("fails closed when a stale-looking lock exists", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
     const path = join(root, "apply.lock");
     await writeFile(
@@ -40,9 +40,10 @@ describe("apply state lock", () => {
       }),
     );
 
-    const lock = await acquireApplyLock(root, "new-plan");
-    expect(JSON.parse(await readFile(path, "utf8")).planId).toBe("new-plan");
-    await lock.release();
+    await expect(acquireApplyLock(root, "new-plan")).rejects.toThrow(
+      "verify its recorded process before removing a stale lock",
+    );
+    expect(JSON.parse(await readFile(path, "utf8")).planId).toBe("old-plan");
   });
 
   it("does not remove a replacement lock during release", async () => {

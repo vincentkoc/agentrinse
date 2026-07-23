@@ -67,9 +67,10 @@ Run journals use owner-only atomic writes, file fsync, directory fsync, and
 same-directory rename. Each action transition is persisted before the next
 mutation.
 
-One global apply lock prevents concurrent runs. A stale same-host lock is
-reclaimed only when its recorded PID no longer exists. Release verifies the
-lock token and inode before unlinking it.
+One global apply lock prevents concurrent runs. Existing lock files fail
+closed, including stale-looking locks. An operator must inspect the recorded
+host and PID before manually removing a stale lock. Release verifies the lock
+token and inode before unlinking its own lock.
 
 The state directory is rejected if it is inside a planned cleanup target.
 
