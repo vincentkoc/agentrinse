@@ -6,7 +6,7 @@ export async function readJsonFile(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
 
-async function syncDirectory(path: string): Promise<void> {
+export async function syncDirectory(path: string): Promise<void> {
   const handle = await open(path, "r");
   try {
     await handle.sync();

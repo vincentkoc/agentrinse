@@ -3,6 +3,8 @@ import { lstat, mkdir, open, readFile, rm, type FileHandle } from "node:fs/promi
 import { hostname } from "node:os";
 import { join } from "node:path";
 
+import { syncDirectory } from "./json-file.js";
+
 export class LockHeldError extends Error {
   override readonly name = "LockHeldError";
 }
@@ -56,12 +58,13 @@ function processExists(pid: number): boolean {
   }
 }
 
-async function removeStaleLocalLock(path: string): Promise<boolean> {
+async function removeStaleLocalLock(path: string, locksDirectory: string): Promise<boolean> {
   const owner = await readOwner(path);
   if (owner === undefined || owner.hostname !== hostname() || processExists(owner.pid)) {
     return false;
   }
   await rm(path, { force: true });
+  await syncDirectory(locksDirectory);
   return true;
 }
 
@@ -81,7 +84,7 @@ export async function acquireApplyLock(locksDirectory: string, planId: string): 
         "code" in error &&
         (error as NodeJS.ErrnoException).code === "EEXIST" &&
         attempt === 0 &&
-        (await removeStaleLocalLock(path))
+        (await removeStaleLocalLock(path, locksDirectory))
       ) {
         continue;
       }
@@ -111,6 +114,7 @@ export async function acquireApplyLock(locksDirectory: string, planId: string): 
       "utf8",
     );
     await handle.sync();
+    await syncDirectory(locksDirectory);
     const identity = await handle.stat();
 
     let released = false;
@@ -131,6 +135,7 @@ export async function acquireApplyLock(locksDirectory: string, planId: string): 
             current.ino === identity.ino
           ) {
             await rm(path);
+            await syncDirectory(locksDirectory);
           }
         } catch (error) {
           if (
