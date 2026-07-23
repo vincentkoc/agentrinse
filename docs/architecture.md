@@ -1,54 +1,74 @@
 # Architecture
 
-AgentRinse separates evidence gathering from policy and mutation.
+AgentRinse separates evidence, policy, authorization, and mutation.
 
 ```text
 CLI
   -> configuration
-  -> adapter registry
-  -> probes
-  -> read-only collection
-  -> protected findings
-  -> deterministic dry-run plan
-  -> explicit JSON output
+  -> read-only adapters
+  -> validated audit report
+  -> content-addressed plan
+  -> authorization
+  -> exclusive apply lock
+  -> per-action revalidation
+  -> same-parent isolation
+  -> bounded executor
+  -> durable run journal
 ```
 
-## Current Components
+## Contracts
 
-### Contracts
+Zod schemas validate resources, diagnostics, findings, reports, actions,
+plans, and runs. Generated JSON Schemas under `schemas/` are checked for drift
+in CI and shipped in the npm package.
 
-Zod schemas define resources, diagnostics, findings, reports, and plans.
-Boundary data is parsed before it leaves a command.
+## Adapters
 
-### Adapters
+Collectors and classifiers are read-only. Provider, Git, and Docker adapters
+emit protected findings. The artifact adapter can emit one exact
+`artifacts.remove` action for each eligible configured directory.
 
-Provider adapters use declared data roots and known child resources. Git and
-Docker use structured owner output. Every current adapter classifies resources
-as protected.
+No adapter mutates directly.
 
-### Audit Engine
+## Plan Engine
 
-The engine:
+The plan engine selects eligible actions within the configured risk ceiling,
+sorts them deterministically, records expected bytes, hashes canonical config
+and audit input, sets a bounded expiration, and hashes the complete plan body.
 
-1. refuses unsafe roots
-2. probes adapters independently
-3. collects resources without following symlinks
-4. classifies findings
-5. validates the final report
+## Apply Engine
 
-### Plan Engine
+The apply engine:
 
-The engine hashes canonical configuration and audit data, sets a bounded
-expiry, and emits a content-addressed plan. Current plans have zero actions.
+1. parses and verifies the complete plan
+2. rejects state paths beneath cleanup targets
+3. acquires the exclusive apply lock
+4. creates the durable run journal
+5. revalidates each action
+6. records the isolation path before mutation
+7. invokes the type-specific executor
+8. records applied, stale, rolled-back, failed, or partial outcomes
+9. stops after an execution failure
+10. finalizes the run and releases the owned lock
 
-### State
+## Artifact Executor
 
-Output is written only when the caller supplies an explicit path. JSON writes
-use a same-directory temporary file, fsync, atomic rename, and owner-only
-permissions.
+The executor performs a second inode check, atomically renames the exact target
+to a same-parent tombstone, verifies the moved inode, removes the tombstone,
+and verifies postconditions. It never searches for additional targets.
 
-## Future Mutation Boundary
+## State
 
-Executors, locks, revalidation, quarantine, journals, and undo do not exist
-yet. They must land before the first cleanup action and remain separate from
-collectors.
+Default state:
+
+```text
+$XDG_STATE_HOME/agentrinse/
+  locks/apply.lock
+  runs/<run-id>.json
+```
+
+Without `XDG_STATE_HOME`, the root is
+`$HOME/.local/state/agentrinse`.
+
+All machine-readable output remains the source of truth. Human output is a
+projection of validated contracts.

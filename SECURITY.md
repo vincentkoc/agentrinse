@@ -23,5 +23,10 @@ High-impact classes include:
 
 ## Current Status
 
-AgentRinse is pre-alpha and audit-only. No version is production-ready until
-the repository publishes a stable release and its recovery gates are proven.
+Version 0.1 can remove only exact configured rebuildable artifact directories
+through a content-addressed, locked, revalidated, and journaled apply path.
+Provider state, Git worktrees, and Docker resources remain report-only.
+
+Reports involving unintended removal, path or symlink escape, plan bypass,
+lock ownership, incomplete journaling, or missing recovery paths are
+security-sensitive.

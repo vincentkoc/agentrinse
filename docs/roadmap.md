@@ -1,26 +1,28 @@
 # Roadmap
 
-## 0.1: Audit
+## 0.1: Safe Rebuildable Artifacts
 
-- provider version probes
-- session-to-worktree roots
-- process ownership
-- SQLite diagnostic facts
-- OpenCode snapshot growth reporting
-- Cursor workspace-path correlation
-- custom Zed user-data discovery
-- Grok Build source-version contract
-- Docker networks, volumes, and build-cache inventory
+Shipped:
 
-## 0.2: Safe Actions
-
-- versioned action descriptors
-- persisted plan selection
-- per-resource locks
+- provider, Git, and Docker inventory
+- process ownership checks
+- explicit artifact project roots
+- versioned actions, plans, and run journals
+- content-addressed plans and bounded expiry
 - immediate revalidation
-- interruption-safe run journal
-- rebuildable worktree artifact removal
-- filtered Docker build-cache cleanup
+- exclusive lock and stale-lock recovery
+- atomic same-parent isolation
+- rebuildable artifact removal
+- generated JSON Schemas
+
+## 0.2: Operational Visibility
+
+- run history and journal inspection commands
+- explicit partial-run recovery guidance
+- richer provider diagnostics
+- NDJSON event output
+- shell completion
+- Homebrew distribution
 
 ## 0.3: Recoverable Worktrees
 
@@ -28,20 +30,25 @@
 - live process and session roots
 - recovery refs
 - same-filesystem quarantine
-- undo and expiry
+- tested undo and expiry
 
-## 0.4: Offline Maintenance
+This phase requires a separate mutation-boundary decision.
 
-- Codex log database compaction
+## 0.4: Owner-Managed Maintenance
+
+- Codex diagnostic and log database compaction
 - Cursor database diagnostics and optional compaction
+- provider-native retention operations
+- filtered Docker build-cache cleanup
 - old agent runtime inventory and owner-managed removal
-- Linux support
+
+Every owner-specific mutation remains disabled until its current upstream
+contract, offline requirements, and recovery behavior are proven.
 
 ## 1.0: Stable Contracts
 
-- stable JSON and NDJSON schemas
-- stable diagnostic and exit codes
-- Homebrew distribution
+- stable schema and exit-code compatibility policy
+- cross-platform packaged proof
 - recovery and threat-model review
 - no known false-positive cleanup
 

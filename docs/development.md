@@ -10,36 +10,35 @@ pnpm smoke
 pnpm pack:check
 ```
 
-`pnpm smoke`:
+`pnpm check` runs formatting, lint, type checking, all unit and integration
+tests, and JSON Schema drift verification.
 
-1. creates a temporary directory
-2. writes synthetic Codex and OpenCode fixtures
-3. builds the CLI
-4. audits the synthetic home
-5. saves an audit and plan inside the temporary directory
-6. verifies every finding is protected
-7. verifies the plan contains zero actions
+`pnpm smoke` builds the CLI and:
 
-It does not read `$HOME`.
+1. creates a temporary synthetic home
+2. writes synthetic provider resources and a project source file
+3. creates one configured `node_modules` artifact
+4. saves an audit and content-addressed plan
+5. verifies preview does not mutate
+6. applies the plan with an isolated state directory
+7. verifies the exact artifact is gone
+8. verifies the project source file remains
+9. validates the completed run journal
+
+It never reads `$HOME`.
 
 ## Fixture Rules
 
-- Create fixtures with `mkdtemp`.
-- Never copy real transcripts or provider databases into Git.
-- Replace personal paths with `/tmp` or `/fixture`.
-- Do not preserve real hostnames, usernames, tokens, emails, or IP addresses.
-- Use small synthetic files for size tests.
-- Use fake command runners for Git and Docker unit tests.
-- Use an isolated Crabbox for provider copies or destructive scenario proof.
+- create fixtures with `mkdtemp`
+- never copy real transcripts or provider databases into Git
+- replace personal paths with `/tmp` or `/fixture`
+- never preserve real hostnames, usernames, tokens, emails, or IP addresses
+- use fake process and owner-command runners where practical
+- test every new mutation with stale identity, symlink, active process,
+  rollback, partial failure, and source-preservation cases
 
-## Crabbox Boundary
+## Remote Proof
 
-If real provider shape is required:
-
-1. select the minimum required files
-2. redact transcript contents and credentials
-3. copy the fixture into a fresh isolated Crabbox
-4. run AgentRinse only against the copied fixture root
-5. destroy the remote fixture after proof
-
-No development command should point AgentRinse at a workstation home.
+Use a fresh Crabbox for packaged destructive scenarios. Install the packed
+tarball like a user, construct only synthetic resources, exercise preview and
+apply through the CLI, collect the run journal, and destroy the lease.

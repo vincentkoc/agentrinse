@@ -1,6 +1,7 @@
 # Adapter Matrix
 
-All provider adapters are read-only in the current release.
+All provider, Git, and Docker adapters are read-only in version 0.1. Artifact
+cleanup is separately scoped to explicitly configured rebuildable directories.
 
 | Adapter        | Current capability                                         | Protected state |
 | -------------- | ---------------------------------------------------------- | --------------- |
@@ -13,6 +14,14 @@ All provider adapters are read-only in the current release.
 | Grok Build     | version-gated data root                                    | all             |
 | Git            | explicit repository worktree porcelain                     | all             |
 | Docker         | opt-in structured image/container inventory                | all             |
+| Artifacts      | exact configured rebuildable directories                   | conditional     |
+
+## Artifact Rules
+
+Artifact discovery is disabled until at least one project root and supported
+name are configured. Eligible directories must be real, completely measured,
+older and larger than configured thresholds, and proven idle by the process
+ownership probe. Apply performs the full check again under the lock.
 
 ## Provider Rules
 

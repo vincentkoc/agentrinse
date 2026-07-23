@@ -1,47 +1,90 @@
 # Safety Model
 
 AgentRinse is designed around refusal. A resource becomes cleanable only after
-its owner, reachability, activity, and recovery behavior are positively known.
+its scope, identity, inactivity, and effect are positively known.
 
-## Current Release Boundary
+## Version 0.1 Mutation Boundary
 
-Version `0.0.0` is audit-only:
+Only `artifacts.remove` mutates:
 
-- `audit` reads an explicitly supplied synthetic home
-- `plan` consumes a saved audit
-- every provider resource is protected
-- every generated plan contains zero actions
-- there is no `apply` command
+- the project root is explicitly configured
+- the artifact name is selected from the fixed supported-name enum
+- the project and artifact are real directories inside the audited home
+- the artifact exceeds configured age and size thresholds
+- the complete measurement fits within the entry budget
+- same-user process ownership is proven idle
+- the action risk is `safe`
 
-The CLI refuses the real home directory and `/`.
+Provider state, Git worktrees, and Docker resources remain report-only.
+
+## Authorization
+
+Apply requires a saved content-addressed plan and interactive confirmation or
+`--yes`. The plan records:
+
+- the audit and config digests
+- the exact home, project root, artifact path, and filesystem identity
+- measured bytes
+- the risk ceiling
+- creation and expiration timestamps
+
+Apply rejects invalid schemas, changed plan content, changed configuration,
+future-dated plans, expired plans, duplicate targets, duplicate action IDs,
+and inconsistent byte totals.
+
+## Revalidation
+
+After acquiring the exclusive lock, every action rechecks:
+
+1. configured root and exact supported artifact name
+2. lexical and realpath containment
+3. directory and non-symlink type
+4. device, inode, and mtime identity
+5. complete byte measurement
+6. current working directory ownership
+7. same-user process cwd and file-descriptor ownership
+
+Any uncertainty produces `skipped-stale`. Apply never widens the action or
+substitutes another target.
+
+## Isolation and Removal
+
+An unchanged target is atomically renamed to a unique tombstone in the same
+parent directory. The moved inode is verified again before recursive removal.
+
+- failure before removal restores the original path when possible
+- a removal failure is `partially-applied`, even if the remaining tree is
+  moved back, because some children may already be gone
+- the journal records the last known recovery path
+- successful removal verifies that both original and tombstone paths are gone
+
+The operation is safe-class because supported artifacts are rebuildable. It is
+not presented as undoable.
+
+## State and Concurrency
+
+Run journals use owner-only atomic writes, file fsync, directory fsync, and
+same-directory rename. Each action transition is persisted before the next
+mutation.
+
+One global apply lock prevents concurrent runs. A stale same-host lock is
+reclaimed only when its recorded PID no longer exists. Release verifies the
+lock token and inode before unlinking it.
+
+The state directory is rejected if it is inside a planned cleanup target.
 
 ## Hard Invariants
 
-- Unknown state is protected.
-- Discovery and planning never clean.
-- Provider session stores are report-only.
-- Symlinks are not followed.
-- Git worktrees remain protected until dirty, process, session, lock, and push
-  state can all be proved.
-- No process is killed.
-- No credentials, configuration, plugins, skills, memories, branches, stashes,
-  or Docker volumes are deleted.
-- No project configuration is executed as code.
-- No generic force flag exists.
-
-## Future Mutation Gate
-
-A mutating action is not ready until it has:
-
-1. a stable resource identity
-2. explicit protection roots
-3. versioned policy
-4. a persisted plan
-5. immediate revalidation
-6. a bounded owner operation
-7. a durable run journal
-8. postcondition verification
-9. recovery or an explicit destructive classification
-10. interruption and race tests
-
-No adapter may bypass this gate.
+- discovery and planning never mutate
+- unknown state is protected
+- `/` and ancestors of the real home cannot be audit roots
+- symlinks are not followed
+- no process is killed
+- no `sudo`
+- no generic force flag
+- no wildcard or unfiltered prune
+- no provider database mutation
+- no provider sessions, transcripts, credentials, configuration, plugins,
+  skills, memories, branches, stashes, or Docker volumes are removed
+- no action removes the current working directory or an ancestor
+- failed and interrupted work remains visible in the durable journal
