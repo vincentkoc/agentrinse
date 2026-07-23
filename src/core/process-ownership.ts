@@ -20,7 +20,7 @@ export type ProcessOwnershipOptions = {
   platform?: NodeJS.Platform;
   procRoot?: string;
   uid?: number;
-  runLsof?: (target: string) => Promise<{ stdout: string }>;
+  runLsof?: (target: string) => Promise<{ stdout: string; stderr: string }>;
 };
 
 function isInside(root: string, candidate: string): boolean {
@@ -130,6 +130,14 @@ async function inspectDarwin(
             timeout: 10_000,
           })
         : await options.runLsof(target);
+    if (result.stderr !== "") {
+      return {
+        status: "unknown",
+        matches: [],
+        reason: `lsof reported an incomplete scan: ${result.stderr.trim()}`,
+      };
+    }
+
     const matches: ProcessPathMatch[] = [];
     let pid: number | undefined;
 
@@ -149,8 +157,13 @@ async function inspectDarwin(
     const commandError = error as {
       code?: string | number;
       stdout?: string;
+      stderr?: string;
     };
-    if (Number(commandError.code) === 1 && (commandError.stdout ?? "") === "") {
+    if (
+      Number(commandError.code) === 1 &&
+      (commandError.stdout ?? "") === "" &&
+      (commandError.stderr ?? "") === ""
+    ) {
       return { status: "idle", matches: [] };
     }
     return {

@@ -76,9 +76,24 @@ describe("findProcessesUsingPath", () => {
       findProcessesUsingPath("/tmp/fixture", {
         platform: "darwin",
         runLsof: async () => {
-          throw { code: 1, stdout: "" };
+          throw { code: 1, stdout: "", stderr: "" };
         },
       }),
     ).resolves.toEqual({ status: "idle", matches: [] });
+  });
+
+  it("fails closed when macOS lsof reports an incomplete scan", async () => {
+    await expect(
+      findProcessesUsingPath("/tmp/fixture", {
+        platform: "darwin",
+        runLsof: async () => {
+          throw {
+            code: 1,
+            stdout: "",
+            stderr: "permission denied",
+          };
+        },
+      }),
+    ).resolves.toMatchObject({ status: "unknown" });
   });
 });
