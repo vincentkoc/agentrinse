@@ -11,6 +11,10 @@ const RISK_ORDER: Record<ActionRisk, number> = {
   experimental: 3,
 };
 
+export function cleanupPlanId(plan: Omit<CleanupPlan, "planId">): string {
+  return sha256Json(plan);
+}
+
 export function createCleanupPlan(
   audit: AuditReport,
   config: AgentRinseConfig,
@@ -36,14 +40,11 @@ export function createCleanupPlan(
     configDigest,
     auditDigest,
     actions,
-    expectedReclaimBytes: actions.reduce(
-      (total, action) => total + action.expectedReclaimBytes,
-      0,
-    ),
+    expectedReclaimBytes: actions.reduce((total, action) => total + action.expectedReclaimBytes, 0),
   };
 
   return cleanupPlanSchema.parse({
     ...planWithoutId,
-    planId: sha256Json(planWithoutId),
+    planId: cleanupPlanId(planWithoutId),
   });
 }
