@@ -526,7 +526,8 @@ These are hard product requirements.
     incomplete actions.
 16. Artifact removal never operates on sockets, pipes, devices, or other
     special filesystem entries.
-17. Plan authorization is rechecked immediately before every mutation.
+17. Plan authorization is rechecked immediately before artifact isolation and
+    again before recursive removal.
 
 ### Git invariants
 
@@ -1054,10 +1055,12 @@ Refresh:
    4. skip if facts, retention policy, or supported entry types changed
    5. recheck plan expiration
    6. record `applying`
-   7. execute the exact action
-   8. verify postconditions
-   9. record the result and fsync
-   10. release the resource lock
+   7. isolate the exact action target
+   8. revalidate the isolated tree and plan expiration
+   9. execute recursive removal
+   10. verify postconditions
+   11. record the result and fsync
+   12. release the resource lock
 8. Write the final run summary.
 9. Release the global lock.
 

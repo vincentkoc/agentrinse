@@ -63,9 +63,10 @@ Artifact cleanup is disabled until project roots are explicitly declared.
 }
 ```
 
-Project roots must be unique absolute real directories inside the audited
-home. Artifact targets cannot overlap. AgentRinse never discovers arbitrary
-projects or expands wildcards.
+Project roots must be unique canonical absolute real directories inside the
+audited home; paths reached through symlinked ancestors are rejected. Artifact
+targets cannot overlap. AgentRinse never discovers arbitrary projects or
+expands wildcards.
 
 ## Use
 
