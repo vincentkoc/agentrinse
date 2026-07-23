@@ -1,0 +1,59 @@
+name: Bug report
+description: Report incorrect audit, planning, or safety behavior.
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not attach real transcripts, credentials, provider databases, or unredacted home paths.
+
+  - type: input
+    id: version
+    attributes:
+      label: AgentRinse version
+    validations:
+      required: true
+
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Adapter
+      options:
+        - Codex
+        - Claude
+        - Cursor
+        - GitHub Copilot
+        - Zed
+        - OpenCode
+        - Grok Build
+        - Git
+        - Docker
+        - Core or CLI
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Describe the result using synthetic or redacted paths.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed transcripts, secrets, private hostnames, and personal absolute paths.
+          required: true
+
