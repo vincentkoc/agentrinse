@@ -21,7 +21,8 @@ The first production mutation boundary is intentionally narrow:
 - rejects sockets, pipes, devices, and other non-regular filesystem entries
 - rechecks size, age, and plan expiration immediately before each mutation
 - atomically renames an artifact to a same-parent tombstone before recursive
-  removal, then repeats fingerprint and process checks on the isolated tree
+  removal, repeats fingerprint and process checks on the isolated tree, and
+  performs a final synchronous inode check at the deletion boundary
 - journals every transition and records the recovery path for partial actions
 
 Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, Grok Build, Git,
@@ -120,6 +121,10 @@ location.
 - no wildcard deletion
 - one apply run holds the exclusive state lock
 - AgentRinse never removes its own working directory, lock, or journal
+
+AgentRinse fails closed around ordinary concurrent developer tools. It does not
+claim isolation from a hostile process already running as the same OS user;
+that process can directly alter the user's files and AgentRinse state.
 
 See `docs/safety.md` for the complete mutation contract.
 

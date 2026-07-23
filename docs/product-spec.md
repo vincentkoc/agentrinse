@@ -528,6 +528,8 @@ These are hard product requirements.
     special filesystem entries.
 17. Plan authorization is rechecked immediately before artifact isolation and
     again before recursive removal.
+18. A final synchronous inode gate immediately precedes production artifact
+    removal.
 
 ### Git invariants
 
@@ -1057,7 +1059,7 @@ Refresh:
    6. record `applying`
    7. isolate the exact action target
    8. revalidate the isolated tree and plan expiration
-   9. execute recursive removal
+   9. synchronously verify the inode and execute recursive removal
    10. verify postconditions
    11. record the result and fsync
    12. release the resource lock

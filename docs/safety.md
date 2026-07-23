@@ -65,6 +65,9 @@ mount boundaries, and process ownership are verified again before recursive
 removal.
 
 - authorization is checked again immediately before recursive removal
+- mount boundaries are checked again immediately before removal
+- the final inode check and production recursive removal run synchronously,
+  without yielding to another JavaScript task
 - expiration before isolation is `skipped-stale`
 - expiration after isolation restores the original path and is `rolled-back`
 - failure before removal restores the original path when possible
@@ -74,6 +77,11 @@ removal.
 - the journal records the last known recovery path
 - successful removal verifies that both original and tombstone paths are gone
 
+The concurrency contract covers ordinary tools and stale observations, not a
+hostile process running as the same OS user. A same-user attacker can modify
+the user's project and AgentRinse state directly; defending that boundary
+requires OS isolation outside this package.
+
 The operation is safe-class because supported artifacts are rebuildable. It is
 not presented as undoable.
 
@@ -82,6 +90,10 @@ not presented as undoable.
 Run journals use owner-only atomic writes, file fsync, directory fsync, and
 same-directory rename. Each action transition is persisted before the next
 mutation.
+
+Execution errors are journaled separately from persistence errors. If deletion
+succeeds but persisting `applied` fails, the durable action remains
+`applying`; AgentRinse never rewrites the completed mutation as a failed one.
 
 One global apply lock prevents concurrent runs. Existing lock files fail
 closed, including stale-looking locks. An operator must inspect the recorded
