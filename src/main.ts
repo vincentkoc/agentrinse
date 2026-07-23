@@ -4,12 +4,13 @@ import { executeAuditCommand } from "./commands/audit.js";
 import { renderAdapters } from "./commands/adapters.js";
 import { executeApplyCommand } from "./commands/apply.js";
 import { executePlanCommand } from "./commands/plan.js";
+import { VERSION } from "./version.js";
 
 export function buildProgram(): Command {
   const program = new Command()
     .name("agentrinse")
     .description("Safe cleanup for agentic development.")
-    .version("0.0.0");
+    .version(VERSION);
 
   program
     .command("audit")
