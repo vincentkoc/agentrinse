@@ -17,6 +17,12 @@ export const DEFAULT_CONFIG: AgentRinseConfig = {
     maxEntries: 100_000,
     measureBytes: true,
   },
+  artifacts: {
+    projects: [],
+    minAgeMinutes: 24 * 60,
+    minBytes: 64 * 1024 * 1024,
+    processCheck: "required",
+  },
   plan: {
     ttlMinutes: 30,
     maxRisk: "safe",

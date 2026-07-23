@@ -22,6 +22,10 @@ export async function loadConfig(path?: string): Promise<AgentRinseConfig> {
       ...DEFAULT_CONFIG.audit,
       ...parsed.audit,
     },
+    artifacts: {
+      ...DEFAULT_CONFIG.artifacts,
+      ...parsed.artifacts,
+    },
     plan: {
       ...DEFAULT_CONFIG.plan,
       ...parsed.plan,

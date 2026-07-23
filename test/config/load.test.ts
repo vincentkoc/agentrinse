@@ -28,6 +28,15 @@ describe("loadConfig", () => {
         audit: {
           measureBytes: false,
         },
+        artifacts: {
+          projects: [
+            {
+              root: "/tmp/project",
+              names: ["node_modules", "dist"],
+            },
+          ],
+          minBytes: 1,
+        },
       }),
     );
 
@@ -38,5 +47,13 @@ describe("loadConfig", () => {
       maxEntries: 100_000,
       measureBytes: false,
     });
+    expect(config.artifacts.projects).toEqual([
+      {
+        root: "/tmp/project",
+        names: ["node_modules", "dist"],
+      },
+    ]);
+    expect(config.artifacts.minAgeMinutes).toBe(24 * 60);
+    expect(config.artifacts.minBytes).toBe(1);
   });
 });

@@ -17,6 +17,24 @@ const adapterConfigSchema = z.object({
   root: z.string().min(1).optional(),
 });
 
+export const artifactNameSchema = z.enum([
+  "node_modules",
+  "dist",
+  "dist-runtime",
+  "build",
+  ".next",
+  ".turbo",
+  ".cache",
+  "coverage",
+  "target",
+  ".venv",
+]);
+
+export const artifactProjectSchema = z.object({
+  root: z.string().min(1),
+  names: z.array(artifactNameSchema).min(1),
+});
+
 export const agentRinseConfigSchema = z.object({
   schemaVersion: z.literal(1),
   adapters: z.partialRecord(adapterIdSchema, adapterConfigSchema.partial()).default(() => ({})),
@@ -26,6 +44,19 @@ export const agentRinseConfigSchema = z.object({
       measureBytes: z.boolean().default(true),
     })
     .default(() => ({ maxEntries: 100_000, measureBytes: true })),
+  artifacts: z
+    .object({
+      projects: z.array(artifactProjectSchema).default([]),
+      minAgeMinutes: z.number().int().nonnegative().default(24 * 60),
+      minBytes: z.number().int().nonnegative().default(64 * 1024 * 1024),
+      processCheck: z.literal("required").default("required"),
+    })
+    .default(() => ({
+      projects: [],
+      minAgeMinutes: 24 * 60,
+      minBytes: 64 * 1024 * 1024,
+      processCheck: "required" as const,
+    })),
   plan: z
     .object({
       ttlMinutes: z
@@ -40,4 +71,6 @@ export const agentRinseConfigSchema = z.object({
 });
 
 export type AdapterId = z.infer<typeof adapterIdSchema>;
+export type ArtifactName = z.infer<typeof artifactNameSchema>;
+export type ArtifactProject = z.infer<typeof artifactProjectSchema>;
 export type AgentRinseConfig = z.infer<typeof agentRinseConfigSchema>;
