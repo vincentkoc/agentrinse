@@ -10,6 +10,7 @@ import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
 import { measurePath } from "../../core/measure.js";
+import { findMountBoundaries, type MountBoundaryResult } from "../../core/mount-boundaries.js";
 import {
   findProcessesUsingPath,
   type ProcessOwnershipResult,
@@ -19,6 +20,7 @@ import { isPathInside } from "../../core/safety.js";
 type ArtifactOptions = AgentRinseConfig["artifacts"] & AgentRinseConfig["audit"];
 
 export type ProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
+export type MountProbe = (path: string) => Promise<MountBoundaryResult>;
 
 function isMissing(error: unknown): boolean {
   return (
@@ -41,6 +43,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
   constructor(
     private readonly options: ArtifactOptions,
     private readonly processProbe: ProcessProbe = findProcessesUsingPath,
+    private readonly mountProbe: MountProbe = findMountBoundaries,
   ) {}
 
   private async validProjects(context: AuditContext): Promise<{
@@ -158,6 +161,14 @@ export class ArtifactAuditAdapter implements AuditAdapter {
                   matches: [],
                   reason: "resource is not a real directory",
                 } satisfies ProcessOwnershipResult);
+          const mounts =
+            isDirectory && !isSymlink
+              ? await this.mountProbe(path)
+              : ({
+                  status: "unknown",
+                  paths: [],
+                  reason: "resource is not a real directory",
+                } satisfies MountBoundaryResult);
           const canonicalKey = `artifacts:build-artifact:${path}`;
 
           resources.push({
@@ -191,6 +202,9 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               isMountRoot: stats.dev !== projectStats.dev,
               entries: measurement?.entries,
               processOwnership: ownership,
+              mountBoundaryStatus: mounts.status,
+              mountBoundaryPaths: mounts.paths,
+              mountBoundaryReason: mounts.status === "unknown" ? mounts.reason : undefined,
             },
           });
         } catch (error) {
@@ -248,6 +262,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
       });
     } else if (
       facts.isMountRoot === true ||
+      facts.mountBoundaryStatus === "blocked" ||
       (typeof facts.mountBoundaries === "number" && facts.mountBoundaries > 0)
     ) {
       state = "blocked";
@@ -256,6 +271,16 @@ export class ArtifactAuditAdapter implements AuditAdapter {
         severity: "warning",
         code: "ARTIFACT_MOUNT_BOUNDARY",
         message: "Artifact cleanup never crosses a filesystem mount boundary.",
+        adapter: this.id,
+        resourceId: resource.resource.id,
+      });
+    } else if (facts.mountBoundaryStatus !== "clear") {
+      state = "blocked";
+      confidence = "unknown";
+      warnings.push({
+        severity: "warning",
+        code: "ARTIFACT_MOUNT_INSPECTION_UNKNOWN",
+        message: "Filesystem mount boundaries could not be proven absent.",
         adapter: this.id,
         resourceId: resource.resource.id,
       });

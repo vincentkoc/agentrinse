@@ -162,9 +162,9 @@ describe("executeArtifactRemove", () => {
     try {
       await executeArtifactRemove(value.action, {
         id: () => "mount-boundary",
-        measure: async (path, options) => ({
-          ...(await measurePath(path, options)),
-          mountBoundaries: 1,
+        mountProbe: async () => ({
+          status: "blocked",
+          paths: [join(value.target, "mounted")],
         }),
         processProbe: async () => ({
           status: "idle",

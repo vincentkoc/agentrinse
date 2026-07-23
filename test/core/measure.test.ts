@@ -52,6 +52,7 @@ describe("measurePath", () => {
     const original = await stat(path);
     const before = await measurePath(root, { maxEntries: 100 });
 
+    await new Promise((resolve) => setTimeout(resolve, 20));
     await writeFile(path, "change");
     await utimes(path, original.atime, original.mtime);
     const after = await measurePath(root, { maxEntries: 100 });

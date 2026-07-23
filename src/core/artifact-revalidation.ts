@@ -5,6 +5,7 @@ import type { AgentRinseConfig } from "../config/schema.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import { measurePath, type Measurement } from "./measure.js";
+import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 import { isPathInside } from "./safety.js";
 
@@ -16,6 +17,7 @@ export type ArtifactRevalidationDependencies = {
   cwd?: string;
   measure?: typeof measurePath;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
+  mountProbe?: (path: string) => Promise<MountBoundaryResult>;
 };
 
 function stale(
@@ -123,6 +125,19 @@ export async function revalidateArtifactRemove(
         action,
         "ARTIFACT_IDENTITY_CHANGED",
         "artifact filesystem identity changed after planning",
+      );
+    }
+
+    const mounts = await (dependencies.mountProbe ?? findMountBoundaries)(targetPath);
+    if (mounts.status !== "clear") {
+      return stale(
+        action,
+        mounts.status === "blocked"
+          ? "ARTIFACT_MOUNT_BOUNDARY"
+          : "ARTIFACT_MOUNT_INSPECTION_UNKNOWN",
+        mounts.status === "blocked"
+          ? "artifact contains a filesystem mount boundary"
+          : "filesystem mount boundaries could not be proven absent",
       );
     }
 

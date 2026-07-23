@@ -121,6 +121,27 @@ describe("revalidateArtifactRemove", () => {
     });
   });
 
+  it("rejects an artifact containing a mount boundary", async () => {
+    const value = await fixture();
+
+    await expect(
+      revalidateArtifactRemove(value.action, value.home, value.config, {
+        cwd: value.project,
+        mountProbe: async () => ({
+          status: "blocked",
+          paths: [join(value.target, "mounted")],
+        }),
+        processProbe: async () => ({
+          status: "idle",
+          matches: [],
+        }),
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_MOUNT_BOUNDARY" },
+    });
+  });
+
   it("rejects deleting the current working directory or an ancestor", async () => {
     const value = await fixture();
 

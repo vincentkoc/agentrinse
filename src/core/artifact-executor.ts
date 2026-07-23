@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { measurePath, type Measurement } from "./measure.js";
+import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 
 export type ArtifactExecutionOutcome = "failed" | "rolled-back" | "partially-applied";
@@ -34,6 +35,7 @@ export type ArtifactExecutorDependencies = {
   remove?: (path: string) => Promise<void>;
   measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
+  mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   maxEntries?: number;
 };
 
@@ -89,6 +91,7 @@ export async function executeArtifactRemove(
       }));
   const measure = dependencies.measure ?? measurePath;
   const processProbe = dependencies.processProbe ?? findProcessesUsingPath;
+  const mountProbe = dependencies.mountProbe ?? findMountBoundaries;
   const isolationPath = artifactIsolationPath(action, dependencies.id?.() ?? randomUUID());
 
   if (await pathExists(isolationPath, inspect)) {
@@ -177,6 +180,19 @@ export async function executeArtifactRemove(
         ownership.status === "busy"
           ? "a process acquired the artifact during isolation"
           : "process ownership became unknown during isolation",
+        action,
+        isolationPath,
+        inspect,
+        move,
+      );
+    }
+
+    const mounts = await mountProbe(isolationPath);
+    if (mounts.status !== "clear") {
+      await rollbackBeforeRemoval(
+        mounts.status === "blocked"
+          ? "artifact contains a mount boundary during isolation"
+          : "mount boundaries became unknown during isolation",
         action,
         isolationPath,
         inspect,

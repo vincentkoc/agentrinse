@@ -6,11 +6,18 @@ import { describe, expect, it } from "vitest";
 
 import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
+import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";
 import type { ProcessOwnershipResult } from "../../src/core/process-ownership.js";
 
 const NOW = new Date("2026-07-23T12:00:00.000Z");
 
-async function fixture(ownership: ProcessOwnershipResult = { status: "idle", matches: [] }) {
+async function fixture(
+  ownership: ProcessOwnershipResult = {
+    status: "idle",
+    matches: [],
+  },
+  mounts: MountBoundaryResult = { status: "clear", paths: [] },
+) {
   const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-"));
   const projectRoot = join(home, "project");
   const artifact = join(projectRoot, "node_modules");
@@ -35,6 +42,7 @@ async function fixture(ownership: ProcessOwnershipResult = { status: "idle", mat
       maxEntries: 100,
     },
     async () => ownership,
+    async () => mounts,
   );
   return { home, projectRoot, artifact, artifactFile, context, adapter };
 }
@@ -78,6 +86,23 @@ describe("ArtifactAuditAdapter", () => {
 
     expect(finding.state).toBe("protected");
     expect(finding.roots[0]?.code).toBe("recent-resource");
+  });
+
+  it("blocks artifacts containing a mount boundary", async () => {
+    const { context, adapter, artifact } = await fixture(
+      { status: "idle", matches: [] },
+      {
+        status: "blocked",
+        paths: ["/fixture/mounted"],
+      },
+    );
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(artifact).toContain("node_modules");
+    expect(finding.state).toBe("blocked");
+    expect(finding.warnings[0]?.code).toBe("ARTIFACT_MOUNT_BOUNDARY");
   });
 
   it("blocks symlinked artifacts", async () => {
