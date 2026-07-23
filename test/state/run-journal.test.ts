@@ -82,4 +82,15 @@ describe("run journal", () => {
 
     expect((await journal.complete()).status).toBe("partial");
   });
+
+  it("treats a rolled-back action as a failed run", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const journal = await createRunJournal(root, PLAN);
+    await journal.updateAction("action-1", {
+      status: "rolled-back",
+      isolationPath: "/tmp/fixture/.agentrinse-tombstone",
+    });
+
+    expect((await journal.complete()).status).toBe("failed");
+  });
 });

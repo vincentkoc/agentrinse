@@ -6,8 +6,11 @@ export const actionExecutionStatusSchema = z.enum([
   "pending",
   "revalidating",
   "skipped-stale",
+  "applying",
   "applied",
   "failed",
+  "rolled-back",
+  "partially-applied",
 ]);
 
 export const actionExecutionSchema = z.object({
@@ -17,15 +20,11 @@ export const actionExecutionSchema = z.object({
   startedAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
   reclaimedBytes: z.number().int().nonnegative().optional(),
+  isolationPath: z.string().min(1).optional(),
   diagnostic: diagnosticSchema.optional(),
 });
 
-export const runStatusSchema = z.enum([
-  "running",
-  "completed",
-  "partial",
-  "failed",
-]);
+export const runStatusSchema = z.enum(["running", "completed", "partial", "failed"]);
 
 export const cleanupRunSchema = z.object({
   schemaVersion: z.literal(1),
@@ -39,9 +38,7 @@ export const cleanupRunSchema = z.object({
   diagnostics: z.array(diagnosticSchema),
 });
 
-export type ActionExecutionStatus = z.infer<
-  typeof actionExecutionStatusSchema
->;
+export type ActionExecutionStatus = z.infer<typeof actionExecutionStatusSchema>;
 export type ActionExecution = z.infer<typeof actionExecutionSchema>;
 export type RunStatus = z.infer<typeof runStatusSchema>;
 export type CleanupRun = z.infer<typeof cleanupRunSchema>;

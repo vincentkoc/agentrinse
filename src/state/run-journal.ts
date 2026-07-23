@@ -61,7 +61,12 @@ export async function createRunJournal(
       return persist();
     },
     async complete(completedAt = new Date()) {
-      const failed = run.actions.filter((action) => action.status === "failed").length;
+      const failed = run.actions.filter(
+        (action) =>
+          action.status === "failed" ||
+          action.status === "rolled-back" ||
+          action.status === "partially-applied",
+      ).length;
       const applied = run.actions.filter((action) => action.status === "applied").length;
       run = {
         ...run,
