@@ -37,6 +37,7 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint src test",
     "pack:check": "pnpm build && publint && pnpm pack --dry-run",
+    "smoke": "pnpm build && node scripts/smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
