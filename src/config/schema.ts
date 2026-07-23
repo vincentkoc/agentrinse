@@ -19,9 +19,7 @@ const adapterConfigSchema = z.object({
 
 export const agentRinseConfigSchema = z.object({
   schemaVersion: z.literal(1),
-  adapters: z
-    .partialRecord(adapterIdSchema, adapterConfigSchema.partial())
-    .default(() => ({})),
+  adapters: z.partialRecord(adapterIdSchema, adapterConfigSchema.partial()).default(() => ({})),
   audit: z
     .object({
       maxEntries: z.number().int().positive().max(1_000_000).default(100_000),
