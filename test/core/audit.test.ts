@@ -54,4 +54,18 @@ describe("runAudit", () => {
 
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("docker");
   });
+
+  it("adds artifacts only when explicit projects are configured", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.artifacts.projects = [
+      {
+        root: "/tmp/agentrinse-artifact-project",
+        names: ["node_modules"],
+      },
+    ];
+
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain(
+      "artifacts",
+    );
+  });
 });

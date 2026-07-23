@@ -1,5 +1,6 @@
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter } from "../contracts/adapter.js";
+import { ArtifactAuditAdapter } from "./artifacts/adapter.js";
 import { DockerAuditAdapter } from "./docker/adapter.js";
 import { GitWorktreeAuditAdapter } from "./git/adapter.js";
 import { ProviderAuditAdapter } from "./provider-adapter.js";
@@ -22,6 +23,15 @@ export function createAuditAdapters(
         maxEntries: config.audit.maxEntries,
       }),
   );
+
+  if (config.artifacts.projects.length > 0) {
+    adapters.push(
+      new ArtifactAuditAdapter({
+        ...config.artifacts,
+        ...config.audit,
+      }),
+    );
+  }
 
   if (config.adapters.git?.enabled === true) {
     adapters.push(new GitWorktreeAuditAdapter(config.adapters.git.root));
