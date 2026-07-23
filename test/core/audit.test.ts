@@ -37,4 +37,14 @@ describe("runAudit", () => {
 
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).not.toContain("grok");
   });
+
+  it("adds Git only when explicitly enabled", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.git = {
+      enabled: true,
+      root: "/tmp/agentrinse-git-fixture",
+    };
+
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("git");
+  });
 });

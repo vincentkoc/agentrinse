@@ -1,5 +1,6 @@
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter } from "../contracts/adapter.js";
+import { GitWorktreeAuditAdapter } from "./git/adapter.js";
 import { ProviderAuditAdapter } from "./provider-adapter.js";
 import { PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
 
@@ -9,7 +10,9 @@ export function createAuditAdapters(
   config: AgentRinseConfig,
   platform: NodeJS.Platform = process.platform,
 ): AuditAdapter[] {
-  return PROVIDER_IDS.filter((id) => config.adapters[id]?.enabled !== false).map(
+  const adapters: AuditAdapter[] = PROVIDER_IDS.filter(
+    (id) => config.adapters[id]?.enabled !== false,
+  ).map(
     (id) =>
       new ProviderAuditAdapter(PROVIDER_SPECS[id], {
         ...(config.adapters[id]?.root === undefined ? {} : { root: config.adapters[id].root }),
@@ -18,4 +21,10 @@ export function createAuditAdapters(
         maxEntries: config.audit.maxEntries,
       }),
   );
+
+  if (config.adapters.git?.enabled === true) {
+    adapters.push(new GitWorktreeAuditAdapter(config.adapters.git.root));
+  }
+
+  return adapters;
 }
