@@ -173,6 +173,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       confidence: resource.exists ? "certain" : "unknown",
       roots,
       facts: resource.facts,
+      candidateActions: [],
       warnings: [],
     };
   }

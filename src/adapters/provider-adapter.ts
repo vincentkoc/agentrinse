@@ -203,6 +203,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
         },
       ],
       facts: resource.facts,
+      candidateActions: [],
       ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
       warnings: [],
     };

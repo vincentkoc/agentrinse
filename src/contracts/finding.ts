@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { plannedActionSchema } from "./action.js";
 import { diagnosticSchema } from "./diagnostic.js";
 import { resourceRefSchema } from "./resource.js";
 
@@ -31,6 +32,7 @@ export const findingSchema = z.object({
   confidence: findingConfidenceSchema,
   roots: z.array(rootEvidenceSchema),
   facts: z.record(z.string(), z.unknown()),
+  candidateActions: z.array(plannedActionSchema),
   measuredBytes: z.number().int().nonnegative().optional(),
   estimatedReclaimBytes: z.number().int().nonnegative().optional(),
   warnings: z.array(diagnosticSchema),

@@ -144,6 +144,7 @@ export class DockerAuditAdapter implements AuditAdapter {
         },
       ],
       facts: resource.facts,
+      candidateActions: [],
       warnings: [],
     };
   }

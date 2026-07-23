@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const resourceKindSchema = z.enum([
   "git-worktree",
+  "build-artifact",
   "agent-home",
   "agent-session-store",
   "agent-log-store",
