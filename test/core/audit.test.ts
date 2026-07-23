@@ -47,4 +47,13 @@ describe("runAudit", () => {
 
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("git");
   });
+
+  it("adds Docker only when explicitly enabled", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.docker = { enabled: true };
+
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain(
+      "docker",
+    );
+  });
 });

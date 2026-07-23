@@ -1,5 +1,6 @@
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter } from "../contracts/adapter.js";
+import { DockerAuditAdapter } from "./docker/adapter.js";
 import { GitWorktreeAuditAdapter } from "./git/adapter.js";
 import { ProviderAuditAdapter } from "./provider-adapter.js";
 import { PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
@@ -24,6 +25,10 @@ export function createAuditAdapters(
 
   if (config.adapters.git?.enabled === true) {
     adapters.push(new GitWorktreeAuditAdapter(config.adapters.git.root));
+  }
+
+  if (config.adapters.docker?.enabled === true) {
+    adapters.push(new DockerAuditAdapter());
   }
 
   return adapters;
