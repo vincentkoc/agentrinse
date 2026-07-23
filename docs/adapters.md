@@ -12,7 +12,7 @@ All provider adapters are read-only in the current release.
 | OpenCode | database, logs, snapshots | all |
 | Grok Build | version-gated data root | all |
 | Git | explicit repository worktree porcelain | all |
-| Docker | planned | all |
+| Docker | opt-in structured image/container inventory | all |
 
 ## Provider Rules
 
@@ -56,3 +56,9 @@ The Git adapter is disabled by default and requires an explicit repository
 root. It uses `git worktree list --porcelain -z` and still protects every
 worktree until activity and push-state collectors exist.
 
+### Docker
+
+The Docker adapter is disabled by default. When explicitly enabled, it probes
+the selected Docker context and inventories images and containers through
+structured CLI output. Daemon failure degrades only Docker. Every resource is
+protected and no prune command exists.
