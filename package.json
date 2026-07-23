@@ -18,6 +18,7 @@
   },
   "files": [
     "dist",
+    "schemas",
     "LICENSE",
     "README.md"
   ],
@@ -32,11 +33,13 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm schemas:check",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint src test",
-    "pack:check": "pnpm build && publint && pnpm pack --dry-run",
+    "pack:check": "pnpm build && pnpm schemas:check && publint && pnpm pack --dry-run",
+    "schemas:check": "pnpm build && node scripts/generate-schemas.mjs --check",
+    "schemas:generate": "pnpm build && node scripts/generate-schemas.mjs",
     "smoke": "pnpm build && node scripts/smoke.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

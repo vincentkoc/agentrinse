@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "planId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "auditId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "home": {
+      "type": "string",
+      "minLength": 1
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+    },
+    "policyVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "riskCeiling": {
+      "type": "string",
+      "enum": [
+        "safe",
+        "recoverable",
+        "destructive",
+        "experimental"
+      ]
+    },
+    "configDigest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "auditDigest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "actionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "type": "string",
+                "const": "artifacts.remove"
+              },
+              "adapter": {
+                "type": "string",
+                "const": "artifacts"
+              },
+              "resourceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "risk": {
+                "type": "string",
+                "const": "safe"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              },
+              "expectedReclaimBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "target": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "projectRoot": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "device": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "inode": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "mtimeMs": {
+                    "type": "number"
+                  },
+                  "measuredBytes": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "path",
+                  "projectRoot",
+                  "name",
+                  "device",
+                  "inode",
+                  "mtimeMs",
+                  "measuredBytes"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "actionId",
+              "type",
+              "adapter",
+              "resourceId",
+              "risk",
+              "description",
+              "expectedReclaimBytes",
+              "target"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "expectedReclaimBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planId",
+    "auditId",
+    "home",
+    "createdAt",
+    "expiresAt",
+    "policyVersion",
+    "riskCeiling",
+    "configDigest",
+    "auditDigest",
+    "actions",
+    "expectedReclaimBytes"
+  ],
+  "additionalProperties": false,
+  "$id": "https://agentrinse.com/schemas/plan.schema.json",
+  "title": "AgentRinse plan schema"
+}
