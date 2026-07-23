@@ -1,4 +1,13 @@
-import { lstat, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  stat,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,7 +32,7 @@ async function fixture(): Promise<{
   stateRoot: string;
   target: string;
 }> {
-  const home = await mkdtemp(join(tmpdir(), "agentrinse-apply-"));
+  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-apply-")));
   const stateRoot = join(home, "state");
   const project = join(home, "project");
   const target = join(project, "node_modules");
@@ -281,6 +290,45 @@ describe("applyCleanupPlan", () => {
     });
 
     expect(execute).not.toHaveBeenCalled();
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: { code: "PLAN_EXPIRED_DURING_APPLY" },
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("journals executor-side authorization expiry as skipped-stale", async () => {
+    const value = await fixture();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidate: async () => ({
+          status: "valid",
+          measurement: {
+            bytes: value.action.target.measuredBytes,
+            entries: 2,
+            symlinksSkipped: 0,
+            specialEntries: 0,
+            truncated: false,
+            newestMtimeMs: value.action.target.newestMtimeMs,
+            fingerprint: value.action.target.fingerprint,
+            mountBoundaries: 0,
+          },
+        }),
+        execute: async () => {
+          throw new ArtifactExecutionError(
+            "cleanup plan authorization expired before artifact isolation",
+            "skipped-stale",
+          );
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("completed");
     expect(result.run.actions[0]).toMatchObject({
       status: "skipped-stale",
       diagnostic: { code: "PLAN_EXPIRED_DURING_APPLY" },

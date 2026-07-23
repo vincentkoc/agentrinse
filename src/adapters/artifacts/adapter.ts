@@ -1,4 +1,4 @@
-import { lstat } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { AgentRinseConfig } from "../../config/schema.js";
@@ -72,6 +72,15 @@ export class ArtifactAuditAdapter implements AuditAdapter {
             severity: "error",
             code: "ARTIFACT_PROJECT_INVALID",
             message: `Configured project must be a real directory: ${root}`,
+            adapter: this.id,
+          });
+          continue;
+        }
+        if ((await realpath(root)) !== root) {
+          diagnostics.push({
+            severity: "error",
+            code: "ARTIFACT_PROJECT_NONCANONICAL",
+            message: `Configured project path must not contain symlink aliases: ${root}`,
             adapter: this.id,
           });
           continue;

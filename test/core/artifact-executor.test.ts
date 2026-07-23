@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -233,5 +233,73 @@ describe("executeArtifactRemove", () => {
       isolationPath: value.target,
     });
     expect(await exists(value.target)).toBe(true);
+  });
+
+  it("does not isolate an artifact after authorization expires", async () => {
+    const value = await fixture();
+    let moved = false;
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "expired-before-isolation",
+        authorization: {
+          expiresAtMs: 1,
+          now: () => new Date(1),
+        },
+        move: async () => {
+          moved = true;
+        },
+      }),
+    ).rejects.toMatchObject({ outcome: "skipped-stale" });
+
+    expect(moved).toBe(false);
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("rolls back when authorization expires during isolation", async () => {
+    const value = await fixture();
+    const times = [new Date(0), new Date(1)];
+    let removed = false;
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "expired-during-isolation",
+        authorization: {
+          expiresAtMs: 1,
+          now: () => times.shift() ?? new Date(1),
+        },
+        remove: async () => {
+          removed = true;
+        },
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).rejects.toMatchObject({ outcome: "rolled-back" });
+
+    expect(removed).toBe(false);
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("reports post-removal inspection errors as partially applied", async () => {
+    const value = await fixture();
+    let removed = false;
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "postcondition-error",
+        inspect: async (path) => {
+          if (removed) {
+            throw Object.assign(new Error("injected inspection failure"), { code: "EACCES" });
+          }
+          return lstat(path);
+        },
+        remove: async (path) => {
+          await rm(path, { recursive: true });
+          removed = true;
+        },
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).rejects.toMatchObject({ outcome: "partially-applied" });
+
+    expect(await exists(value.target)).toBe(false);
   });
 });

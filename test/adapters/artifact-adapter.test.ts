@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdir, mkdtemp, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,7 +21,7 @@ async function fixture(
   mounts: MountBoundaryResult = { status: "clear", paths: [] },
 ) {
   const temporaryRoot = process.platform === "darwin" ? "/tmp" : tmpdir();
-  const home = await mkdtemp(join(temporaryRoot, "agentrinse-artifact-"));
+  const home = await realpath(await mkdtemp(join(temporaryRoot, "agentrinse-artifact-")));
   const projectRoot = join(home, "project");
   const artifact = join(projectRoot, "node_modules");
   const artifactFile = join(artifact, "package.json");
@@ -132,7 +132,7 @@ describe("ArtifactAuditAdapter", () => {
   );
 
   it("blocks symlinked artifacts", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-"));
+    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-")));
     const projectRoot = join(home, "project");
     const target = join(home, "outside");
     await mkdir(projectRoot, { recursive: true });
@@ -164,8 +164,8 @@ describe("ArtifactAuditAdapter", () => {
   });
 
   it("rejects project roots outside the audited home", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-home-"));
-    const outside = await mkdtemp(join(tmpdir(), "agentrinse-artifact-outside-"));
+    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-home-")));
+    const outside = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-outside-")));
     const context: AuditContext = {
       home,
       now: NOW,
@@ -184,5 +184,33 @@ describe("ArtifactAuditAdapter", () => {
 
     expect(probe.status).toBe("degraded");
     expect(probe.diagnostics[0]?.code).toBe("ARTIFACT_PROJECT_OUTSIDE_HOME");
+  });
+
+  it("rejects project roots reached through a symlink alias", async () => {
+    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-home-")));
+    const physicalParent = join(home, "physical");
+    const aliasParent = join(home, "alias");
+    const physicalProject = join(physicalParent, "project");
+    const aliasProject = join(aliasParent, "project");
+    await mkdir(physicalProject, { recursive: true });
+    await symlink(physicalParent, aliasParent, "dir");
+    const context: AuditContext = {
+      home,
+      now: NOW,
+      auditId: "audit-artifact",
+    };
+    const adapter = new ArtifactAuditAdapter({
+      projects: [{ root: aliasProject, names: ["dist"] }],
+      minAgeMinutes: 0,
+      minBytes: 0,
+      processCheck: "required",
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+
+    expect(probe.status).toBe("degraded");
+    expect(probe.diagnostics[0]?.code).toBe("ARTIFACT_PROJECT_NONCANONICAL");
   });
 });

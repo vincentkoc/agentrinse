@@ -1,33 +1,44 @@
+import { mkdtemp, realpath, symlink } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, parse } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { UnsafeAuditRootError, assertAuditRoot, isPathInside } from "../../src/core/safety.js";
 
 describe("assertAuditRoot", () => {
-  it("accepts an absolute synthetic root", () => {
-    const root = join(tmpdir(), "agentrinse-fixture");
+  it("accepts an absolute synthetic root", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-fixture-"));
 
-    expect(assertAuditRoot(root)).toBe(root);
+    await expect(assertAuditRoot(root)).resolves.toBe(await realpath(root));
   });
 
-  it("rejects the filesystem root", () => {
-    expect(() => assertAuditRoot("/")).toThrow(UnsafeAuditRootError);
+  it("rejects the filesystem root", async () => {
+    await expect(assertAuditRoot(parse(homedir()).root)).rejects.toBeInstanceOf(
+      UnsafeAuditRootError,
+    );
   });
 
-  it("accepts the real home", () => {
-    expect(assertAuditRoot(homedir())).toBe(homedir());
+  it("rejects a symlink alias to the filesystem root", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "agentrinse-root-link-"));
+    const link = join(parent, "root");
+    await symlink(parse(parent).root, link, "dir");
+
+    await expect(assertAuditRoot(link)).rejects.toBeInstanceOf(UnsafeAuditRootError);
   });
 
-  it("rejects an ancestor of the real home", () => {
-    expect(() => assertAuditRoot(dirname(homedir()))).toThrow(
+  it("accepts the real home", async () => {
+    await expect(assertAuditRoot(homedir())).resolves.toBe(await realpath(homedir()));
+  });
+
+  it("rejects an ancestor of the real home", async () => {
+    await expect(assertAuditRoot(dirname(homedir()))).rejects.toThrow(
       "ancestor of the real home directory",
     );
   });
 
-  it("rejects relative paths", () => {
-    expect(() => assertAuditRoot("./fixture")).toThrow("must be an absolute path");
+  it("rejects relative paths", async () => {
+    await expect(assertAuditRoot("./fixture")).rejects.toThrow("must be an absolute path");
   });
 });
 

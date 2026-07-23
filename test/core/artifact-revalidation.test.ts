@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -208,6 +208,41 @@ describe("revalidateArtifactRemove", () => {
     ).resolves.toMatchObject({
       status: "stale",
       diagnostic: { code: "ARTIFACT_OWNS_CWD" },
+    });
+  });
+
+  it("rejects an artifact reached through a symlinked project alias", async () => {
+    const value = await fixture();
+    const aliasParent = join(value.home, "alias");
+    const aliasProject = join(aliasParent, "project");
+    await symlink(value.home, aliasParent, "dir");
+    const aliasTarget = join(aliasProject, "node_modules");
+    const stats = await stat(aliasTarget);
+    const measurement = await measurePath(aliasTarget, { maxEntries: 100 });
+    const action: ArtifactRemoveAction = {
+      ...value.action,
+      target: {
+        ...value.action.target,
+        path: aliasTarget,
+        projectRoot: aliasProject,
+        device: stats.dev,
+        inode: stats.ino,
+        mtimeMs: stats.mtimeMs,
+        measuredBytes: measurement.bytes,
+        newestMtimeMs: measurement.newestMtimeMs,
+        fingerprint: measurement.fingerprint,
+      },
+    };
+    value.config.artifacts.projects = [{ root: aliasProject, names: ["node_modules"] }];
+
+    await expect(
+      revalidateArtifactRemove(action, value.home, value.config, {
+        cwd: value.home,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_REALPATH_CHANGED" },
     });
   });
 });

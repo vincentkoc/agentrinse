@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const root = await mkdtemp(join(tmpdir(), "agentrinse-smoke-"));
+const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-smoke-")));
 const home = join(root, "home");
 const auditPath = join(root, "audit.json");
 const planPath = join(root, "plan.json");

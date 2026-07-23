@@ -16,7 +16,7 @@ export type RunAuditOptions = {
 export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
   const clock = options.now ?? (() => new Date());
   const startedAt = clock();
-  const home = assertAuditRoot(options.home);
+  const home = await assertAuditRoot(options.home);
   const context: AuditContext = {
     home,
     now: startedAt,

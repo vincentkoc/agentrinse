@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, parse, relative, resolve } from "node:path";
 
 export class UnsafeAuditRootError extends Error {
   override readonly name = "UnsafeAuditRootError";
@@ -39,15 +39,17 @@ export async function resolvePhysicalPath(candidate: string): Promise<string> {
   }
 }
 
-export function assertAuditRoot(candidate: string, realHome = homedir()): string {
+export async function assertAuditRoot(candidate: string, realHome = homedir()): Promise<string> {
   if (!isAbsolute(candidate)) {
     throw new UnsafeAuditRootError("audit home must be an absolute path");
   }
 
-  const resolvedCandidate = resolve(candidate);
-  const resolvedHome = resolve(realHome);
+  const [resolvedCandidate, resolvedHome] = await Promise.all([
+    realpath(resolve(candidate)),
+    realpath(resolve(realHome)),
+  ]);
 
-  if (resolvedCandidate === "/") {
+  if (resolvedCandidate === parse(resolvedCandidate).root) {
     throw new UnsafeAuditRootError("refusing to use the filesystem root");
   }
 

@@ -119,6 +119,10 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             executeArtifactRemove(selectedAction, {
               id: () => selectedIsolationId,
               maxEntries: config.audit.maxEntries,
+              authorization: {
+                expiresAtMs: Date.parse(plan.expiresAt),
+                now: clock,
+              },
             }))
         )(action, isolationId);
         await journal.updateAction(action.actionId, {
@@ -134,18 +138,23 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           completedAt: clock().toISOString(),
           isolationPath: executionError?.isolationPath ?? isolationPath,
           diagnostic: {
-            severity: "error",
+            severity: executionError?.outcome === "skipped-stale" ? "warning" : "error",
             code:
-              executionError?.outcome === "partially-applied"
-                ? "ARTIFACT_PARTIALLY_APPLIED"
-                : executionError?.outcome === "rolled-back"
-                  ? "ARTIFACT_ROLLED_BACK"
-                  : "ARTIFACT_APPLY_FAILED",
+              executionError?.outcome === "skipped-stale"
+                ? "PLAN_EXPIRED_DURING_APPLY"
+                : executionError?.outcome === "partially-applied"
+                  ? "ARTIFACT_PARTIALLY_APPLIED"
+                  : executionError?.outcome === "rolled-back"
+                    ? "ARTIFACT_ROLLED_BACK"
+                    : "ARTIFACT_APPLY_FAILED",
             message: error instanceof Error ? error.message : String(error),
             adapter: action.adapter,
             resourceId: action.resourceId,
           },
         });
+        if (executionError?.outcome === "skipped-stale") {
+          continue;
+        }
         break;
       }
     }

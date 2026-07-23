@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,7 @@ describe("executeApplyCommand", () => {
   });
 
   it("requires non-interactive authorization and emits JSON", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-command-"));
+    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-command-")));
     const project = join(home, "project");
     const target = join(project, "node_modules");
     const stateDir = join(home, "state");

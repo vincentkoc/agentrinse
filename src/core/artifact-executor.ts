@@ -8,7 +8,11 @@ import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 
-export type ArtifactExecutionOutcome = "failed" | "rolled-back" | "partially-applied";
+export type ArtifactExecutionOutcome =
+  | "skipped-stale"
+  | "failed"
+  | "rolled-back"
+  | "partially-applied";
 
 export class ArtifactExecutionError extends Error {
   override readonly name = "ArtifactExecutionError";
@@ -37,6 +41,10 @@ export type ArtifactExecutorDependencies = {
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   maxEntries?: number;
+  authorization?: {
+    expiresAtMs: number;
+    now: () => Date;
+  };
 };
 
 export function artifactIsolationPath(action: ArtifactRemoveAction, id: string): string {
@@ -117,6 +125,17 @@ export async function executeArtifactRemove(
     throw new ArtifactExecutionError(
       "artifact identity changed before isolation",
       "failed",
+      isolationPath,
+    );
+  }
+
+  if (
+    dependencies.authorization !== undefined &&
+    dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
+  ) {
+    throw new ArtifactExecutionError(
+      "cleanup plan authorization expired before artifact isolation",
+      "skipped-stale",
       isolationPath,
     );
   }
@@ -214,6 +233,19 @@ export async function executeArtifactRemove(
     );
   }
 
+  if (
+    dependencies.authorization !== undefined &&
+    dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
+  ) {
+    await rollbackBeforeRemoval(
+      "cleanup plan authorization expired during artifact isolation",
+      action,
+      isolationPath,
+      inspect,
+      move,
+    );
+  }
+
   try {
     await remove(isolationPath);
   } catch (error) {
@@ -237,14 +269,26 @@ export async function executeArtifactRemove(
     );
   }
 
-  if (
-    (await pathExists(action.target.path, inspect)) ||
-    (await pathExists(isolationPath, inspect))
-  ) {
+  try {
+    if (
+      (await pathExists(action.target.path, inspect)) ||
+      (await pathExists(isolationPath, inspect))
+    ) {
+      throw new ArtifactExecutionError(
+        `artifact removal postcondition failed; inspect ${isolationPath}`,
+        "partially-applied",
+        isolationPath,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ArtifactExecutionError) {
+      throw error;
+    }
     throw new ArtifactExecutionError(
-      `artifact removal postcondition failed; inspect ${isolationPath}`,
+      `artifact removal completed but postconditions could not be verified; inspect ${isolationPath}`,
       "partially-applied",
       isolationPath,
+      { cause: error },
     );
   }
 

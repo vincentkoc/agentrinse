@@ -101,12 +101,16 @@ export async function revalidateArtifactRemove(
       );
     }
 
-    const [homeReal, projectReal, targetReal] = await Promise.all([
+    const [homeReal, projectReal, targetReal, cwdReal] = await Promise.all([
       realpath(resolve(home)),
       realpath(projectRoot),
       realpath(targetPath),
+      realpath(cwd),
     ]);
     if (
+      homeReal !== resolve(home) ||
+      projectReal !== projectRoot ||
+      targetReal !== targetPath ||
       !isPathInside(homeReal, projectReal) ||
       targetReal !== resolve(join(projectReal, action.target.name))
     ) {
@@ -114,6 +118,14 @@ export async function revalidateArtifactRemove(
         action,
         "ARTIFACT_REALPATH_CHANGED",
         "artifact realpath no longer matches its planned project root",
+      );
+    }
+
+    if (isPathInside(targetReal, cwdReal)) {
+      return stale(
+        action,
+        "ARTIFACT_OWNS_CWD",
+        "artifact is the physical current working directory or one of its ancestors",
       );
     }
 
