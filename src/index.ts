@@ -14,5 +14,11 @@ export {
 } from "./contracts/action.js";
 export { cleanupPlanSchema, type CleanupPlan } from "./contracts/plan.js";
 export { auditReportSchema, type AdapterProbe, type AuditReport } from "./contracts/report.js";
+export {
+  actionExecutionSchema,
+  cleanupRunSchema,
+  type ActionExecution,
+  type CleanupRun,
+} from "./contracts/run.js";
 export { runAudit, type RunAuditOptions } from "./core/audit.js";
 export { createCleanupPlan } from "./core/plan.js";
