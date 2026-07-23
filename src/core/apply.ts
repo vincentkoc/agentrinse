@@ -17,6 +17,11 @@ import {
 } from "./artifact-revalidation.js";
 import { sha256 } from "./digest.js";
 import { verifyCleanupPlan } from "./plan-verification.js";
+import { isPathInside } from "./safety.js";
+
+export class ApplySafetyError extends Error {
+  override readonly name = "ApplySafetyError";
+}
 
 export type ApplyResult = {
   plan: CleanupPlan;
@@ -45,6 +50,13 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
   const clock = options.dependencies?.clock ?? (() => new Date());
   const plan = verifyCleanupPlan(options.input, options.config, clock());
   const layout = stateLayout(options.stateRoot);
+  for (const action of plan.actions) {
+    if (isPathInside(action.target.path, layout.root)) {
+      throw new ApplySafetyError(
+        `state directory ${layout.root} must not be inside cleanup target ${action.target.path}`,
+      );
+    }
+  }
   const lock = await acquireApplyLock(layout.locks, plan.planId);
 
   try {

@@ -9,7 +9,7 @@ import type { AgentRinseConfig } from "../../src/config/schema.js";
 import type { ArtifactRemoveAction } from "../../src/contracts/action.js";
 import type { CleanupPlan } from "../../src/contracts/plan.js";
 import { ArtifactExecutionError, executeArtifactRemove } from "../../src/core/artifact-executor.js";
-import { applyCleanupPlan } from "../../src/core/apply.js";
+import { ApplySafetyError, applyCleanupPlan } from "../../src/core/apply.js";
 import { sha256Json } from "../../src/core/digest.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
@@ -216,5 +216,18 @@ describe("applyCleanupPlan", () => {
         },
       }),
     ).resolves.toBeDefined();
+  });
+
+  it("rejects a state directory beneath a cleanup target", async () => {
+    const value = await fixture();
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: join(value.target, "state"),
+        dependencies: { clock: CLOCK },
+      }),
+    ).rejects.toBeInstanceOf(ApplySafetyError);
   });
 });

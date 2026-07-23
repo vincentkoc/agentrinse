@@ -54,7 +54,12 @@ export function verifyCleanupPlan(
 
   const createdAt = Date.parse(plan.createdAt);
   const expiresAt = Date.parse(plan.expiresAt);
-  if (!Number.isFinite(createdAt) || !Number.isFinite(expiresAt) || createdAt > expiresAt) {
+  if (
+    !Number.isFinite(createdAt) ||
+    !Number.isFinite(expiresAt) ||
+    createdAt > expiresAt ||
+    createdAt > now.getTime()
+  ) {
     throw new PlanVerificationError(
       "PLAN_TIME_INVALID",
       "cleanup plan has an invalid authorization window",

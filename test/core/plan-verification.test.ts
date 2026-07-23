@@ -33,7 +33,7 @@ describe("verifyCleanupPlan", () => {
   });
 
   it("rejects modified plan content", () => {
-    const plan = { ...fixturePlan(), expectedReclaimBytes: 1 };
+    const plan = { ...fixturePlan(), auditDigest: "modified" };
 
     expect(() =>
       verifyCleanupPlan(plan, DEFAULT_CONFIG, new Date("2026-07-23T00:30:00.000Z")),
@@ -50,6 +50,16 @@ describe("verifyCleanupPlan", () => {
     ).toThrowError(
       expect.objectContaining<Partial<PlanVerificationError>>({
         code: "PLAN_EXPIRED",
+      }),
+    );
+  });
+
+  it("rejects plans whose authorization window starts in the future", () => {
+    expect(() =>
+      verifyCleanupPlan(fixturePlan(), DEFAULT_CONFIG, new Date("2026-07-22T23:59:59.000Z")),
+    ).toThrowError(
+      expect.objectContaining<Partial<PlanVerificationError>>({
+        code: "PLAN_TIME_INVALID",
       }),
     );
   });
