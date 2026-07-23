@@ -66,6 +66,14 @@ export function verifyCleanupPlan(
     );
   }
 
+  const maximumLifetime = config.plan.ttlMinutes * 60_000;
+  if (expiresAt - createdAt > maximumLifetime) {
+    throw new PlanVerificationError(
+      "PLAN_TIME_INVALID",
+      "cleanup plan exceeds the configured authorization lifetime",
+    );
+  }
+
   if (now.getTime() >= expiresAt) {
     throw new PlanVerificationError("PLAN_EXPIRED", `cleanup plan expired at ${plan.expiresAt}`);
   }

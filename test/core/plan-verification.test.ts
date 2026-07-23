@@ -12,7 +12,7 @@ function fixturePlan(): CleanupPlan {
     auditId: "audit-1",
     home: "/tmp/fixture",
     createdAt: "2026-07-23T00:00:00.000Z",
-    expiresAt: "2026-07-23T01:00:00.000Z",
+    expiresAt: "2026-07-23T00:30:00.000Z",
     policyVersion: 1,
     riskCeiling: "safe",
     configDigest: sha256Json(DEFAULT_CONFIG),
@@ -27,7 +27,7 @@ describe("verifyCleanupPlan", () => {
   it("accepts an intact unexpired plan for the current config", () => {
     const plan = fixturePlan();
 
-    expect(verifyCleanupPlan(plan, DEFAULT_CONFIG, new Date("2026-07-23T00:30:00.000Z"))).toEqual(
+    expect(verifyCleanupPlan(plan, DEFAULT_CONFIG, new Date("2026-07-23T00:15:00.000Z"))).toEqual(
       plan,
     );
   });
@@ -36,7 +36,7 @@ describe("verifyCleanupPlan", () => {
     const plan = { ...fixturePlan(), auditDigest: "modified" };
 
     expect(() =>
-      verifyCleanupPlan(plan, DEFAULT_CONFIG, new Date("2026-07-23T00:30:00.000Z")),
+      verifyCleanupPlan(plan, DEFAULT_CONFIG, new Date("2026-07-23T00:15:00.000Z")),
     ).toThrowError(
       expect.objectContaining<Partial<PlanVerificationError>>({
         code: "PLAN_TAMPERED",
@@ -46,7 +46,7 @@ describe("verifyCleanupPlan", () => {
 
   it("rejects plans after their authorization window", () => {
     expect(() =>
-      verifyCleanupPlan(fixturePlan(), DEFAULT_CONFIG, new Date("2026-07-23T01:00:00.000Z")),
+      verifyCleanupPlan(fixturePlan(), DEFAULT_CONFIG, new Date("2026-07-23T00:30:00.000Z")),
     ).toThrowError(
       expect.objectContaining<Partial<PlanVerificationError>>({
         code: "PLAN_EXPIRED",
@@ -64,12 +64,30 @@ describe("verifyCleanupPlan", () => {
     );
   });
 
+  it("rejects authorization windows longer than the configured TTL", () => {
+    const plan = fixturePlan();
+    const content: Omit<CleanupPlan, "planId"> = {
+      ...plan,
+      expiresAt: "2026-07-23T00:30:00.001Z",
+    };
+    delete (content as Partial<CleanupPlan>).planId;
+    const extended = { ...content, planId: cleanupPlanId(content) };
+
+    expect(() =>
+      verifyCleanupPlan(extended, DEFAULT_CONFIG, new Date("2026-07-23T00:15:00.000Z")),
+    ).toThrowError(
+      expect.objectContaining<Partial<PlanVerificationError>>({
+        code: "PLAN_TIME_INVALID",
+      }),
+    );
+  });
+
   it("rejects plans created from a different configuration", () => {
     expect(() =>
       verifyCleanupPlan(
         fixturePlan(),
         { ...DEFAULT_CONFIG, audit: { ...DEFAULT_CONFIG.audit, maxEntries: 1 } },
-        new Date("2026-07-23T00:30:00.000Z"),
+        new Date("2026-07-23T00:15:00.000Z"),
       ),
     ).toThrowError(
       expect.objectContaining<Partial<PlanVerificationError>>({

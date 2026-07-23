@@ -64,7 +64,7 @@ async function fixture(): Promise<{
     auditId: "audit-1",
     home,
     createdAt: "2026-07-23T00:00:00.000Z",
-    expiresAt: "2026-07-23T01:00:00.000Z",
+    expiresAt: "2026-07-23T00:30:00.000Z",
     policyVersion: 1,
     riskCeiling: "safe",
     configDigest: sha256Json(config),
@@ -76,7 +76,7 @@ async function fixture(): Promise<{
   return { action, config, plan, project, stateRoot, target };
 }
 
-const CLOCK = () => new Date("2026-07-23T00:30:00.000Z");
+const CLOCK = () => new Date("2026-07-23T00:15:00.000Z");
 
 async function exists(path: string): Promise<boolean> {
   try {
