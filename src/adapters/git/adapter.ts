@@ -47,7 +47,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           {
             severity: "warning",
             code: "GIT_ROOT_REQUIRED",
-            message: "Set adapters.git.root to a synthetic repository.",
+            message: "Set adapters.git.root to an explicit repository.",
             adapter: this.id,
           },
         ],
@@ -159,8 +159,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       code: "git-audit-only",
       source: "git",
       observedAt,
-      detail:
-        "The pre-alpha Git adapter does not yet prove dirty, process, session, or push state.",
+      detail: "The Git adapter does not yet prove dirty, process, session, or push state.",
     });
 
     return {

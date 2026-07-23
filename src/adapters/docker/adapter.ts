@@ -140,7 +140,7 @@ export class DockerAuditAdapter implements AuditAdapter {
           code: "docker-audit-only",
           source: "docker",
           observedAt,
-          detail: "The pre-alpha Docker adapter inventories resources but cannot prune them.",
+          detail: "The Docker adapter inventories resources but version 0.1 cannot prune them.",
         },
       ],
       facts: resource.facts,
