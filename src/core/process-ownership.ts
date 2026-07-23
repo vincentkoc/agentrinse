@@ -108,16 +108,12 @@ async function inspectLinux(
     return { status: "busy", matches };
   }
   if (incomplete) {
-    return {
-      status: "unknown",
-      matches: [],
-      reason: "one or more same-user processes could not be inspected",
-    };
+    return inspectWithLsof(target, options);
   }
   return { status: "idle", matches: [] };
 }
 
-async function inspectDarwin(
+async function inspectWithLsof(
   target: string,
   options: ProcessOwnershipOptions,
 ): Promise<ProcessOwnershipResult> {
@@ -183,7 +179,7 @@ export async function findProcessesUsingPath(
     return inspectLinux(resolve(target), options);
   }
   if (platform === "darwin") {
-    return inspectDarwin(resolve(target), options);
+    return inspectWithLsof(resolve(target), options);
   }
   return {
     status: "unknown",

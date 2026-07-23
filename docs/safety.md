@@ -57,6 +57,10 @@ After acquiring the exclusive lock, every action rechecks:
 Any uncertainty produces `skipped-stale`. Apply never widens the action or
 substitutes another target.
 
+On Linux, AgentRinse reads same-user `/proc` state directly. If hardened procfs
+settings prevent a complete scan, it falls back to `lsof`; if neither path can
+prove the artifact idle, cleanup remains blocked.
+
 ## Isolation and Removal
 
 An unchanged target is atomically renamed to a unique tombstone in the same
