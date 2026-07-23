@@ -6,6 +6,15 @@ export async function readJsonFile(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
 
+async function syncDirectory(path: string): Promise<void> {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   const directory = dirname(path);
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -20,6 +29,7 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
     await handle.close();
     await rename(temporary, path);
     await chmod(path, 0o600);
+    await syncDirectory(directory);
   } catch (error) {
     await handle.close().catch(() => undefined);
     await rm(temporary, { force: true }).catch(() => undefined);
