@@ -3,46 +3,38 @@ import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  UnsafeAuditRootError,
-  assertSyntheticAuditRoot,
-  isPathInside,
-} from "../../src/core/safety.js";
+import { UnsafeAuditRootError, assertAuditRoot, isPathInside } from "../../src/core/safety.js";
 
-describe("assertSyntheticAuditRoot", () => {
+describe("assertAuditRoot", () => {
   it("accepts an absolute synthetic root", () => {
     const root = join(tmpdir(), "agentrinse-fixture");
 
-    expect(assertSyntheticAuditRoot(root)).toBe(root);
+    expect(assertAuditRoot(root)).toBe(root);
   });
 
   it("rejects the filesystem root", () => {
-    expect(() => assertSyntheticAuditRoot("/")).toThrow(UnsafeAuditRootError);
+    expect(() => assertAuditRoot("/")).toThrow(UnsafeAuditRootError);
   });
 
-  it("rejects the real home", () => {
-    expect(() => assertSyntheticAuditRoot(homedir())).toThrow(
-      "pre-alpha builds refuse to audit the real home directory",
-    );
+  it("accepts the real home", () => {
+    expect(assertAuditRoot(homedir())).toBe(homedir());
   });
 
   it("rejects an ancestor of the real home", () => {
-    expect(() => assertSyntheticAuditRoot(dirname(homedir()))).toThrow(
+    expect(() => assertAuditRoot(dirname(homedir()))).toThrow(
       "ancestor of the real home directory",
     );
   });
 
   it("rejects relative paths", () => {
-    expect(() => assertSyntheticAuditRoot("./fixture")).toThrow("must be an absolute path");
+    expect(() => assertAuditRoot("./fixture")).toThrow("must be an absolute path");
   });
 });
 
 describe("isPathInside", () => {
   it("accepts a path at or below the root", () => {
     expect(isPathInside("/tmp/project", "/tmp/project")).toBe(true);
-    expect(isPathInside("/tmp/project", "/tmp/project/node_modules")).toBe(
-      true,
-    );
+    expect(isPathInside("/tmp/project", "/tmp/project/node_modules")).toBe(true);
   });
 
   it("rejects sibling-prefix paths", () => {

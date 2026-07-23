@@ -10,7 +10,7 @@ export function isPathInside(root: string, candidate: string): boolean {
   return result === "" || (!result.startsWith("..") && !isAbsolute(result));
 }
 
-export function assertSyntheticAuditRoot(candidate: string, realHome = homedir()): string {
+export function assertAuditRoot(candidate: string, realHome = homedir()): string {
   if (!isAbsolute(candidate)) {
     throw new UnsafeAuditRootError("audit home must be an absolute path");
   }
@@ -22,11 +22,7 @@ export function assertSyntheticAuditRoot(candidate: string, realHome = homedir()
     throw new UnsafeAuditRootError("refusing to use the filesystem root");
   }
 
-  if (resolvedCandidate === resolvedHome) {
-    throw new UnsafeAuditRootError("pre-alpha builds refuse to audit the real home directory");
-  }
-
-  if (isPathInside(resolvedCandidate, resolvedHome)) {
+  if (resolvedCandidate !== resolvedHome && isPathInside(resolvedCandidate, resolvedHome)) {
     throw new UnsafeAuditRootError("refusing to use an ancestor of the real home directory");
   }
 

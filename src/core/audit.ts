@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter, AuditContext } from "../contracts/adapter.js";
 import { auditReportSchema, type AuditReport } from "../contracts/report.js";
-import { assertSyntheticAuditRoot } from "./safety.js";
+import { assertAuditRoot } from "./safety.js";
 
 export type RunAuditOptions = {
   home: string;
@@ -16,7 +16,7 @@ export type RunAuditOptions = {
 export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
   const clock = options.now ?? (() => new Date());
   const startedAt = clock();
-  const home = assertSyntheticAuditRoot(options.home);
+  const home = assertAuditRoot(options.home);
   const context: AuditContext = {
     home,
     now: startedAt,
