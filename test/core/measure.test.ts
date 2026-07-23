@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,15 +49,15 @@ describe("measurePath", () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
     const path = join(root, "cache.bin");
     await writeFile(path, "before");
+    const original = await stat(path);
     const before = await measurePath(root, { maxEntries: 100 });
 
     await writeFile(path, "change");
-    const changedAt = new Date(before.newestMtimeMs + 10_000);
-    await utimes(path, changedAt, changedAt);
+    await utimes(path, original.atime, original.mtime);
     const after = await measurePath(root, { maxEntries: 100 });
 
     expect(after.bytes).toBe(before.bytes);
     expect(after.fingerprint).not.toBe(before.fingerprint);
-    expect(after.newestMtimeMs).toBeGreaterThan(before.newestMtimeMs);
+    expect(after.mountBoundaries).toBe(0);
   });
 });

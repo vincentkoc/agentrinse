@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -107,6 +107,7 @@ describe("applyCleanupPlan", () => {
             truncated: false,
             newestMtimeMs: value.action.target.newestMtimeMs,
             fingerprint: value.action.target.fingerprint,
+            mountBoundaries: 0,
           },
         }),
       },
@@ -159,6 +160,7 @@ describe("applyCleanupPlan", () => {
             truncated: false,
             newestMtimeMs: value.action.target.newestMtimeMs,
             fingerprint: value.action.target.fingerprint,
+            mountBoundaries: 0,
           },
         }),
         execute: async (action, isolationId) =>
@@ -200,6 +202,7 @@ describe("applyCleanupPlan", () => {
             truncated: false,
             newestMtimeMs: value.action.target.newestMtimeMs,
             fingerprint: value.action.target.fingerprint,
+            mountBoundaries: 0,
           },
         }),
         execute,
@@ -263,5 +266,22 @@ describe("applyCleanupPlan", () => {
       }),
     ).rejects.toThrow();
     expect(await exists(value.target)).toBe(true);
+  });
+
+  it("rejects a state symlink that resolves beneath a cleanup target", async () => {
+    const value = await fixture();
+    const physicalState = join(value.target, "state");
+    const stateLink = join(value.project, "state-link");
+    await mkdir(physicalState);
+    await symlink(physicalState, stateLink);
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: stateLink,
+        dependencies: { clock: CLOCK },
+      }),
+    ).rejects.toBeInstanceOf(ApplySafetyError);
   });
 });

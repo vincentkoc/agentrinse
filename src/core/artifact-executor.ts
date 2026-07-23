@@ -4,6 +4,8 @@ import { lstat, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { ArtifactRemoveAction } from "../contracts/action.js";
+import { measurePath, type Measurement } from "./measure.js";
+import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 
 export type ArtifactExecutionOutcome = "failed" | "rolled-back" | "partially-applied";
 
@@ -30,6 +32,9 @@ export type ArtifactExecutorDependencies = {
   inspect?: (path: string) => Promise<Stats>;
   move?: (source: string, destination: string) => Promise<void>;
   remove?: (path: string) => Promise<void>;
+  measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
+  processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
+  maxEntries?: number;
 };
 
 export function artifactIsolationPath(action: ArtifactRemoveAction, id: string): string {
@@ -82,6 +87,8 @@ export async function executeArtifactRemove(
         maxRetries: 3,
         retryDelay: 100,
       }));
+  const measure = dependencies.measure ?? measurePath;
+  const processProbe = dependencies.processProbe ?? findProcessesUsingPath;
   const isolationPath = artifactIsolationPath(action, dependencies.id?.() ?? randomUUID());
 
   if (await pathExists(isolationPath, inspect)) {
@@ -135,24 +142,59 @@ export async function executeArtifactRemove(
   }
 
   if (!matchesIdentity(isolated, action)) {
-    try {
-      await move(isolationPath, action.target.path);
-      throw new ArtifactExecutionError(
-        "artifact identity changed during isolation; original path restored",
-        "rolled-back",
-        action.target.path,
-      );
-    } catch (error) {
-      if (error instanceof ArtifactExecutionError && error.outcome === "rolled-back") {
-        throw error;
-      }
-      throw new ArtifactExecutionError(
-        `artifact identity changed and rollback failed; recovery path: ${isolationPath}`,
-        "partially-applied",
+    await rollbackBeforeRemoval(
+      "artifact identity changed during isolation",
+      action,
+      isolationPath,
+      inspect,
+      move,
+    );
+  }
+
+  try {
+    const measurement = await measure(isolationPath, {
+      maxEntries: dependencies.maxEntries ?? 100_000,
+    });
+    if (
+      measurement.truncated ||
+      measurement.mountBoundaries > 0 ||
+      measurement.bytes !== action.target.measuredBytes ||
+      measurement.newestMtimeMs !== action.target.newestMtimeMs ||
+      measurement.fingerprint !== action.target.fingerprint
+    ) {
+      await rollbackBeforeRemoval(
+        "artifact contents changed during isolation",
+        action,
         isolationPath,
-        { cause: error },
+        inspect,
+        move,
       );
     }
+
+    const ownership = await processProbe(isolationPath);
+    if (ownership.status !== "idle") {
+      await rollbackBeforeRemoval(
+        ownership.status === "busy"
+          ? "a process acquired the artifact during isolation"
+          : "process ownership became unknown during isolation",
+        action,
+        isolationPath,
+        inspect,
+        move,
+      );
+    }
+  } catch (error) {
+    if (error instanceof ArtifactExecutionError) {
+      throw error;
+    }
+    await rollbackBeforeRemoval(
+      "artifact could not be revalidated after isolation",
+      action,
+      isolationPath,
+      inspect,
+      move,
+      error,
+    );
   }
 
   try {
@@ -193,4 +235,34 @@ export async function executeArtifactRemove(
     reclaimedBytes: action.target.measuredBytes,
     isolationPath,
   };
+}
+
+async function rollbackBeforeRemoval(
+  reason: string,
+  action: ArtifactRemoveAction,
+  isolationPath: string,
+  inspect: (path: string) => Promise<Stats>,
+  move: (source: string, destination: string) => Promise<void>,
+  cause?: unknown,
+): Promise<never> {
+  try {
+    if (await pathExists(action.target.path, inspect)) {
+      throw new Error("original path reappeared before rollback");
+    }
+    await move(isolationPath, action.target.path);
+  } catch (error) {
+    throw new ArtifactExecutionError(
+      `${reason} and rollback failed; recovery path: ${isolationPath}`,
+      "partially-applied",
+      isolationPath,
+      { cause: error },
+    );
+  }
+
+  throw new ArtifactExecutionError(
+    `${reason}; original path restored`,
+    "rolled-back",
+    action.target.path,
+    cause === undefined ? undefined : { cause },
+  );
 }

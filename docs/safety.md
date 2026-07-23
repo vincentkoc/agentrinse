@@ -42,9 +42,10 @@ After acquiring the exclusive lock, every action rechecks:
 3. directory and non-symlink type
 4. device, inode, and root mtime identity
 5. complete byte measurement, newest descendant mtime, and deterministic
-   recursive metadata fingerprint
+   recursive metadata fingerprint including ctime
 6. current working directory ownership
 7. same-user process cwd and file-descriptor ownership
+8. absence of root or nested filesystem mount boundaries
 
 Any uncertainty produces `skipped-stale`. Apply never widens the action or
 substitutes another target.
@@ -52,7 +53,8 @@ substitutes another target.
 ## Isolation and Removal
 
 An unchanged target is atomically renamed to a unique tombstone in the same
-parent directory. The moved inode is verified again before recursive removal.
+parent directory. The moved inode, recursive fingerprint, mount boundaries,
+and process ownership are verified again before recursive removal.
 
 - failure before removal restores the original path when possible
 - a removal failure is `partially-applied`, even if the remaining tree is

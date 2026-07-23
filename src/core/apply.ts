@@ -17,7 +17,7 @@ import {
 } from "./artifact-revalidation.js";
 import { sha256 } from "./digest.js";
 import { verifyCleanupPlan } from "./plan-verification.js";
-import { isPathInside } from "./safety.js";
+import { isPathInside, resolvePhysicalPath } from "./safety.js";
 
 export class ApplySafetyError extends Error {
   override readonly name = "ApplySafetyError";
@@ -51,8 +51,13 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
   const config = agentRinseConfigSchema.parse(options.config);
   const plan = verifyCleanupPlan(options.input, config, clock());
   const layout = stateLayout(options.stateRoot);
+  const physicalStateRoot = await resolvePhysicalPath(layout.root);
   for (const action of plan.actions) {
-    if (isPathInside(action.target.path, layout.root)) {
+    const physicalTarget = await resolvePhysicalPath(action.target.path);
+    if (
+      isPathInside(action.target.path, layout.root) ||
+      isPathInside(physicalTarget, physicalStateRoot)
+    ) {
       throw new ApplySafetyError(
         `state directory ${layout.root} must not be inside cleanup target ${action.target.path}`,
       );
@@ -98,6 +103,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           ((selectedAction, selectedIsolationId) =>
             executeArtifactRemove(selectedAction, {
               id: () => selectedIsolationId,
+              maxEntries: config.audit.maxEntries,
             }))
         )(action, isolationId);
         await journal.updateAction(action.actionId, {

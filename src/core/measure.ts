@@ -9,6 +9,7 @@ export type Measurement = {
   truncated: boolean;
   newestMtimeMs: number;
   fingerprint: string;
+  mountBoundaries: number;
 };
 
 export type MeasureOptions = {
@@ -24,10 +25,12 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
     truncated: false,
     newestMtimeMs: 0,
     fingerprint: "",
+    mountBoundaries: 0,
   };
 
   const pending = [root];
   const fingerprint = createHash("sha256");
+  let rootDevice: number | undefined;
 
   while (pending.length > 0) {
     options.signal?.throwIfAborted();
@@ -43,6 +46,7 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
     }
 
     const stats = await lstat(path);
+    rootDevice ??= stats.dev;
     result.entries += 1;
     result.newestMtimeMs = Math.max(result.newestMtimeMs, stats.mtimeMs);
     const identity = {
@@ -52,10 +56,16 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
       mode: stats.mode,
       size: stats.size,
       mtimeMs: stats.mtimeMs,
+      ...(path === root ? {} : { ctimeMs: stats.ctimeMs }),
       type: stats.isSymbolicLink() ? "symlink" : stats.isDirectory() ? "directory" : "file",
       ...(stats.isSymbolicLink() ? { link: await readlink(path) } : {}),
     };
     fingerprint.update(`${JSON.stringify(identity)}\n`);
+
+    if (path !== root && stats.dev !== rootDevice) {
+      result.mountBoundaries += 1;
+      continue;
+    }
 
     if (stats.isSymbolicLink()) {
       result.symlinksSkipped += 1;

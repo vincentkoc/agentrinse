@@ -88,7 +88,8 @@ export async function revalidateArtifactRemove(
       !projectStats.isDirectory() ||
       projectStats.isSymbolicLink() ||
       !targetStats.isDirectory() ||
-      targetStats.isSymbolicLink()
+      targetStats.isSymbolicLink() ||
+      projectStats.dev !== targetStats.dev
     ) {
       return stale(
         action,
@@ -132,7 +133,8 @@ export async function revalidateArtifactRemove(
       measurement.truncated ||
       measurement.bytes !== action.target.measuredBytes ||
       measurement.newestMtimeMs !== action.target.newestMtimeMs ||
-      measurement.fingerprint !== action.target.fingerprint
+      measurement.fingerprint !== action.target.fingerprint ||
+      measurement.mountBoundaries > 0
     ) {
       return stale(
         action,

@@ -124,6 +124,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
       if (!validation.roots.includes(projectRoot)) {
         continue;
       }
+      const projectStats = await lstat(projectRoot);
 
       for (const name of project.names) {
         context.signal?.throwIfAborted();
@@ -186,6 +187,8 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               isDirectory,
               isSymlink,
               measurementTruncated: measurement?.truncated ?? false,
+              mountBoundaries: measurement?.mountBoundaries ?? 0,
+              isMountRoot: stats.dev !== projectStats.dev,
               entries: measurement?.entries,
               processOwnership: ownership,
             },
@@ -240,6 +243,19 @@ export class ArtifactAuditAdapter implements AuditAdapter {
         severity: "warning",
         code: "ARTIFACT_MEASUREMENT_TRUNCATED",
         message: "The entry budget was exhausted before measurement completed.",
+        adapter: this.id,
+        resourceId: resource.resource.id,
+      });
+    } else if (
+      facts.isMountRoot === true ||
+      (typeof facts.mountBoundaries === "number" && facts.mountBoundaries > 0)
+    ) {
+      state = "blocked";
+      confidence = "certain";
+      warnings.push({
+        severity: "warning",
+        code: "ARTIFACT_MOUNT_BOUNDARY",
+        message: "Artifact cleanup never crosses a filesystem mount boundary.",
         adapter: this.id,
         resourceId: resource.resource.id,
       });

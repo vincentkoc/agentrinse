@@ -16,8 +16,10 @@ The first production mutation boundary is intentionally narrow:
 - revalidates path, realpath, inode, device, recursive metadata fingerprint,
   newest descendant mtime, measured bytes, configured scope, current working
   directory, and process ownership after acquiring the apply lock
+- rejects artifact roots and descendants that cross filesystem mount
+  boundaries
 - atomically renames an artifact to a same-parent tombstone before recursive
-  removal
+  removal, then repeats fingerprint and process checks on the isolated tree
 - journals every transition and records the recovery path for partial actions
 
 Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, Grok Build, Git,

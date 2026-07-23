@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,6 +61,7 @@ describe("executeArtifactRemove", () => {
     const value = await fixture();
     const result = await executeArtifactRemove(value.action, {
       id: () => "success",
+      processProbe: async () => ({ status: "idle", matches: [] }),
     });
 
     expect(await exists(value.target)).toBe(false);
@@ -79,6 +80,7 @@ describe("executeArtifactRemove", () => {
         remove: async () => {
           throw new Error("injected remove failure");
         },
+        processProbe: async () => ({ status: "idle", matches: [] }),
       });
     } catch (error) {
       caught = error;
@@ -110,6 +112,7 @@ describe("executeArtifactRemove", () => {
           }
           return stats;
         },
+        processProbe: async () => ({ status: "idle", matches: [] }),
       });
     } catch (error) {
       caught = error;
@@ -121,5 +124,90 @@ describe("executeArtifactRemove", () => {
     });
     expect(await exists(value.target)).toBe(true);
     expect(await exists(isolationPath)).toBe(false);
+  });
+
+  it("rolls back when contents change after isolation", async () => {
+    const value = await fixture();
+
+    let caught: unknown;
+    try {
+      await executeArtifactRemove(value.action, {
+        id: () => "content-race",
+        move: async (source, destination) => {
+          await rename(source, destination);
+          if (source === value.target) {
+            await writeFile(join(destination, "cache.bin"), "change");
+          }
+        },
+        processProbe: async () => ({
+          status: "idle",
+          matches: [],
+        }),
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      outcome: "rolled-back",
+      isolationPath: value.target,
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("rolls back when a nested mount boundary is detected", async () => {
+    const value = await fixture();
+
+    let caught: unknown;
+    try {
+      await executeArtifactRemove(value.action, {
+        id: () => "mount-boundary",
+        measure: async (path, options) => ({
+          ...(await measurePath(path, options)),
+          mountBoundaries: 1,
+        }),
+        processProbe: async () => ({
+          status: "idle",
+          matches: [],
+        }),
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      outcome: "rolled-back",
+      isolationPath: value.target,
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("rolls back when a process acquires the isolated tree", async () => {
+    const value = await fixture();
+
+    let caught: unknown;
+    try {
+      await executeArtifactRemove(value.action, {
+        id: () => "process-race",
+        processProbe: async () => ({
+          status: "busy",
+          matches: [
+            {
+              pid: 42,
+              source: "fd",
+              path: join(value.target, "cache.bin"),
+            },
+          ],
+        }),
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      outcome: "rolled-back",
+      isolationPath: value.target,
+    });
+    expect(await exists(value.target)).toBe(true);
   });
 });
