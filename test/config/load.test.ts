@@ -1,0 +1,42 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import { loadConfig } from "../../src/config/load.js";
+
+describe("loadConfig", () => {
+  it("returns isolated defaults", async () => {
+    const first = await loadConfig();
+    first.adapters.codex = { enabled: false };
+
+    const second = await loadConfig();
+    expect(second.adapters.codex).toEqual({ enabled: true });
+  });
+
+  it("merges a partial config over defaults", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        adapters: {
+          opencode: { enabled: false },
+        },
+        audit: {
+          measureBytes: false,
+        },
+      }),
+    );
+
+    const config = await loadConfig(path);
+    expect(config.adapters.opencode).toEqual({ enabled: false });
+    expect(config.adapters.codex).toEqual({ enabled: true });
+    expect(config.audit).toEqual({
+      maxEntries: 100_000,
+      measureBytes: false,
+    });
+  });
+});
