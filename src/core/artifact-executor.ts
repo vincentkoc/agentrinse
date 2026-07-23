@@ -32,6 +32,10 @@ export type ArtifactExecutorDependencies = {
   remove?: (path: string) => Promise<void>;
 };
 
+export function artifactIsolationPath(action: ArtifactRemoveAction, id: string): string {
+  return join(dirname(action.target.path), `.agentrinse-${id}.tombstone`);
+}
+
 function isMissing(error: unknown): boolean {
   return (
     error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
@@ -78,10 +82,7 @@ export async function executeArtifactRemove(
         maxRetries: 3,
         retryDelay: 100,
       }));
-  const isolationPath = join(
-    dirname(action.target.path),
-    `.agentrinse-${dependencies.id?.() ?? randomUUID()}.tombstone`,
-  );
+  const isolationPath = artifactIsolationPath(action, dependencies.id?.() ?? randomUUID());
 
   if (await pathExists(isolationPath, inspect)) {
     throw new ArtifactExecutionError(
