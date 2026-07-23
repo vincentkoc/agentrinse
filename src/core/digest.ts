@@ -27,3 +27,7 @@ export function sha256(value: JsonValue | string): string {
   const input = typeof value === "string" ? value : canonicalJson(value);
   return createHash("sha256").update(input).digest("hex");
 }
+
+export function sha256Json(value: unknown): string {
+  return sha256(JSON.parse(JSON.stringify(value)) as JsonValue);
+}

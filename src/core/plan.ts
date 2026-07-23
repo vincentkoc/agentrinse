@@ -2,11 +2,7 @@ import type { AgentRinseConfig } from "../config/schema.js";
 import type { ActionRisk } from "../contracts/action.js";
 import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import type { AuditReport } from "../contracts/report.js";
-import { sha256, type JsonValue } from "./digest.js";
-
-function toJsonValue(value: unknown): JsonValue {
-  return JSON.parse(JSON.stringify(value)) as JsonValue;
-}
+import { sha256Json } from "./digest.js";
 
 const RISK_ORDER: Record<ActionRisk, number> = {
   safe: 0,
@@ -22,8 +18,8 @@ export function createCleanupPlan(
 ): CleanupPlan {
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + config.plan.ttlMinutes * 60_000).toISOString();
-  const configDigest = sha256(toJsonValue(config));
-  const auditDigest = sha256(toJsonValue(audit));
+  const configDigest = sha256Json(config);
+  const auditDigest = sha256Json(audit);
   const actions = audit.findings
     .filter((finding) => finding.state === "eligible")
     .flatMap((finding) => finding.candidateActions)
@@ -48,6 +44,6 @@ export function createCleanupPlan(
 
   return cleanupPlanSchema.parse({
     ...planWithoutId,
-    planId: sha256(toJsonValue(planWithoutId)),
+    planId: sha256Json(planWithoutId),
   });
 }
