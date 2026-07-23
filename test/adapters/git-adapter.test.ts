@@ -50,18 +50,11 @@ describe("GitWorktreeAuditAdapter", () => {
     const probe = await adapter.probe(context);
     const collection = await adapter.collect(context, probe);
     const findings = await Promise.all(
-      collection.resources.map((resource) =>
-        adapter.classify(context, resource),
-      ),
+      collection.resources.map((resource) => adapter.classify(context, resource)),
     );
 
     expect(collection.resources).toHaveLength(2);
-    expect(findings.map((finding) => finding.state)).toEqual([
-      "protected",
-      "protected",
-    ]);
-    expect(findings[0]?.roots.map((root) => root.code)).toContain(
-      "main-worktree",
-    );
+    expect(findings.map((finding) => finding.state)).toEqual(["protected", "protected"]);
+    expect(findings[0]?.roots.map((root) => root.code)).toContain("main-worktree");
   });
 });

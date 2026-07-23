@@ -60,4 +60,3 @@ export function parseWorktreePorcelain(input: string): GitWorktreeRecord[] {
   pushCurrent();
   return records;
 }
-

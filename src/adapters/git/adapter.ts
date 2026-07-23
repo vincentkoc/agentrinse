@@ -3,11 +3,7 @@ import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
-import type {
-  AuditAdapter,
-  AuditContext,
-  CollectionResult,
-} from "../../contracts/adapter.js";
+import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import type { Finding, RootEvidence } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
@@ -29,9 +25,7 @@ async function defaultGitRunner(args: string[]): Promise<string> {
 
 function isMissing(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "ENOENT"
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
   );
 }
 
@@ -63,12 +57,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     const requestedRoot = resolve(this.root);
     try {
       const root = (
-        await this.runGit([
-          "-C",
-          requestedRoot,
-          "rev-parse",
-          "--show-toplevel",
-        ])
+        await this.runGit(["-C", requestedRoot, "rev-parse", "--show-toplevel"])
       ).trim();
       return {
         adapter: this.id,
@@ -95,22 +84,12 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     }
   }
 
-  async collect(
-    context: AuditContext,
-    probe: AdapterProbe,
-  ): Promise<CollectionResult> {
+  async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
       return { resources: [], diagnostics: [] };
     }
 
-    const output = await this.runGit([
-      "-C",
-      probe.root,
-      "worktree",
-      "list",
-      "--porcelain",
-      "-z",
-    ]);
+    const output = await this.runGit(["-C", probe.root, "worktree", "list", "--porcelain", "-z"]);
     const records = parseWorktreePorcelain(output);
     const resources: ResourceSnapshot[] = [];
 
@@ -154,10 +133,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     return { resources, diagnostics: [] };
   }
 
-  async classify(
-    context: AuditContext,
-    resource: ResourceSnapshot,
-  ): Promise<Finding> {
+  async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const observedAt = context.now.toISOString();
     const roots: RootEvidence[] = [];
 

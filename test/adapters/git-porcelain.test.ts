@@ -35,8 +35,6 @@ describe("parseWorktreePorcelain", () => {
   });
 
   it("rejects fields before the first worktree", () => {
-    expect(() => parseWorktreePorcelain("HEAD abc\0")).toThrow(
-      "field before record",
-    );
+    expect(() => parseWorktreePorcelain("HEAD abc\0")).toThrow("field before record");
   });
 });

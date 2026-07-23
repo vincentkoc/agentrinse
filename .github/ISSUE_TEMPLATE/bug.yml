@@ -56,4 +56,3 @@ body:
       options:
         - label: I removed transcripts, secrets, private hostnames, and personal absolute paths.
           required: true
-

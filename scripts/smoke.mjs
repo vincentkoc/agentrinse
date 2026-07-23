@@ -14,10 +14,7 @@ await mkdir(join(home, ".codex", "sessions"), { recursive: true });
 await mkdir(join(home, ".local", "share", "opencode", "snapshot"), {
   recursive: true,
 });
-await writeFile(
-  join(home, ".codex", "sessions", "thread.jsonl"),
-  "synthetic fixture\n",
-);
+await writeFile(join(home, ".codex", "sessions", "thread.jsonl"), "synthetic fixture\n");
 await writeFile(
   join(home, ".local", "share", "opencode", "snapshot", "object"),
   "synthetic snapshot\n",
@@ -25,15 +22,7 @@ await writeFile(
 
 await execFileAsync(
   process.execPath,
-  [
-    "dist/cli.js",
-    "audit",
-    "--home",
-    home,
-    "--json",
-    "--output",
-    auditPath,
-  ],
+  ["dist/cli.js", "audit", "--home", home, "--json", "--output", auditPath],
   { cwd: process.cwd() },
 );
 await execFileAsync(
