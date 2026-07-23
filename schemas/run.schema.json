@@ -26,12 +26,7 @@
     },
     "status": {
       "type": "string",
-      "enum": [
-        "running",
-        "completed",
-        "partial",
-        "failed"
-      ]
+      "enum": ["running", "completed", "partial", "failed"]
     },
     "actions": {
       "type": "array",
@@ -83,11 +78,7 @@
             "properties": {
               "severity": {
                 "type": "string",
-                "enum": [
-                  "info",
-                  "warning",
-                  "error"
-                ]
+                "enum": ["info", "warning", "error"]
               },
               "code": {
                 "type": "string",
@@ -110,19 +101,11 @@
                 "minLength": 1
               }
             },
-            "required": [
-              "severity",
-              "code",
-              "message"
-            ],
+            "required": ["severity", "code", "message"],
             "additionalProperties": false
           }
         },
-        "required": [
-          "actionId",
-          "type",
-          "status"
-        ],
+        "required": ["actionId", "type", "status"],
         "additionalProperties": false
       }
     },
@@ -138,11 +121,7 @@
         "properties": {
           "severity": {
             "type": "string",
-            "enum": [
-              "info",
-              "warning",
-              "error"
-            ]
+            "enum": ["info", "warning", "error"]
           },
           "code": {
             "type": "string",
@@ -165,11 +144,7 @@
             "minLength": 1
           }
         },
-        "required": [
-          "severity",
-          "code",
-          "message"
-        ],
+        "required": ["severity", "code", "message"],
         "additionalProperties": false
       }
     }

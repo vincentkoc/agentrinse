@@ -34,12 +34,7 @@
     },
     "riskCeiling": {
       "type": "string",
-      "enum": [
-        "safe",
-        "recoverable",
-        "destructive",
-        "experimental"
-      ]
+      "enum": ["safe", "recoverable", "destructive", "experimental"]
     },
     "configDigest": {
       "type": "string",

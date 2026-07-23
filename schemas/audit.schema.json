@@ -35,13 +35,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "available",
-              "absent",
-              "degraded",
-              "disabled",
-              "unsupported"
-            ]
+            "enum": ["available", "absent", "degraded", "disabled", "unsupported"]
           },
           "version": {
             "type": "string",
@@ -62,11 +56,7 @@
               "properties": {
                 "severity": {
                   "type": "string",
-                  "enum": [
-                    "info",
-                    "warning",
-                    "error"
-                  ]
+                  "enum": ["info", "warning", "error"]
                 },
                 "code": {
                   "type": "string",
@@ -89,21 +79,12 @@
                   "minLength": 1
                 }
               },
-              "required": [
-                "severity",
-                "code",
-                "message"
-              ],
+              "required": ["severity", "code", "message"],
               "additionalProperties": false
             }
           }
         },
-        "required": [
-          "adapter",
-          "status",
-          "detail",
-          "diagnostics"
-        ],
+        "required": ["adapter", "status", "detail", "diagnostics"],
         "additionalProperties": false
       }
     },
@@ -175,34 +156,16 @@
                 "minLength": 1
               }
             },
-            "required": [
-              "id",
-              "adapter",
-              "kind",
-              "canonicalKey",
-              "displayName"
-            ],
+            "required": ["id", "adapter", "kind", "canonicalKey", "displayName"],
             "additionalProperties": false
           },
           "state": {
             "type": "string",
-            "enum": [
-              "protected",
-              "eligible",
-              "blocked",
-              "unknown",
-              "ignored"
-            ]
+            "enum": ["protected", "eligible", "blocked", "unknown", "ignored"]
           },
           "confidence": {
             "type": "string",
-            "enum": [
-              "certain",
-              "high",
-              "medium",
-              "low",
-              "unknown"
-            ]
+            "enum": ["certain", "high", "medium", "low", "unknown"]
           },
           "roots": {
             "type": "array",
@@ -231,12 +194,7 @@
                   "minLength": 1
                 }
               },
-              "required": [
-                "code",
-                "source",
-                "observedAt",
-                "detail"
-              ],
+              "required": ["code", "source", "observedAt", "detail"],
               "additionalProperties": false
             }
           },
@@ -361,11 +319,7 @@
               "properties": {
                 "severity": {
                   "type": "string",
-                  "enum": [
-                    "info",
-                    "warning",
-                    "error"
-                  ]
+                  "enum": ["info", "warning", "error"]
                 },
                 "code": {
                   "type": "string",
@@ -388,11 +342,7 @@
                   "minLength": 1
                 }
               },
-              "required": [
-                "severity",
-                "code",
-                "message"
-              ],
+              "required": ["severity", "code", "message"],
               "additionalProperties": false
             }
           }
@@ -420,11 +370,7 @@
         "properties": {
           "severity": {
             "type": "string",
-            "enum": [
-              "info",
-              "warning",
-              "error"
-            ]
+            "enum": ["info", "warning", "error"]
           },
           "code": {
             "type": "string",
@@ -447,11 +393,7 @@
             "minLength": 1
           }
         },
-        "required": [
-          "severity",
-          "code",
-          "message"
-        ],
+        "required": ["severity", "code", "message"],
         "additionalProperties": false
       }
     }
