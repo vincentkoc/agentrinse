@@ -524,6 +524,9 @@ These are hard product requirements.
 14. Human-readable output is not the source of truth; the run manifest is.
 15. A command interruption must leave enough state to identify completed and
     incomplete actions.
+16. Artifact removal never operates on sockets, pipes, devices, or other
+    special filesystem entries.
+17. Plan authorization is rechecked immediately before every mutation.
 
 ### Git invariants
 
@@ -1024,7 +1027,8 @@ plan.
 Plans default to a 30-minute authorization window.
 
 Expiration does not automatically make every observation invalid, but apply
-must refuse an expired plan and require `agentrinse plan refresh <plan-id>`.
+must refuse an expired plan. If authorization expires after a run starts, each
+not-yet-mutated action becomes `skipped-stale`.
 
 Refresh:
 
@@ -1047,12 +1051,13 @@ Refresh:
    1. acquire the resource lock
    2. revalidate critical facts
    3. record `revalidating`
-   4. skip if facts changed
-   5. record `applying`
-   6. execute the exact action
-   7. verify postconditions
-   8. record the result and fsync
-   9. release the resource lock
+   4. skip if facts, retention policy, or supported entry types changed
+   5. recheck plan expiration
+   6. record `applying`
+   7. execute the exact action
+   8. verify postconditions
+   9. record the result and fsync
+   10. release the resource lock
 8. Write the final run summary.
 9. Release the global lock.
 

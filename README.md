@@ -18,6 +18,8 @@ The first production mutation boundary is intentionally narrow:
   directory, and process ownership after acquiring the apply lock
 - rejects artifact roots and descendants that cross filesystem mount
   boundaries
+- rejects sockets, pipes, devices, and other non-regular filesystem entries
+- rechecks size, age, and plan expiration immediately before each mutation
 - atomically renames an artifact to a same-parent tombstone before recursive
   removal, then repeats fingerprint and process checks on the isolated tree
 - journals every transition and records the recovery path for partial actions
@@ -95,10 +97,11 @@ agentrinse apply \
   --yes
 ```
 
-Without `--yes`, apply requires an interactive terminal confirmation. A plan
-is rejected when it expires, changes, no longer matches the config, or contains
-inconsistent action totals. Changed resources are recorded as
-`skipped-stale`, not deleted.
+Without `--yes`, apply requires an interactive terminal confirmation. JSON
+output requires `--yes` so prompts can never corrupt stdout. A plan is rejected
+when it expires, changes, no longer matches the config, or contains inconsistent
+action totals. An action whose authorization expires during a run is recorded
+as `skipped-stale`, not deleted.
 
 Run journals are stored under `$XDG_STATE_HOME/agentrinse/runs` or
 `$HOME/.local/state/agentrinse/runs`. Use `--state-dir` to select another

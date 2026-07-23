@@ -13,6 +13,8 @@ Only `artifacts.remove` mutates:
 - the newest descendant exceeds the configured age threshold and the complete
   artifact exceeds the size threshold
 - the complete measurement fits within the entry budget
+- the tree contains only directories, regular files, and skipped symlinks;
+  sockets, pipes, devices, and other special entries are blocked
 - same-user process ownership is proven idle
 - the action risk is `safe`
 
@@ -21,7 +23,8 @@ Provider state, Git worktrees, and Docker resources remain report-only.
 ## Authorization
 
 Apply requires a saved content-addressed plan and interactive confirmation or
-`--yes`. The plan records:
+`--yes`. Machine-readable JSON mode requires `--yes` and never prompts on
+stdout. The plan records:
 
 - the audit and config digests
 - the exact home, project root, artifact path, and filesystem identity
@@ -43,9 +46,12 @@ After acquiring the exclusive lock, every action rechecks:
 4. device, inode, and root mtime identity
 5. complete byte measurement, newest descendant mtime, and deterministic
    recursive metadata fingerprint including ctime
-6. current working directory ownership
-7. same-user process cwd and file-descriptor ownership
-8. absence of root or nested filesystem mount boundaries
+6. absence of sockets, pipes, devices, or other special filesystem entries
+7. configured minimum size and newest-descendant age
+8. current working directory ownership
+9. same-user process cwd and file-descriptor ownership
+10. absence of root or nested filesystem mount boundaries
+11. unexpired plan authorization immediately before mutation
 
 Any uncertainty produces `skipped-stale`. Apply never widens the action or
 substitutes another target.
@@ -53,8 +59,9 @@ substitutes another target.
 ## Isolation and Removal
 
 An unchanged target is atomically renamed to a unique tombstone in the same
-parent directory. The moved inode, recursive fingerprint, mount boundaries,
-and process ownership are verified again before recursive removal.
+parent directory. The moved inode, recursive fingerprint, special-entry count,
+mount boundaries, and process ownership are verified again before recursive
+removal.
 
 - failure before removal restores the original path when possible
 - a removal failure is `partially-applied`, even if the remaining tree is
