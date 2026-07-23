@@ -40,3 +40,5 @@ jobs:
       - name: Check package
         run: pnpm pack:check
 
+      - name: Smoke synthetic audit and plan
+        run: pnpm smoke
