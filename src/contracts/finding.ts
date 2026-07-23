@@ -32,7 +32,7 @@ export const findingSchema = z.object({
   confidence: findingConfidenceSchema,
   roots: z.array(rootEvidenceSchema),
   facts: z.record(z.string(), z.unknown()),
-  candidateActions: z.array(plannedActionSchema),
+  candidateActions: z.array(plannedActionSchema).default([]),
   measuredBytes: z.number().int().nonnegative().optional(),
   estimatedReclaimBytes: z.number().int().nonnegative().optional(),
   warnings: z.array(diagnosticSchema),

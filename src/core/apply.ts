@@ -31,6 +31,7 @@ export type ApplyResult = {
 
 export type ApplyDependencies = {
   clock?: () => Date;
+  createJournal?: typeof createRunJournal;
   revalidate?: (
     action: ArtifactRemoveAction,
     home: string,
@@ -66,7 +67,11 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
   const lock = await acquireApplyLock(layout.locks, plan.planId);
 
   try {
-    const journal = await createRunJournal(layout.runs, plan, clock());
+    const journal = await (options.dependencies?.createJournal ?? createRunJournal)(
+      layout.runs,
+      plan,
+      clock(),
+    );
     const runId = journal.snapshot().runId;
 
     for (const action of plan.actions) {
@@ -112,8 +117,9 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
         isolationPath,
       });
 
+      let result: ArtifactExecutionResult;
       try {
-        const result = await (
+        result = await (
           options.dependencies?.execute ??
           ((selectedAction, selectedIsolationId) =>
             executeArtifactRemove(selectedAction, {
@@ -125,12 +131,6 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
               },
             }))
         )(action, isolationId);
-        await journal.updateAction(action.actionId, {
-          status: "applied",
-          completedAt: clock().toISOString(),
-          reclaimedBytes: result.reclaimedBytes,
-          isolationPath: result.isolationPath,
-        });
       } catch (error) {
         const executionError = error instanceof ArtifactExecutionError ? error : undefined;
         await journal.updateAction(action.actionId, {
@@ -140,13 +140,14 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           diagnostic: {
             severity: executionError?.outcome === "skipped-stale" ? "warning" : "error",
             code:
-              executionError?.outcome === "skipped-stale"
-                ? "PLAN_EXPIRED_DURING_APPLY"
+              executionError?.diagnosticCode ??
+              (executionError?.outcome === "skipped-stale"
+                ? "ARTIFACT_IDENTITY_CHANGED"
                 : executionError?.outcome === "partially-applied"
                   ? "ARTIFACT_PARTIALLY_APPLIED"
                   : executionError?.outcome === "rolled-back"
                     ? "ARTIFACT_ROLLED_BACK"
-                    : "ARTIFACT_APPLY_FAILED",
+                    : "ARTIFACT_APPLY_FAILED"),
             message: error instanceof Error ? error.message : String(error),
             adapter: action.adapter,
             resourceId: action.resourceId,
@@ -157,6 +158,13 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
         }
         break;
       }
+
+      await journal.updateAction(action.actionId, {
+        status: "applied",
+        completedAt: clock().toISOString(),
+        reclaimedBytes: result.reclaimedBytes,
+        isolationPath: result.isolationPath,
+      });
     }
 
     const run = await journal.complete(clock());

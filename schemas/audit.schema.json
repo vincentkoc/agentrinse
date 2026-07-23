@@ -206,6 +206,7 @@
             "additionalProperties": {}
           },
           "candidateActions": {
+            "default": [],
             "type": "array",
             "items": {
               "oneOf": [

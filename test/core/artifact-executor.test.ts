@@ -1,3 +1,4 @@
+import { lstatSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,7 +6,11 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { ArtifactRemoveAction } from "../../src/contracts/action.js";
-import { ArtifactExecutionError, executeArtifactRemove } from "../../src/core/artifact-executor.js";
+import {
+  ArtifactExecutionError,
+  artifactIsolationPath,
+  executeArtifactRemove,
+} from "../../src/core/artifact-executor.js";
 import { measurePath } from "../../src/core/measure.js";
 
 async function fixture(): Promise<{
@@ -256,6 +261,41 @@ describe("executeArtifactRemove", () => {
     expect(await exists(value.target)).toBe(true);
   });
 
+  it("classifies a missing pre-isolation target as stale", async () => {
+    const value = await fixture();
+    await rm(value.target, { recursive: true });
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "missing-before-isolation",
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "ARTIFACT_IDENTITY_CHANGED",
+    });
+  });
+
+  it("classifies pre-isolation identity drift as stale", async () => {
+    const value = await fixture();
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "changed-before-isolation",
+        inspect: async (path) => {
+          const stats = await lstat(path);
+          if (path === value.target) {
+            Object.defineProperty(stats, "ino", { value: stats.ino + 1 });
+          }
+          return stats;
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "ARTIFACT_IDENTITY_CHANGED",
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
   it("rolls back when authorization expires during isolation", async () => {
     const value = await fixture();
     const times = [new Date(0), new Date(1)];
@@ -301,5 +341,33 @@ describe("executeArtifactRemove", () => {
     ).rejects.toMatchObject({ outcome: "partially-applied" });
 
     expect(await exists(value.target)).toBe(false);
+  });
+
+  it("refuses a substituted isolation inode at the final removal gate", async () => {
+    const value = await fixture();
+    const isolationPath = artifactIsolationPath(value.action, "final-identity");
+    let removed = false;
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "final-identity",
+        finalInspect: (path) => {
+          const stats = lstatSync(path);
+          Object.defineProperty(stats, "ino", { value: stats.ino + 1 });
+          return stats;
+        },
+        remove: async () => {
+          removed = true;
+        },
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).rejects.toMatchObject({
+      outcome: "partially-applied",
+      isolationPath,
+    });
+
+    expect(removed).toBe(false);
+    expect(await exists(value.target)).toBe(false);
+    expect(await exists(isolationPath)).toBe(true);
   });
 });

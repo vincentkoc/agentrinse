@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { Stats } from "node:fs";
-import { lstat, rename, rm } from "node:fs/promises";
+import { lstatSync, rmSync, type Stats } from "node:fs";
+import { lstat, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { ArtifactRemoveAction } from "../contracts/action.js";
@@ -21,10 +21,13 @@ export class ArtifactExecutionError extends Error {
     message: string,
     readonly outcome: ArtifactExecutionOutcome,
     readonly isolationPath?: string,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { diagnosticCode?: string },
   ) {
     super(message, options);
+    this.diagnosticCode = options?.diagnosticCode;
   }
+
+  readonly diagnosticCode: string | undefined;
 }
 
 export type ArtifactExecutionResult = {
@@ -35,6 +38,7 @@ export type ArtifactExecutionResult = {
 export type ArtifactExecutorDependencies = {
   id?: () => string;
   inspect?: (path: string) => Promise<Stats>;
+  finalInspect?: (path: string) => Stats;
   move?: (source: string, destination: string) => Promise<void>;
   remove?: (path: string) => Promise<void>;
   measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
@@ -88,15 +92,6 @@ export async function executeArtifactRemove(
 ): Promise<ArtifactExecutionResult> {
   const inspect = dependencies.inspect ?? lstat;
   const move = dependencies.move ?? rename;
-  const remove =
-    dependencies.remove ??
-    (async (path: string) =>
-      rm(path, {
-        recursive: true,
-        force: false,
-        maxRetries: 3,
-        retryDelay: 100,
-      }));
   const measure = dependencies.measure ?? measurePath;
   const processProbe = dependencies.processProbe ?? findProcessesUsingPath;
   const mountProbe = dependencies.mountProbe ?? findMountBoundaries;
@@ -116,16 +111,20 @@ export async function executeArtifactRemove(
   } catch (error) {
     throw new ArtifactExecutionError(
       "artifact disappeared before isolation",
-      "failed",
+      isMissing(error) ? "skipped-stale" : "failed",
       isolationPath,
-      { cause: error },
+      {
+        cause: error,
+        ...(isMissing(error) ? { diagnosticCode: "ARTIFACT_IDENTITY_CHANGED" } : {}),
+      },
     );
   }
   if (!matchesIdentity(before, action)) {
     throw new ArtifactExecutionError(
       "artifact identity changed before isolation",
-      "failed",
+      "skipped-stale",
       isolationPath,
+      { diagnosticCode: "ARTIFACT_IDENTITY_CHANGED" },
     );
   }
 
@@ -137,6 +136,7 @@ export async function executeArtifactRemove(
       "cleanup plan authorization expired before artifact isolation",
       "skipped-stale",
       isolationPath,
+      { diagnosticCode: "PLAN_EXPIRED_DURING_APPLY" },
     );
   }
 
@@ -145,9 +145,12 @@ export async function executeArtifactRemove(
   } catch (error) {
     throw new ArtifactExecutionError(
       "artifact could not be atomically isolated",
-      "failed",
+      isMissing(error) ? "skipped-stale" : "failed",
       isolationPath,
-      { cause: error },
+      {
+        cause: error,
+        ...(isMissing(error) ? { diagnosticCode: "ARTIFACT_IDENTITY_CHANGED" } : {}),
+      },
     );
   }
 
@@ -233,6 +236,28 @@ export async function executeArtifactRemove(
     );
   }
 
+  const finalMounts = await mountProbe(isolationPath).catch((error: unknown) =>
+    rollbackBeforeRemoval(
+      "mount boundaries could not be rechecked before removal",
+      action,
+      isolationPath,
+      inspect,
+      move,
+      error,
+    ),
+  );
+  if (finalMounts.status !== "clear") {
+    await rollbackBeforeRemoval(
+      finalMounts.status === "blocked"
+        ? "artifact gained a mount boundary before removal"
+        : "mount boundaries became unknown before removal",
+      action,
+      isolationPath,
+      inspect,
+      move,
+    );
+  }
+
   if (
     dependencies.authorization !== undefined &&
     dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
@@ -247,8 +272,29 @@ export async function executeArtifactRemove(
   }
 
   try {
-    await remove(isolationPath);
+    const finalStats = (dependencies.finalInspect ?? lstatSync)(isolationPath);
+    if (!matchesIdentity(finalStats, action)) {
+      throw new ArtifactExecutionError(
+        `isolated artifact identity changed before removal; inspect ${isolationPath}`,
+        "partially-applied",
+        isolationPath,
+      );
+    }
+
+    if (dependencies.remove === undefined) {
+      rmSync(isolationPath, {
+        recursive: true,
+        force: false,
+        maxRetries: 3,
+        retryDelay: 100,
+      });
+    } else {
+      await dependencies.remove(isolationPath);
+    }
   } catch (error) {
+    if (error instanceof ArtifactExecutionError) {
+      throw error;
+    }
     let recoveryPath = isolationPath;
     try {
       if (

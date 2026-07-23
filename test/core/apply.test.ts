@@ -23,6 +23,7 @@ import { sha256Json } from "../../src/core/digest.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
 import { readJsonFile } from "../../src/state/json-file.js";
+import { createRunJournal } from "../../src/state/run-journal.js";
 
 async function fixture(): Promise<{
   action: ArtifactRemoveAction;
@@ -323,6 +324,8 @@ describe("applyCleanupPlan", () => {
           throw new ArtifactExecutionError(
             "cleanup plan authorization expired before artifact isolation",
             "skipped-stale",
+            undefined,
+            { diagnosticCode: "PLAN_EXPIRED_DURING_APPLY" },
           );
         },
       },
@@ -334,6 +337,54 @@ describe("applyCleanupPlan", () => {
       diagnostic: { code: "PLAN_EXPIRED_DURING_APPLY" },
     });
     expect(await exists(value.target)).toBe(true);
+  });
+
+  it("does not rewrite an applied deletion as failed when journal persistence fails", async () => {
+    const value = await fixture();
+    let journalPath = "";
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        dependencies: {
+          clock: CLOCK,
+          createJournal: async (runsDirectory, plan, startedAt) => {
+            const journal = await createRunJournal(runsDirectory, plan, startedAt);
+            journalPath = journal.path;
+            return {
+              ...journal,
+              updateAction: async (actionId, patch) => {
+                if (patch.status === "applied") {
+                  throw new Error("injected applied journal persistence failure");
+                }
+                return journal.updateAction(actionId, patch);
+              },
+            };
+          },
+          revalidate: async () => ({
+            status: "valid",
+            measurement: {
+              bytes: value.action.target.measuredBytes,
+              entries: 2,
+              symlinksSkipped: 0,
+              specialEntries: 0,
+              truncated: false,
+              newestMtimeMs: value.action.target.newestMtimeMs,
+              fingerprint: value.action.target.fingerprint,
+              mountBoundaries: 0,
+            },
+          }),
+        },
+      }),
+    ).rejects.toThrow("injected applied journal persistence failure");
+
+    expect(await exists(value.target)).toBe(false);
+    await expect(readJsonFile(journalPath)).resolves.toMatchObject({
+      status: "running",
+      actions: [{ status: "applying" }],
+    });
   });
 
   it("validates config at the exported mutation boundary", async () => {
