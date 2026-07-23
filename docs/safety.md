@@ -10,7 +10,8 @@ Only `artifacts.remove` mutates:
 - the project root is explicitly configured
 - the artifact name is selected from the fixed supported-name enum
 - the project and artifact are real directories inside the audited home
-- the artifact exceeds configured age and size thresholds
+- the newest descendant exceeds the configured age threshold and the complete
+  artifact exceeds the size threshold
 - the complete measurement fits within the entry budget
 - same-user process ownership is proven idle
 - the action risk is `safe`
@@ -24,7 +25,7 @@ Apply requires a saved content-addressed plan and interactive confirmation or
 
 - the audit and config digests
 - the exact home, project root, artifact path, and filesystem identity
-- measured bytes
+- measured bytes, newest descendant mtime, and recursive metadata fingerprint
 - the risk ceiling
 - creation and expiration timestamps
 
@@ -39,8 +40,9 @@ After acquiring the exclusive lock, every action rechecks:
 1. configured root and exact supported artifact name
 2. lexical and realpath containment
 3. directory and non-symlink type
-4. device, inode, and mtime identity
-5. complete byte measurement
+4. device, inode, and root mtime identity
+5. complete byte measurement, newest descendant mtime, and deterministic
+   recursive metadata fingerprint
 6. current working directory ownership
 7. same-user process cwd and file-descriptor ownership
 

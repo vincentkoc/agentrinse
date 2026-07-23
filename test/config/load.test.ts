@@ -93,4 +93,35 @@ describe("loadConfig", () => {
 
     await expect(loadConfig(path)).rejects.toThrow("artifact names must be unique");
   });
+
+  it("rejects duplicate and overlapping artifact scopes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        artifacts: {
+          projects: [
+            {
+              root: "/tmp/project",
+              names: ["node_modules"],
+            },
+            {
+              root: "/tmp/project",
+              names: ["dist"],
+            },
+            {
+              root: "/tmp/project/node_modules/package",
+              names: ["dist"],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow(
+      /artifact project roots must be unique|artifact cleanup targets must not overlap/,
+    );
+  });
 });

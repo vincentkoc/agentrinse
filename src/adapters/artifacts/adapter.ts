@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
-import type { ArtifactRemoveAction } from "../../contracts/action.js";
+import { artifactNameSchema, type ArtifactRemoveAction } from "../../contracts/action.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";
 import type { Finding, RootEvidence } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
@@ -177,7 +177,12 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               device: stats.dev,
               inode: stats.ino,
               mtimeMs: stats.mtimeMs,
-              ageMinutes: Math.max(0, (context.now.getTime() - stats.mtimeMs) / 60_000),
+              newestMtimeMs: measurement?.newestMtimeMs ?? stats.mtimeMs,
+              fingerprint: measurement?.fingerprint,
+              ageMinutes: Math.max(
+                0,
+                (context.now.getTime() - (measurement?.newestMtimeMs ?? stats.mtimeMs)) / 60_000,
+              ),
               isDirectory,
               isSymlink,
               measurementTruncated: measurement?.truncated ?? false,
@@ -315,11 +320,13 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     const target = {
       path: resource.resource.path!,
       projectRoot: String(facts.projectRoot),
-      name: String(facts.name),
+      name: artifactNameSchema.parse(facts.name),
       device: Number(facts.device),
       inode: Number(facts.inode),
       mtimeMs: Number(facts.mtimeMs),
       measuredBytes: resource.measuredBytes!,
+      newestMtimeMs: Number(facts.newestMtimeMs),
+      fingerprint: String(facts.fingerprint),
     };
 
     return {

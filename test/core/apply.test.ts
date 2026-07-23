@@ -57,6 +57,8 @@ async function fixture(): Promise<{
       inode: stats.ino,
       mtimeMs: stats.mtimeMs,
       measuredBytes: measurement.bytes,
+      newestMtimeMs: measurement.newestMtimeMs,
+      fingerprint: measurement.fingerprint,
     },
   };
   const content: Omit<CleanupPlan, "planId"> = {
@@ -103,6 +105,8 @@ describe("applyCleanupPlan", () => {
             entries: 2,
             symlinksSkipped: 0,
             truncated: false,
+            newestMtimeMs: value.action.target.newestMtimeMs,
+            fingerprint: value.action.target.fingerprint,
           },
         }),
       },
@@ -153,6 +157,8 @@ describe("applyCleanupPlan", () => {
             entries: 2,
             symlinksSkipped: 0,
             truncated: false,
+            newestMtimeMs: value.action.target.newestMtimeMs,
+            fingerprint: value.action.target.fingerprint,
           },
         }),
         execute: async (action, isolationId) =>
@@ -192,6 +198,8 @@ describe("applyCleanupPlan", () => {
             entries: 2,
             symlinksSkipped: 0,
             truncated: false,
+            newestMtimeMs: value.action.target.newestMtimeMs,
+            fingerprint: value.action.target.fingerprint,
           },
         }),
         execute,
@@ -229,5 +237,31 @@ describe("applyCleanupPlan", () => {
         dependencies: { clock: CLOCK },
       }),
     ).rejects.toBeInstanceOf(ApplySafetyError);
+  });
+
+  it("validates config at the exported mutation boundary", async () => {
+    const value = await fixture();
+    const invalidConfig = {
+      ...value.config,
+      artifacts: {
+        ...value.config.artifacts,
+        projects: [
+          {
+            root: value.project,
+            names: ["src"],
+          },
+        ],
+      },
+    } as unknown as AgentRinseConfig;
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: invalidConfig,
+        stateRoot: value.stateRoot,
+        dependencies: { clock: CLOCK },
+      }),
+    ).rejects.toThrow();
+    expect(await exists(value.target)).toBe(true);
   });
 });

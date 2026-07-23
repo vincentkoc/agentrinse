@@ -13,9 +13,9 @@ The first production mutation boundary is intentionally narrow:
 - removes only exact rebuildable artifact directories declared in config
 - supports `node_modules`, `dist`, `dist-runtime`, `build`, `.next`, `.turbo`,
   `.cache`, `coverage`, `target`, and `.venv`
-- revalidates path, realpath, inode, device, mtime, measured bytes, configured
-  scope, current working directory, and process ownership after acquiring the
-  apply lock
+- revalidates path, realpath, inode, device, recursive metadata fingerprint,
+  newest descendant mtime, measured bytes, configured scope, current working
+  directory, and process ownership after acquiring the apply lock
 - atomically renames an artifact to a same-parent tombstone before recursive
   removal
 - journals every transition and records the recovery path for partial actions
@@ -59,8 +59,9 @@ Artifact cleanup is disabled until project roots are explicitly declared.
 }
 ```
 
-Project roots must be absolute real directories inside the audited home.
-AgentRinse never discovers arbitrary projects or expands wildcards.
+Project roots must be unique absolute real directories inside the audited
+home. Artifact targets cannot overlap. AgentRinse never discovers arbitrary
+projects or expands wildcards.
 
 ## Use
 

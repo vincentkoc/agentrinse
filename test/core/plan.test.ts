@@ -70,6 +70,8 @@ describe("createCleanupPlan", () => {
                 inode: 2,
                 mtimeMs: 3,
                 measuredBytes: 1024,
+                newestMtimeMs: 4,
+                fingerprint: "a".repeat(64),
               },
             },
           ],

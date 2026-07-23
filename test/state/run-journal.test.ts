@@ -36,6 +36,8 @@ const PLAN: CleanupPlan = {
         inode: 2,
         mtimeMs: 3,
         measuredBytes: 10,
+        newestMtimeMs: 4,
+        fingerprint: "a".repeat(64),
       },
     },
   ],

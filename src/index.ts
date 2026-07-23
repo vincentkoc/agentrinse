@@ -5,9 +5,11 @@ export {
   type AgentRinseConfig,
 } from "./config/schema.js";
 export {
+  artifactNameSchema,
   artifactRemoveActionSchema,
   pathIdentitySchema,
   plannedActionSchema,
+  type ArtifactName,
   type ArtifactRemoveAction,
   type PathIdentity,
   type PlannedAction,

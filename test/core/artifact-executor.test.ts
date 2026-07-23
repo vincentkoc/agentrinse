@@ -40,6 +40,8 @@ async function fixture(): Promise<{
         inode: stats.ino,
         mtimeMs: stats.mtimeMs,
         measuredBytes: measurement.bytes,
+        newestMtimeMs: measurement.newestMtimeMs,
+        fingerprint: measurement.fingerprint,
       },
     },
   };

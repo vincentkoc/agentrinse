@@ -93,7 +93,18 @@
                   },
                   "name": {
                     "type": "string",
-                    "minLength": 1
+                    "enum": [
+                      "node_modules",
+                      "dist",
+                      "dist-runtime",
+                      "build",
+                      ".next",
+                      ".turbo",
+                      ".cache",
+                      "coverage",
+                      "target",
+                      ".venv"
+                    ]
                   },
                   "device": {
                     "type": "integer",
@@ -112,6 +123,13 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 9007199254740991
+                  },
+                  "newestMtimeMs": {
+                    "type": "number"
+                  },
+                  "fingerprint": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
                   }
                 },
                 "required": [
@@ -121,7 +139,9 @@
                   "device",
                   "inode",
                   "mtimeMs",
-                  "measuredBytes"
+                  "measuredBytes",
+                  "newestMtimeMs",
+                  "fingerprint"
                 ],
                 "additionalProperties": false
               }

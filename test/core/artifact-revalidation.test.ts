@@ -1,5 +1,5 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,6 +49,8 @@ async function fixture(): Promise<{
       inode: stats.ino,
       mtimeMs: stats.mtimeMs,
       measuredBytes: measurement.bytes,
+      newestMtimeMs: measurement.newestMtimeMs,
+      fingerprint: measurement.fingerprint,
     },
   };
   return { action, config, home, project, target };
@@ -78,6 +80,27 @@ describe("revalidateArtifactRemove", () => {
     ).resolves.toMatchObject({
       status: "stale",
       diagnostic: { code: "ARTIFACT_IDENTITY_CHANGED" },
+    });
+  });
+
+  it("rejects same-size in-place descendant changes", async () => {
+    const value = await fixture();
+    const path = join(value.target, "fixture.txt");
+    await writeFile(path, "changed");
+    const changedAt = new Date(value.action.target.newestMtimeMs + 10_000);
+    await utimes(path, changedAt, changedAt);
+
+    await expect(
+      revalidateArtifactRemove(value.action, value.home, value.config, {
+        cwd: value.project,
+        processProbe: async () => ({
+          status: "idle",
+          matches: [],
+        }),
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_CONTENT_CHANGED" },
     });
   });
 

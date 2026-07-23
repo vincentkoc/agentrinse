@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,6 +18,8 @@ describe("measurePath", () => {
     expect(result.bytes).toBe(8);
     expect(result.symlinksSkipped).toBe(0);
     expect(result.truncated).toBe(false);
+    expect(result.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.newestMtimeMs).toBeGreaterThan(0);
   });
 
   it("does not follow symlinks", async () => {
@@ -41,5 +43,21 @@ describe("measurePath", () => {
 
     expect(result.entries).toBe(1);
     expect(result.truncated).toBe(true);
+  });
+
+  it("changes the fingerprint for same-size in-place writes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const path = join(root, "cache.bin");
+    await writeFile(path, "before");
+    const before = await measurePath(root, { maxEntries: 100 });
+
+    await writeFile(path, "change");
+    const changedAt = new Date(before.newestMtimeMs + 10_000);
+    await utimes(path, changedAt, changedAt);
+    const after = await measurePath(root, { maxEntries: 100 });
+
+    expect(after.bytes).toBe(before.bytes);
+    expect(after.fingerprint).not.toBe(before.fingerprint);
+    expect(after.newestMtimeMs).toBeGreaterThan(before.newestMtimeMs);
   });
 });

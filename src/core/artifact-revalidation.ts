@@ -38,9 +38,7 @@ function stale(
 function isConfigured(action: ArtifactRemoveAction, config: AgentRinseConfig): boolean {
   const targetRoot = resolve(action.target.projectRoot);
   return config.artifacts.projects.some(
-    (project) =>
-      resolve(project.root) === targetRoot &&
-      project.names.includes(action.target.name as (typeof project.names)[number]),
+    (project) => resolve(project.root) === targetRoot && project.names.includes(action.target.name),
   );
 }
 
@@ -130,7 +128,12 @@ export async function revalidateArtifactRemove(
     const measurement = await (dependencies.measure ?? measurePath)(targetPath, {
       maxEntries: config.audit.maxEntries,
     });
-    if (measurement.truncated || measurement.bytes !== action.target.measuredBytes) {
+    if (
+      measurement.truncated ||
+      measurement.bytes !== action.target.measuredBytes ||
+      measurement.newestMtimeMs !== action.target.newestMtimeMs ||
+      measurement.fingerprint !== action.target.fingerprint
+    ) {
       return stale(
         action,
         "ARTIFACT_CONTENT_CHANGED",

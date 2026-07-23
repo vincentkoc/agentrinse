@@ -14,8 +14,10 @@ async function fixture(ownership: ProcessOwnershipResult = { status: "idle", mat
   const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-"));
   const projectRoot = join(home, "project");
   const artifact = join(projectRoot, "node_modules");
+  const artifactFile = join(artifact, "package.json");
   await mkdir(artifact, { recursive: true });
-  await writeFile(join(artifact, "package.json"), "synthetic");
+  await writeFile(artifactFile, "synthetic");
+  await utimes(artifactFile, new Date(0), new Date(0));
   await utimes(artifact, new Date(0), new Date(0));
 
   const context: AuditContext = {
@@ -34,7 +36,7 @@ async function fixture(ownership: ProcessOwnershipResult = { status: "idle", mat
     },
     async () => ownership,
   );
-  return { home, projectRoot, artifact, context, adapter };
+  return { home, projectRoot, artifact, artifactFile, context, adapter };
 }
 
 describe("ArtifactAuditAdapter", () => {
@@ -65,6 +67,17 @@ describe("ArtifactAuditAdapter", () => {
     expect(finding.state).toBe("protected");
     expect(finding.roots[0]?.code).toBe("live-process");
     expect(finding.candidateActions).toEqual([]);
+  });
+
+  it("uses the newest descendant for the age threshold", async () => {
+    const { context, adapter, artifactFile } = await fixture();
+    await utimes(artifactFile, NOW, NOW);
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("protected");
+    expect(finding.roots[0]?.code).toBe("recent-resource");
   });
 
   it("blocks symlinked artifacts", async () => {

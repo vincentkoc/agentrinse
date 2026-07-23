@@ -1,11 +1,14 @@
-import { lstat, opendir } from "node:fs/promises";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { lstat, opendir, readlink } from "node:fs/promises";
+import { join, relative } from "node:path";
 
 export type Measurement = {
   bytes: number;
   entries: number;
   symlinksSkipped: number;
   truncated: boolean;
+  newestMtimeMs: number;
+  fingerprint: string;
 };
 
 export type MeasureOptions = {
@@ -19,9 +22,12 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
     entries: 0,
     symlinksSkipped: 0,
     truncated: false,
+    newestMtimeMs: 0,
+    fingerprint: "",
   };
 
   const pending = [root];
+  const fingerprint = createHash("sha256");
 
   while (pending.length > 0) {
     options.signal?.throwIfAborted();
@@ -38,6 +44,18 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
 
     const stats = await lstat(path);
     result.entries += 1;
+    result.newestMtimeMs = Math.max(result.newestMtimeMs, stats.mtimeMs);
+    const identity = {
+      path: relative(root, path),
+      device: stats.dev,
+      inode: stats.ino,
+      mode: stats.mode,
+      size: stats.size,
+      mtimeMs: stats.mtimeMs,
+      type: stats.isSymbolicLink() ? "symlink" : stats.isDirectory() ? "directory" : "file",
+      ...(stats.isSymbolicLink() ? { link: await readlink(path) } : {}),
+    };
+    fingerprint.update(`${JSON.stringify(identity)}\n`);
 
     if (stats.isSymbolicLink()) {
       result.symlinksSkipped += 1;
@@ -50,10 +68,16 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
     }
 
     const directory = await opendir(path);
+    const names: string[] = [];
     for await (const entry of directory) {
-      pending.push(join(path, entry.name));
+      names.push(entry.name);
+    }
+    names.sort((left, right) => right.localeCompare(left));
+    for (const name of names) {
+      pending.push(join(path, name));
     }
   }
 
+  result.fingerprint = fingerprint.digest("hex");
   return result;
 }

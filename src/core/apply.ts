@@ -1,4 +1,4 @@
-import type { AgentRinseConfig } from "../config/schema.js";
+import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { CleanupPlan } from "../contracts/plan.js";
 import type { CleanupRun } from "../contracts/run.js";
@@ -48,7 +48,8 @@ export type ApplyCleanupPlanOptions = {
 
 export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promise<ApplyResult> {
   const clock = options.dependencies?.clock ?? (() => new Date());
-  const plan = verifyCleanupPlan(options.input, options.config, clock());
+  const config = agentRinseConfigSchema.parse(options.config);
+  const plan = verifyCleanupPlan(options.input, config, clock());
   const layout = stateLayout(options.stateRoot);
   for (const action of plan.actions) {
     if (isPathInside(action.target.path, layout.root)) {
@@ -73,7 +74,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
       const revalidation = await (options.dependencies?.revalidate ?? revalidateArtifactRemove)(
         action,
         plan.home,
-        options.config,
+        config,
       );
       if (revalidation.status === "stale") {
         await journal.updateAction(action.actionId, {
