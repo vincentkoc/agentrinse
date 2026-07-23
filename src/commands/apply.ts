@@ -55,6 +55,10 @@ function renderRun(run: CleanupRun, journalPath: string): string {
 export async function executeApplyCommand(
   options: ApplyCommandOptions,
 ): Promise<ApplyCommandResult> {
+  if (options.json && !options.yes) {
+    throw new Error("apply --json requires --yes");
+  }
+
   const input = await readJsonFile(resolve(options.plan));
   const plan = cleanupPlanSchema.parse(input);
   const config = await loadConfig(options.config);

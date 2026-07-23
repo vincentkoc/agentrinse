@@ -6,6 +6,7 @@ export type Measurement = {
   bytes: number;
   entries: number;
   symlinksSkipped: number;
+  specialEntries: number;
   truncated: boolean;
   newestMtimeMs: number;
   fingerprint: string;
@@ -22,6 +23,7 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
     bytes: 0,
     entries: 0,
     symlinksSkipped: 0,
+    specialEntries: 0,
     truncated: false,
     newestMtimeMs: 0,
     fingerprint: "",
@@ -57,7 +59,13 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
       size: stats.size,
       mtimeMs: stats.mtimeMs,
       ...(path === root ? {} : { ctimeMs: stats.ctimeMs }),
-      type: stats.isSymbolicLink() ? "symlink" : stats.isDirectory() ? "directory" : "file",
+      type: stats.isSymbolicLink()
+        ? "symlink"
+        : stats.isDirectory()
+          ? "directory"
+          : stats.isFile()
+            ? "file"
+            : "special",
       ...(stats.isSymbolicLink() ? { link: await readlink(path) } : {}),
     };
     fingerprint.update(`${JSON.stringify(identity)}\n`);
@@ -72,8 +80,13 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
       continue;
     }
 
-    if (!stats.isDirectory()) {
+    if (stats.isFile()) {
       result.bytes += stats.size;
+      continue;
+    }
+
+    if (!stats.isDirectory()) {
+      result.specialEntries += 1;
       continue;
     }
 

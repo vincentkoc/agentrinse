@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, readFile, stat, symlink, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { AgentRinseConfig } from "../../src/config/schema.js";
@@ -104,6 +104,7 @@ describe("applyCleanupPlan", () => {
             bytes: value.action.target.measuredBytes,
             entries: 2,
             symlinksSkipped: 0,
+            specialEntries: 0,
             truncated: false,
             newestMtimeMs: value.action.target.newestMtimeMs,
             fingerprint: value.action.target.fingerprint,
@@ -157,6 +158,7 @@ describe("applyCleanupPlan", () => {
             bytes: value.action.target.measuredBytes,
             entries: 2,
             symlinksSkipped: 0,
+            specialEntries: 0,
             truncated: false,
             newestMtimeMs: value.action.target.newestMtimeMs,
             fingerprint: value.action.target.fingerprint,
@@ -199,6 +201,7 @@ describe("applyCleanupPlan", () => {
             bytes: value.action.target.measuredBytes,
             entries: 2,
             symlinksSkipped: 0,
+            specialEntries: 0,
             truncated: false,
             newestMtimeMs: value.action.target.newestMtimeMs,
             fingerprint: value.action.target.fingerprint,
@@ -240,6 +243,49 @@ describe("applyCleanupPlan", () => {
         dependencies: { clock: CLOCK },
       }),
     ).rejects.toBeInstanceOf(ApplySafetyError);
+  });
+
+  it("skips an action when plan authorization expires after revalidation", async () => {
+    const value = await fixture();
+    const times = [
+      "2026-07-23T00:15:00.000Z",
+      "2026-07-23T00:15:00.000Z",
+      "2026-07-23T00:29:59.000Z",
+      "2026-07-23T00:30:00.000Z",
+      "2026-07-23T00:30:00.000Z",
+    ].map((time) => new Date(time));
+    const clock = () => times.shift() ?? new Date("2026-07-23T00:30:00.000Z");
+    const execute = vi.fn();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock,
+        revalidate: async () => ({
+          status: "valid",
+          measurement: {
+            bytes: value.action.target.measuredBytes,
+            entries: 2,
+            symlinksSkipped: 0,
+            specialEntries: 0,
+            truncated: false,
+            newestMtimeMs: value.action.target.newestMtimeMs,
+            fingerprint: value.action.target.fingerprint,
+            mountBoundaries: 0,
+          },
+        }),
+        execute,
+      },
+    });
+
+    expect(execute).not.toHaveBeenCalled();
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: { code: "PLAN_EXPIRED_DURING_APPLY" },
+    });
+    expect(await exists(value.target)).toBe(true);
   });
 
   it("validates config at the exported mutation boundary", async () => {

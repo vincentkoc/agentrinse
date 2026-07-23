@@ -160,6 +160,7 @@ export async function executeArtifactRemove(
     });
     if (
       measurement.truncated ||
+      measurement.specialEntries > 0 ||
       measurement.mountBoundaries > 0 ||
       measurement.bytes !== action.target.measuredBytes ||
       measurement.newestMtimeMs !== action.target.newestMtimeMs ||

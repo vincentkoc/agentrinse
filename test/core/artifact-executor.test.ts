@@ -155,6 +155,30 @@ describe("executeArtifactRemove", () => {
     expect(await exists(value.target)).toBe(true);
   });
 
+  it("rolls back when an unsupported special entry appears during isolation", async () => {
+    const value = await fixture();
+
+    let caught: unknown;
+    try {
+      await executeArtifactRemove(value.action, {
+        id: () => "special-entry",
+        measure: async (path, options) => ({
+          ...(await measurePath(path, options)),
+          specialEntries: 1,
+        }),
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({
+      outcome: "rolled-back",
+      isolationPath: value.target,
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
   it("rolls back when a nested mount boundary is detected", async () => {
     const value = await fixture();
 

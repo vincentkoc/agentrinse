@@ -198,6 +198,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               isDirectory,
               isSymlink,
               measurementTruncated: measurement?.truncated ?? false,
+              specialEntries: measurement?.specialEntries ?? 0,
               mountBoundaries: measurement?.mountBoundaries ?? 0,
               isMountRoot: stats.dev !== projectStats.dev,
               entries: measurement?.entries,
@@ -257,6 +258,16 @@ export class ArtifactAuditAdapter implements AuditAdapter {
         severity: "warning",
         code: "ARTIFACT_MEASUREMENT_TRUNCATED",
         message: "The entry budget was exhausted before measurement completed.",
+        adapter: this.id,
+        resourceId: resource.resource.id,
+      });
+    } else if (typeof facts.specialEntries === "number" && facts.specialEntries > 0) {
+      state = "blocked";
+      confidence = "certain";
+      warnings.push({
+        severity: "warning",
+        code: "ARTIFACT_SPECIAL_ENTRY",
+        message: "Artifact cleanup only supports directories, regular files, and skipped symlinks.",
         adapter: this.id,
         resourceId: resource.resource.id,
       });

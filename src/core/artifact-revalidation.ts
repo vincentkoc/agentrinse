@@ -15,6 +15,7 @@ export type ArtifactRevalidationResult =
 
 export type ArtifactRevalidationDependencies = {
   cwd?: string;
+  now?: () => Date;
   measure?: typeof measurePath;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
@@ -155,6 +156,26 @@ export async function revalidateArtifactRemove(
         action,
         "ARTIFACT_CONTENT_CHANGED",
         "artifact contents changed or could not be measured completely",
+      );
+    }
+
+    if (measurement.specialEntries > 0) {
+      return stale(
+        action,
+        "ARTIFACT_SPECIAL_ENTRY",
+        "artifact contains a socket, pipe, device, or another unsupported filesystem entry",
+      );
+    }
+
+    const ageMs = (dependencies.now?.() ?? new Date()).getTime() - measurement.newestMtimeMs;
+    if (
+      measurement.bytes < config.artifacts.minBytes ||
+      ageMs < config.artifacts.minAgeMinutes * 60_000
+    ) {
+      return stale(
+        action,
+        "ARTIFACT_POLICY_CHANGED",
+        "artifact no longer meets the configured size and age retention policy",
       );
     }
 

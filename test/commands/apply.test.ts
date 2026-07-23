@@ -13,6 +13,16 @@ import { cleanupPlanId } from "../../src/core/plan.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 
 describe("executeApplyCommand", () => {
+  it("requires --yes before entering JSON mode", async () => {
+    await expect(
+      executeApplyCommand({
+        plan: "unused.json",
+        yes: false,
+        json: true,
+      }),
+    ).rejects.toThrow("apply --json requires --yes");
+  });
+
   it("requires non-interactive authorization and emits JSON", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-command-"));
     const project = join(home, "project");

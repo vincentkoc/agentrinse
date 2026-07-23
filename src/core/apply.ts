@@ -76,16 +76,31 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
         startedAt,
       });
 
-      const revalidation = await (options.dependencies?.revalidate ?? revalidateArtifactRemove)(
-        action,
-        plan.home,
-        config,
-      );
+      const revalidation =
+        options.dependencies?.revalidate === undefined
+          ? await revalidateArtifactRemove(action, plan.home, config, { now: clock })
+          : await options.dependencies.revalidate(action, plan.home, config);
       if (revalidation.status === "stale") {
         await journal.updateAction(action.actionId, {
           status: "skipped-stale",
           completedAt: clock().toISOString(),
           diagnostic: revalidation.diagnostic,
+        });
+        continue;
+      }
+
+      const authorizationCheckedAt = clock();
+      if (authorizationCheckedAt.getTime() >= Date.parse(plan.expiresAt)) {
+        await journal.updateAction(action.actionId, {
+          status: "skipped-stale",
+          completedAt: authorizationCheckedAt.toISOString(),
+          diagnostic: {
+            severity: "warning",
+            code: "PLAN_EXPIRED_DURING_APPLY",
+            message: `cleanup plan authorization expired at ${plan.expiresAt}`,
+            adapter: action.adapter,
+            resourceId: action.resourceId,
+          },
         });
         continue;
       }

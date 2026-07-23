@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { mkdir, mkdtemp, symlink, utimes, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +20,8 @@ async function fixture(
   },
   mounts: MountBoundaryResult = { status: "clear", paths: [] },
 ) {
-  const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-"));
+  const temporaryRoot = process.platform === "darwin" ? "/tmp" : tmpdir();
+  const home = await mkdtemp(join(temporaryRoot, "agentrinse-artifact-"));
   const projectRoot = join(home, "project");
   const artifact = join(projectRoot, "node_modules");
   const artifactFile = join(artifact, "package.json");
@@ -104,6 +107,29 @@ describe("ArtifactAuditAdapter", () => {
     expect(finding.state).toBe("blocked");
     expect(finding.warnings[0]?.code).toBe("ARTIFACT_MOUNT_BOUNDARY");
   });
+
+  it.runIf(process.platform !== "win32")(
+    "blocks artifacts containing an active Unix socket",
+    async () => {
+      const { context, adapter, artifact } = await fixture();
+      const server = createServer();
+      server.listen(join(artifact, "active.sock"));
+      await once(server, "listening");
+
+      try {
+        const probe = await adapter.probe(context);
+        const collection = await adapter.collect(context, probe);
+        const finding = await adapter.classify(context, collection.resources[0]!);
+
+        expect(finding.state).toBe("blocked");
+        expect(finding.warnings[0]?.code).toBe("ARTIFACT_SPECIAL_ENTRY");
+        expect(finding.candidateActions).toEqual([]);
+      } finally {
+        server.close();
+        await once(server, "close");
+      }
+    },
+  );
 
   it("blocks symlinked artifacts", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-"));

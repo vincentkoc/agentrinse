@@ -83,6 +83,61 @@ describe("revalidateArtifactRemove", () => {
     });
   });
 
+  it("rejects an artifact that no longer meets the size threshold", async () => {
+    const value = await fixture();
+    value.config.artifacts.minBytes = value.action.target.measuredBytes + 1;
+
+    await expect(
+      revalidateArtifactRemove(value.action, value.home, value.config, {
+        cwd: value.project,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_POLICY_CHANGED" },
+    });
+  });
+
+  it("rejects an artifact that no longer meets the age threshold", async () => {
+    const value = await fixture();
+    value.config.artifacts.minAgeMinutes = 60;
+
+    await expect(
+      revalidateArtifactRemove(value.action, value.home, value.config, {
+        cwd: value.project,
+        now: () => new Date(value.action.target.newestMtimeMs + 30 * 60_000),
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_POLICY_CHANGED" },
+    });
+  });
+
+  it("rejects unsupported special filesystem entries", async () => {
+    const value = await fixture();
+
+    await expect(
+      revalidateArtifactRemove(value.action, value.home, value.config, {
+        cwd: value.project,
+        measure: async () => ({
+          bytes: value.action.target.measuredBytes,
+          entries: 3,
+          symlinksSkipped: 0,
+          specialEntries: 1,
+          truncated: false,
+          newestMtimeMs: value.action.target.newestMtimeMs,
+          fingerprint: value.action.target.fingerprint,
+          mountBoundaries: 0,
+        }),
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_SPECIAL_ENTRY" },
+    });
+  });
+
   it("rejects same-size in-place descendant changes", async () => {
     const value = await fixture();
     const path = join(value.target, "fixture.txt");

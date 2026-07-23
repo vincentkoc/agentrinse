@@ -1,4 +1,6 @@
+import { once } from "node:events";
 import { mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -43,6 +45,24 @@ describe("measurePath", () => {
 
     expect(result.entries).toBe(1);
     expect(result.truncated).toBe(true);
+  });
+
+  it("reports Unix sockets as unsupported special entries", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const socketPath = join(root, "active.sock");
+    const server = createServer();
+    server.listen(socketPath);
+    await once(server, "listening");
+
+    try {
+      const result = await measurePath(root, { maxEntries: 100 });
+
+      expect(result.specialEntries).toBe(1);
+      expect(result.bytes).toBe(0);
+    } finally {
+      server.close();
+      await once(server, "close");
+    }
   });
 
   it("changes the fingerprint for same-size in-place writes", async () => {
