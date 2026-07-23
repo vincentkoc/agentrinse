@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter, AuditContext } from "../contracts/adapter.js";
-import {
-  auditReportSchema,
-  type AuditReport,
-} from "../contracts/report.js";
+import { auditReportSchema, type AuditReport } from "../contracts/report.js";
 import { assertSyntheticAuditRoot } from "./safety.js";
 
 export type RunAuditOptions = {
@@ -44,9 +41,7 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
   }
 
   probes.sort((left, right) => left.adapter.localeCompare(right.adapter));
-  findings.sort((left, right) =>
-    left.resource.id.localeCompare(right.resource.id),
-  );
+  findings.sort((left, right) => left.resource.id.localeCompare(right.resource.id));
 
   return auditReportSchema.parse({
     schemaVersion: 1,
@@ -59,4 +54,3 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
     diagnostics,
   });
 }
-

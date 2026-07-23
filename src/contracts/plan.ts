@@ -1,11 +1,6 @@
 import { z } from "zod";
 
-export const actionRiskSchema = z.enum([
-  "safe",
-  "recoverable",
-  "destructive",
-  "experimental",
-]);
+export const actionRiskSchema = z.enum(["safe", "recoverable", "destructive", "experimental"]);
 
 export const plannedActionSchema = z.object({
   actionId: z.string().min(1),
@@ -35,4 +30,3 @@ export const cleanupPlanSchema = z.object({
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
 export type PlannedAction = z.infer<typeof plannedActionSchema>;
 export type CleanupPlan = z.infer<typeof cleanupPlanSchema>;
-

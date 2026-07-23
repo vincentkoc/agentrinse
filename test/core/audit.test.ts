@@ -35,8 +35,6 @@ describe("runAudit", () => {
     const config = structuredClone(DEFAULT_CONFIG);
     config.adapters.grok = { enabled: false };
 
-    expect(createAuditAdapters(config).map((adapter) => adapter.id)).not.toContain(
-      "grok",
-    );
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).not.toContain("grok");
   });
 });

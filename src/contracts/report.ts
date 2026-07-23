@@ -34,4 +34,3 @@ export const auditReportSchema = z.object({
 export type AdapterStatus = z.infer<typeof adapterStatusSchema>;
 export type AdapterProbe = z.infer<typeof adapterProbeSchema>;
 export type AuditReport = z.infer<typeof auditReportSchema>;
-

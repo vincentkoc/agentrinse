@@ -17,11 +17,7 @@ const AUDIT: AuditReport = {
 
 describe("createCleanupPlan", () => {
   it("creates a dry plan with no actions from report-only findings", () => {
-    const plan = createCleanupPlan(
-      AUDIT,
-      DEFAULT_CONFIG,
-      new Date("2026-07-23T02:00:00.000Z"),
-    );
+    const plan = createCleanupPlan(AUDIT, DEFAULT_CONFIG, new Date("2026-07-23T02:00:00.000Z"));
 
     expect(plan.actions).toEqual([]);
     expect(plan.expectedReclaimBytes).toBe(0);

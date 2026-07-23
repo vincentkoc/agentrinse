@@ -569,12 +569,12 @@ These are hard product requirements.
 
 ### Risk classes
 
-| Class | Meaning | Default authorization |
-| --- | --- | --- |
-| `safe` | Rebuildable data or metadata-only owner operation | selectable |
-| `recoverable` | Whole resource removed with tested undo | explicit apply |
-| `destructive` | User state removed without complete undo | excluded |
-| `experimental` | Version-sensitive maintenance operation | excluded |
+| Class          | Meaning                                           | Default authorization |
+| -------------- | ------------------------------------------------- | --------------------- |
+| `safe`         | Rebuildable data or metadata-only owner operation | selectable            |
+| `recoverable`  | Whole resource removed with tested undo           | explicit apply        |
+| `destructive`  | User state removed without complete undo          | excluded              |
+| `experimental` | Version-sensitive maintenance operation           | excluded              |
 
 ### Default command behavior
 
@@ -814,12 +814,7 @@ lines.
 ### Finding
 
 ```ts
-export type FindingState =
-  | "protected"
-  | "eligible"
-  | "blocked"
-  | "unknown"
-  | "ignored";
+export type FindingState = "protected" | "eligible" | "blocked" | "unknown" | "ignored";
 
 export type Finding = {
   schemaVersion: 1;
@@ -846,11 +841,7 @@ export type Finding = {
 ### Action descriptor
 
 ```ts
-export type ActionRisk =
-  | "safe"
-  | "recoverable"
-  | "destructive"
-  | "experimental";
+export type ActionRisk = "safe" | "recoverable" | "destructive" | "experimental";
 
 export type ActionDescriptor = {
   actionId: string;
@@ -891,27 +882,15 @@ export interface AgentRinseAdapter {
   readonly version: number;
   probe(context: ProbeContext): Promise<AdapterProbe>;
   collect(context: CollectContext): AsyncIterable<ResourceSnapshot>;
-  protect(
-    resource: ResourceSnapshot,
-    context: ProtectContext,
-  ): Promise<RootEvidence[]>;
+  protect(resource: ResourceSnapshot, context: ProtectContext): Promise<RootEvidence[]>;
   propose(
     resource: ResourceSnapshot,
     roots: RootEvidence[],
     context: PolicyContext,
   ): Promise<ActionDescriptor[]>;
-  revalidate(
-    action: PlannedAction,
-    context: RevalidationContext,
-  ): Promise<RevalidationResult>;
-  apply(
-    action: PlannedAction,
-    context: ApplyContext,
-  ): Promise<ActionResult>;
-  undo?(
-    result: AppliedAction,
-    context: UndoContext,
-  ): Promise<UndoResult>;
+  revalidate(action: PlannedAction, context: RevalidationContext): Promise<RevalidationResult>;
+  apply(action: PlannedAction, context: ApplyContext): Promise<ActionResult>;
+  undo?(result: AppliedAction, context: UndoContext): Promise<UndoResult>;
 }
 ```
 
@@ -1556,17 +1535,17 @@ agentrinse config init
 
 ## Exit Codes
 
-| Code | Meaning |
-| --- | --- |
-| `0` | command completed; no actionable failure |
-| `1` | command or one or more requested actions failed |
-| `2` | invalid arguments or invalid configuration |
-| `3` | findings exist and `--fail-on-findings` was requested |
-| `4` | plan is stale, expired, or failed revalidation |
-| `5` | operation blocked by active ownership or safety invariant |
-| `6` | unsupported platform, provider, schema, or action |
-| `7` | run is partially applied and needs recovery |
-| `130` | interrupted by SIGINT |
+| Code  | Meaning                                                   |
+| ----- | --------------------------------------------------------- |
+| `0`   | command completed; no actionable failure                  |
+| `1`   | command or one or more requested actions failed           |
+| `2`   | invalid arguments or invalid configuration                |
+| `3`   | findings exist and `--fail-on-findings` was requested     |
+| `4`   | plan is stale, expired, or failed revalidation            |
+| `5`   | operation blocked by active ownership or safety invariant |
+| `6`   | unsupported platform, provider, schema, or action         |
+| `7`   | run is partially applied and needs recovery               |
+| `130` | interrupted by SIGINT                                     |
 
 Adapter degradation does not by itself make `audit` exit nonzero. The JSON
 summary records degraded adapters. `--strict` may turn degradation into exit
@@ -3011,29 +2990,29 @@ Exit criteria:
 
 ## Default Policy Table
 
-| Resource | Default age | Action | Risk | Recovery |
-| --- | ---: | --- | --- | --- |
-| active worktree | any | none | n/a | protected |
-| dirty worktree | any | none | n/a | protected |
-| unpushed worktree | any | none | n/a | protected |
-| locked worktree | any | none | n/a | protected |
-| inactive worktree artifacts | 3d | remove artifacts | safe | rebuild |
-| clean unreachable worktree | 14d | quarantine | recoverable | 7d undo |
-| Codex/Claude sessions | any | report only | n/a | provider-owned |
-| Cursor workspace/global state | any | report only | n/a | editor-owned |
-| GitHub Copilot sessions | any | report only | n/a | provider-owned |
-| Zed database/agent state | any | report only | n/a | editor-owned |
-| OpenCode database/snapshots | any | report only | n/a | provider-owned |
-| Grok Build sessions/task state | any | report only | n/a | provider-owned |
-| Codex logs DB free pages | threshold | report only | n/a | phase 4 |
-| dangling Docker image | 14d | remove exact image | safe | rebuild/pull |
-| Docker build cache | 7d | filtered prune | safe | rebuild |
-| unlabeled stopped container | any | report only | n/a | owner decision |
-| labeled stopped container | 14d | report only | n/a | future design |
-| Docker network | 14d | narrow removal | safe | recreate |
-| Docker volume | any | report only | n/a | protected |
-| old agent runtime | 14d | report, later remove | safe | package manager |
-| Mole cleanup | any | handoff | external | Mole-owned |
+| Resource                       | Default age | Action               | Risk        | Recovery        |
+| ------------------------------ | ----------: | -------------------- | ----------- | --------------- |
+| active worktree                |         any | none                 | n/a         | protected       |
+| dirty worktree                 |         any | none                 | n/a         | protected       |
+| unpushed worktree              |         any | none                 | n/a         | protected       |
+| locked worktree                |         any | none                 | n/a         | protected       |
+| inactive worktree artifacts    |          3d | remove artifacts     | safe        | rebuild         |
+| clean unreachable worktree     |         14d | quarantine           | recoverable | 7d undo         |
+| Codex/Claude sessions          |         any | report only          | n/a         | provider-owned  |
+| Cursor workspace/global state  |         any | report only          | n/a         | editor-owned    |
+| GitHub Copilot sessions        |         any | report only          | n/a         | provider-owned  |
+| Zed database/agent state       |         any | report only          | n/a         | editor-owned    |
+| OpenCode database/snapshots    |         any | report only          | n/a         | provider-owned  |
+| Grok Build sessions/task state |         any | report only          | n/a         | provider-owned  |
+| Codex logs DB free pages       |   threshold | report only          | n/a         | phase 4         |
+| dangling Docker image          |         14d | remove exact image   | safe        | rebuild/pull    |
+| Docker build cache             |          7d | filtered prune       | safe        | rebuild         |
+| unlabeled stopped container    |         any | report only          | n/a         | owner decision  |
+| labeled stopped container      |         14d | report only          | n/a         | future design   |
+| Docker network                 |         14d | narrow removal       | safe        | recreate        |
+| Docker volume                  |         any | report only          | n/a         | protected       |
+| old agent runtime              |         14d | report, later remove | safe        | package manager |
+| Mole cleanup                   |         any | handoff              | external    | Mole-owned      |
 
 Defaults are intentionally conservative. Power comes from good root discovery,
 not aggressive age thresholds.

@@ -7,4 +7,3 @@ main().catch((error: unknown) => {
   process.stderr.write(`agentrinse: ${message}\n`);
   process.exitCode = 1;
 });
-

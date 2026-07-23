@@ -17,12 +17,8 @@ export type PlanCommandResult = {
   output: string;
 };
 
-export async function executePlanCommand(
-  options: PlanCommandOptions,
-): Promise<PlanCommandResult> {
-  const audit = auditReportSchema.parse(
-    await readJsonFile(resolve(options.audit)),
-  );
+export async function executePlanCommand(options: PlanCommandOptions): Promise<PlanCommandResult> {
+  const audit = auditReportSchema.parse(await readJsonFile(resolve(options.audit)));
   const config = await loadConfig(options.config);
   const plan = cleanupPlanSchema.parse(createCleanupPlan(audit, config));
 
@@ -35,4 +31,3 @@ export async function executePlanCommand(
     output: `${JSON.stringify(plan, null, 2)}\n`,
   };
 }
-

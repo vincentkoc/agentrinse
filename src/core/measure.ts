@@ -13,10 +13,7 @@ export type MeasureOptions = {
   signal?: AbortSignal;
 };
 
-export async function measurePath(
-  root: string,
-  options: MeasureOptions,
-): Promise<Measurement> {
+export async function measurePath(root: string, options: MeasureOptions): Promise<Measurement> {
   const result: Measurement = {
     bytes: 0,
     entries: 0,
@@ -60,4 +57,3 @@ export async function measurePath(
 
   return result;
 }
-

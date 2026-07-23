@@ -1,10 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 import { DEFAULT_CONFIG } from "./defaults.js";
-import {
-  agentRinseConfigSchema,
-  type AgentRinseConfig,
-} from "./schema.js";
+import { agentRinseConfigSchema, type AgentRinseConfig } from "./schema.js";
 
 export async function loadConfig(path?: string): Promise<AgentRinseConfig> {
   if (path === undefined) {
@@ -31,4 +28,3 @@ export async function loadConfig(path?: string): Promise<AgentRinseConfig> {
     },
   };
 }
-

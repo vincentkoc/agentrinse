@@ -13,19 +13,11 @@ export function buildProgram(): Command {
   program
     .command("audit")
     .description("Inventory a synthetic home without mutating it.")
-    .requiredOption(
-      "--home <path>",
-      "synthetic home to audit; the real home is refused",
-    )
+    .requiredOption("--home <path>", "synthetic home to audit; the real home is refused")
     .option("--config <path>", "explicit JSON config")
     .option("--json", "emit the versioned JSON report", false)
     .option("--output <path>", "write the JSON report atomically")
-    .action(async (options: {
-      home: string;
-      config?: string;
-      json: boolean;
-      output?: string;
-    }) => {
+    .action(async (options: { home: string; config?: string; json: boolean; output?: string }) => {
       const result = await executeAuditCommand(options);
       process.stdout.write(result.output);
     });
@@ -36,16 +28,10 @@ export function buildProgram(): Command {
     .requiredOption("--audit <path>", "saved audit JSON")
     .option("--config <path>", "explicit JSON config")
     .option("--output <path>", "write the plan atomically")
-    .action(
-      async (options: {
-        audit: string;
-        config?: string;
-        output?: string;
-      }) => {
-        const result = await executePlanCommand(options);
-        process.stdout.write(result.output);
-      },
-    );
+    .action(async (options: { audit: string; config?: string; output?: string }) => {
+      const result = await executePlanCommand(options);
+      process.stdout.write(result.output);
+    });
 
   program
     .command("adapters")
@@ -60,4 +46,3 @@ export function buildProgram(): Command {
 export async function main(argv = process.argv): Promise<void> {
   await buildProgram().parseAsync(argv);
 }
-

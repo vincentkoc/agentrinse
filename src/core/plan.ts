@@ -1,8 +1,5 @@
 import type { AgentRinseConfig } from "../config/schema.js";
-import {
-  cleanupPlanSchema,
-  type CleanupPlan,
-} from "../contracts/plan.js";
+import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import type { AuditReport } from "../contracts/report.js";
 import { sha256, type JsonValue } from "./digest.js";
 
@@ -16,9 +13,7 @@ export function createCleanupPlan(
   now = new Date(),
 ): CleanupPlan {
   const createdAt = now.toISOString();
-  const expiresAt = new Date(
-    now.getTime() + config.plan.ttlMinutes * 60_000,
-  ).toISOString();
+  const expiresAt = new Date(now.getTime() + config.plan.ttlMinutes * 60_000).toISOString();
   const configDigest = sha256(toJsonValue(config));
   const auditDigest = sha256(toJsonValue(audit));
   const planWithoutId = {
@@ -39,4 +34,3 @@ export function createCleanupPlan(
     planId: sha256(toJsonValue(planWithoutId)),
   });
 }
-

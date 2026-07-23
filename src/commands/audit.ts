@@ -35,9 +35,6 @@ export async function executeAuditCommand(
 
   return {
     report,
-    output: options.json
-      ? `${JSON.stringify(report, null, 2)}\n`
-      : renderAudit(report),
+    output: options.json ? `${JSON.stringify(report, null, 2)}\n` : renderAudit(report),
   };
 }
-

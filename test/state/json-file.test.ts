@@ -4,10 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  readJsonFile,
-  writeJsonAtomic,
-} from "../../src/state/json-file.js";
+import { readJsonFile, writeJsonAtomic } from "../../src/state/json-file.js";
 
 describe("atomic JSON files", () => {
   it("writes a complete owner-only document", async () => {

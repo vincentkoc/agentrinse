@@ -1,14 +1,27 @@
 {
   "name": "agentrinse",
   "version": "0.0.0",
+  "private": false,
   "description": "Safe, local-first cleanup planning for agentic development.",
+  "homepage": "https://agentrinse.com",
+  "bugs": {
+    "url": "https://github.com/vincentkoc/agentrinse/issues"
+  },
   "license": "MIT",
   "author": "Vincent Koc",
-  "type": "module",
-  "private": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vincentkoc/agentrinse.git"
+  },
   "bin": {
     "agentrinse": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,23 +30,6 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist",
-    "LICENSE",
-    "README.md"
-  ],
-  "engines": {
-    "node": ">=22"
-  },
-  "packageManager": "pnpm@11.2.2",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/vincentkoc/agentrinse.git"
-  },
-  "bugs": {
-    "url": "https://github.com/vincentkoc/agentrinse/issues"
-  },
-  "homepage": "https://agentrinse.com",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
@@ -56,5 +52,9 @@
     "publint": "0.3.22",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
-  }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.2.2"
 }

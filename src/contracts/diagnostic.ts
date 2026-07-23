@@ -13,4 +13,3 @@ export const diagnosticSchema = z.object({
 
 export type DiagnosticSeverity = z.infer<typeof diagnosticSeveritySchema>;
 export type Diagnostic = z.infer<typeof diagnosticSchema>;
-

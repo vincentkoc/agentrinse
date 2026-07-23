@@ -6,10 +6,7 @@ export function renderAdapters(): string {
     "",
     ...Object.values(PROVIDER_SPECS)
       .sort((left, right) => left.id.localeCompare(right.id))
-      .map(
-        (spec) =>
-          `${spec.id.padEnd(10)} audit-only  ${spec.displayName}`,
-      ),
+      .map((spec) => `${spec.id.padEnd(10)} audit-only  ${spec.displayName}`),
     "",
     "git        planned     Git worktrees",
     "docker     planned     Docker resources",
@@ -18,4 +15,3 @@ export function renderAdapters(): string {
 
   return lines.join("\n");
 }
-

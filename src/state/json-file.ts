@@ -1,11 +1,4 @@
-import {
-  chmod,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rm,
-} from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -13,10 +6,7 @@ export async function readJsonFile(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
 
-export async function writeJsonAtomic(
-  path: string,
-  value: unknown,
-): Promise<void> {
+export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   const directory = dirname(path);
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await chmod(directory, 0o700);
@@ -36,4 +26,3 @@ export async function writeJsonAtomic(
     throw error;
   }
 }
-

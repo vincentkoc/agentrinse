@@ -36,4 +36,3 @@ export const resourceSnapshotSchema = z.object({
 export type ResourceKind = z.infer<typeof resourceKindSchema>;
 export type ResourceRef = z.infer<typeof resourceRefSchema>;
 export type ResourceSnapshot = z.infer<typeof resourceSnapshotSchema>;
-

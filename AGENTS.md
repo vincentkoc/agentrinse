@@ -49,4 +49,3 @@ Before publish:
 ```bash
 pnpm pack:check
 ```
-

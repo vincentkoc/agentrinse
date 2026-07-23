@@ -22,4 +22,3 @@ export const DEFAULT_CONFIG: AgentRinseConfig = {
     maxRisk: "safe",
   },
 };
-

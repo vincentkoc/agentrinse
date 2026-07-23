@@ -53,4 +53,3 @@ node dist/cli.js audit --home ./test/fixtures/home --json
 ## License
 
 MIT
-

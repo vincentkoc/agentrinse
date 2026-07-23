@@ -35,9 +35,7 @@ export function renderAudit(report: AuditReport): string {
 
   for (const finding of report.findings) {
     const bytes =
-      finding.measuredBytes === undefined
-        ? "unknown"
-        : formatBytes(finding.measuredBytes);
+      finding.measuredBytes === undefined ? "unknown" : formatBytes(finding.measuredBytes);
     lines.push(
       `${bytes.padStart(10)}  ${finding.resource.adapter}/${finding.resource.displayName}`,
     );

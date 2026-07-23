@@ -67,17 +67,12 @@ describe("ProviderAuditAdapter", () => {
     expect(probe.diagnostics[0]?.code).toBe("PROVIDER_ROOT_SYMLINK");
   });
 
-  it.each([
-    "codex",
-    "claude",
-    "cursor",
-    "copilot",
-    "zed",
-    "opencode",
-    "grok",
-  ] as const)("defines a %s adapter root inside the synthetic home", (id) => {
-    const root = PROVIDER_SPECS[id].defaultRoot("/fixture/home", "darwin");
+  it.each(["codex", "claude", "cursor", "copilot", "zed", "opencode", "grok"] as const)(
+    "defines a %s adapter root inside the synthetic home",
+    (id) => {
+      const root = PROVIDER_SPECS[id].defaultRoot("/fixture/home", "darwin");
 
-    expect(root.startsWith("/fixture/home/")).toBe(true);
-  });
+      expect(root.startsWith("/fixture/home/")).toBe(true);
+    },
+  );
 });

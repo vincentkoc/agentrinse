@@ -1,11 +1,7 @@
 import { lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import type {
-  AuditAdapter,
-  AuditContext,
-  CollectionResult,
-} from "../contracts/adapter.js";
+import type { AuditAdapter, AuditContext, CollectionResult } from "../contracts/adapter.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import type { Finding } from "../contracts/finding.js";
 import type { AdapterProbe } from "../contracts/report.js";
@@ -23,9 +19,7 @@ export type ProviderAdapterOptions = {
 
 function isMissing(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "ENOENT"
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
   );
 }
 
@@ -42,10 +36,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
   private root(context: AuditContext): string {
     return resolve(
       this.options.root ??
-        this.spec.defaultRoot(
-          context.home,
-          this.options.platform ?? process.platform,
-        ),
+        this.spec.defaultRoot(context.home, this.options.platform ?? process.platform),
     );
   }
 
@@ -123,10 +114,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
     }
   }
 
-  async collect(
-    context: AuditContext,
-    probe: AdapterProbe,
-  ): Promise<CollectionResult> {
+  async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
       return { resources: [], diagnostics: [] };
     }
@@ -137,9 +125,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
     for (const candidate of this.spec.resources) {
       context.signal?.throwIfAborted();
       const path =
-        candidate.relativePath === "."
-          ? probe.root
-          : join(probe.root, candidate.relativePath);
+        candidate.relativePath === "." ? probe.root : join(probe.root, candidate.relativePath);
 
       try {
         const stats = await lstat(path);
@@ -156,9 +142,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
         const measurement = this.options.measureBytes
           ? await measurePath(path, {
               maxEntries: this.options.maxEntries,
-              ...(context.signal === undefined
-                ? {}
-                : { signal: context.signal }),
+              ...(context.signal === undefined ? {} : { signal: context.signal }),
             })
           : undefined;
         const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
@@ -175,9 +159,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
           },
           observedAt: context.now.toISOString(),
           exists: true,
-          ...(measurement === undefined
-            ? {}
-            : { measuredBytes: measurement.bytes }),
+          ...(measurement === undefined ? {} : { measuredBytes: measurement.bytes }),
           facts: {
             reportOnly: true,
             entries: measurement?.entries,
@@ -202,10 +184,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
     return { resources, diagnostics };
   }
 
-  async classify(
-    context: AuditContext,
-    resource: ResourceSnapshot,
-  ): Promise<Finding> {
+  async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const observedAt = context.now.toISOString();
     return {
       schemaVersion: 1,
@@ -220,14 +199,11 @@ export class ProviderAuditAdapter implements AuditAdapter {
           code: "provider-owned-report-only",
           source: this.id,
           observedAt,
-          detail:
-            "The pre-alpha adapter inventories this provider state but cannot clean it.",
+          detail: "The pre-alpha adapter inventories this provider state but cannot clean it.",
         },
       ],
       facts: resource.facts,
-      ...(resource.measuredBytes === undefined
-        ? {}
-        : { measuredBytes: resource.measuredBytes }),
+      ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
       warnings: [],
     };
   }

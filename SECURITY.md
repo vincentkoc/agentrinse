@@ -25,4 +25,3 @@ High-impact classes include:
 
 AgentRinse is pre-alpha and audit-only. No version is production-ready until
 the repository publishes a stable release and its recovery gates are proven.
-

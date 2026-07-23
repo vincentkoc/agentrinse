@@ -11,13 +11,7 @@ export const findingStateSchema = z.enum([
   "ignored",
 ]);
 
-export const findingConfidenceSchema = z.enum([
-  "certain",
-  "high",
-  "medium",
-  "low",
-  "unknown",
-]);
+export const findingConfidenceSchema = z.enum(["certain", "high", "medium", "low", "unknown"]);
 
 export const rootEvidenceSchema = z.object({
   code: z.string().min(1),
@@ -46,4 +40,3 @@ export type FindingState = z.infer<typeof findingStateSchema>;
 export type FindingConfidence = z.infer<typeof findingConfidenceSchema>;
 export type RootEvidence = z.infer<typeof rootEvidenceSchema>;
 export type Finding = z.infer<typeof findingSchema>;
-
