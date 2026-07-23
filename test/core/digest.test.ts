@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  canonicalJson,
-  sha256,
-  sha256Json,
-} from "../../src/core/digest.js";
+import { canonicalJson, sha256, sha256Json } from "../../src/core/digest.js";
 
 describe("canonicalJson", () => {
   it("sorts object keys recursively", () => {
@@ -27,8 +23,6 @@ describe("sha256", () => {
   });
 
   it("hashes arbitrary JSON-compatible objects canonically", () => {
-    expect(sha256Json({ a: 1, b: 2 })).toBe(
-      sha256Json({ b: 2, a: 1 }),
-    );
+    expect(sha256Json({ a: 1, b: 2 })).toBe(sha256Json({ b: 2, a: 1 }));
   });
 });

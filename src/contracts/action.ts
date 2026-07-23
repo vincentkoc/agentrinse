@@ -1,11 +1,6 @@
 import { z } from "zod";
 
-export const actionRiskSchema = z.enum([
-  "safe",
-  "recoverable",
-  "destructive",
-  "experimental",
-]);
+export const actionRiskSchema = z.enum(["safe", "recoverable", "destructive", "experimental"]);
 
 export const pathIdentitySchema = z.object({
   path: z.string().min(1),
@@ -28,9 +23,7 @@ export const artifactRemoveActionSchema = z.object({
   target: pathIdentitySchema,
 });
 
-export const plannedActionSchema = z.discriminatedUnion("type", [
-  artifactRemoveActionSchema,
-]);
+export const plannedActionSchema = z.discriminatedUnion("type", [artifactRemoveActionSchema]);
 
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
 export type PathIdentity = z.infer<typeof pathIdentitySchema>;

@@ -80,11 +80,7 @@ describe("createCleanupPlan", () => {
       ],
     };
 
-    const plan = createCleanupPlan(
-      audit,
-      DEFAULT_CONFIG,
-      new Date("2026-07-23T02:00:00.000Z"),
-    );
+    const plan = createCleanupPlan(audit, DEFAULT_CONFIG, new Date("2026-07-23T02:00:00.000Z"));
 
     expect(plan.home).toBe(AUDIT.home);
     expect(plan.actions).toHaveLength(1);

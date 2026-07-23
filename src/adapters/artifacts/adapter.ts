@@ -2,11 +2,7 @@ import { lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import type { AgentRinseConfig } from "../../config/schema.js";
-import type {
-  AuditAdapter,
-  AuditContext,
-  CollectionResult,
-} from "../../contracts/adapter.js";
+import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import type { ArtifactRemoveAction } from "../../contracts/action.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";
 import type { Finding, RootEvidence } from "../../contracts/finding.js";
@@ -20,24 +16,17 @@ import {
 } from "../../core/process-ownership.js";
 import { isPathInside } from "../../core/safety.js";
 
-type ArtifactOptions = AgentRinseConfig["artifacts"] &
-  AgentRinseConfig["audit"];
+type ArtifactOptions = AgentRinseConfig["artifacts"] & AgentRinseConfig["audit"];
 
 export type ProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
 
 function isMissing(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    "code" in error &&
-    (error as NodeJS.ErrnoException).code === "ENOENT"
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
   );
 }
 
-function rootEvidence(
-  context: AuditContext,
-  code: string,
-  detail: string,
-): RootEvidence {
+function rootEvidence(context: AuditContext, code: string, detail: string): RootEvidence {
   return {
     code,
     source: "artifacts",
@@ -88,9 +77,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
       } catch (error) {
         diagnostics.push({
           severity: isMissing(error) ? "warning" : "error",
-          code: isMissing(error)
-            ? "ARTIFACT_PROJECT_MISSING"
-            : "ARTIFACT_PROJECT_UNREADABLE",
+          code: isMissing(error) ? "ARTIFACT_PROJECT_MISSING" : "ARTIFACT_PROJECT_UNREADABLE",
           message: error instanceof Error ? error.message : String(error),
           adapter: this.id,
         });
@@ -105,8 +92,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     if (validation.roots.length === 0) {
       return {
         adapter: this.id,
-        status:
-          this.options.projects.length === 0 ? "disabled" : "degraded",
+        status: this.options.projects.length === 0 ? "disabled" : "degraded",
         detail:
           this.options.projects.length === 0
             ? "No artifact project roots configured"
@@ -117,18 +103,14 @@ export class ArtifactAuditAdapter implements AuditAdapter {
 
     return {
       adapter: this.id,
-      status:
-        validation.diagnostics.length === 0 ? "available" : "degraded",
+      status: validation.diagnostics.length === 0 ? "available" : "degraded",
       root: context.home,
       detail: `${validation.roots.length} explicit artifact project root(s) available`,
       diagnostics: validation.diagnostics,
     };
   }
 
-  async collect(
-    context: AuditContext,
-    probe: AdapterProbe,
-  ): Promise<CollectionResult> {
+  async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
     if (!["available", "degraded"].includes(probe.status)) {
       return { resources: [], diagnostics: [] };
     }
@@ -164,9 +146,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
             isDirectory && !isSymlink && this.options.measureBytes
               ? await measurePath(path, {
                   maxEntries: this.options.maxEntries,
-                  ...(context.signal === undefined
-                    ? {}
-                    : { signal: context.signal }),
+                  ...(context.signal === undefined ? {} : { signal: context.signal }),
                 })
               : undefined;
           const ownership =
@@ -190,19 +170,14 @@ export class ArtifactAuditAdapter implements AuditAdapter {
             },
             observedAt: context.now.toISOString(),
             exists: true,
-            ...(measurement === undefined
-              ? {}
-              : { measuredBytes: measurement.bytes }),
+            ...(measurement === undefined ? {} : { measuredBytes: measurement.bytes }),
             facts: {
               projectRoot,
               name,
               device: stats.dev,
               inode: stats.ino,
               mtimeMs: stats.mtimeMs,
-              ageMinutes: Math.max(
-                0,
-                (context.now.getTime() - stats.mtimeMs) / 60_000,
-              ),
+              ageMinutes: Math.max(0, (context.now.getTime() - stats.mtimeMs) / 60_000),
               isDirectory,
               isSymlink,
               measurementTruncated: measurement?.truncated ?? false,
@@ -226,10 +201,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     return { resources, diagnostics };
   }
 
-  async classify(
-    context: AuditContext,
-    resource: ResourceSnapshot,
-  ): Promise<Finding> {
+  async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const facts = resource.facts;
     const roots: RootEvidence[] = [];
     const warnings: Diagnostic[] = [];
@@ -292,9 +264,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
       );
     }
 
-    const ownership = facts.processOwnership as
-      | ProcessOwnershipResult
-      | undefined;
+    const ownership = facts.processOwnership as ProcessOwnershipResult | undefined;
     if (state === "eligible" && ownership?.status === "busy") {
       state = "protected";
       roots.push(
@@ -317,9 +287,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     }
 
     const candidateActions: ArtifactRemoveAction[] =
-      state === "eligible"
-        ? [this.actionFor(resource)]
-        : [];
+      state === "eligible" ? [this.actionFor(resource)] : [];
 
     return {
       schemaVersion: 1,
@@ -336,8 +304,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
         ? {}
         : {
             measuredBytes: resource.measuredBytes,
-            estimatedReclaimBytes:
-              state === "eligible" ? resource.measuredBytes : 0,
+            estimatedReclaimBytes: state === "eligible" ? resource.measuredBytes : 0,
           }),
       warnings,
     };

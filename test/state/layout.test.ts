@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  resolveStateRoot,
-  stateLayout,
-} from "../../src/state/layout.js";
+import { resolveStateRoot, stateLayout } from "../../src/state/layout.js";
 
 describe("state layout", () => {
   it("uses an explicit state root first", () => {

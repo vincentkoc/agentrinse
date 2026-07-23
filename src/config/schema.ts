@@ -47,8 +47,16 @@ export const agentRinseConfigSchema = z.object({
   artifacts: z
     .object({
       projects: z.array(artifactProjectSchema).default([]),
-      minAgeMinutes: z.number().int().nonnegative().default(24 * 60),
-      minBytes: z.number().int().nonnegative().default(64 * 1024 * 1024),
+      minAgeMinutes: z
+        .number()
+        .int()
+        .nonnegative()
+        .default(24 * 60),
+      minBytes: z
+        .number()
+        .int()
+        .nonnegative()
+        .default(64 * 1024 * 1024),
       processCheck: z.literal("required").default("required"),
     })
     .default(() => ({

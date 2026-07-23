@@ -1,10 +1,4 @@
-import {
-  mkdir,
-  mkdtemp,
-  symlink,
-  utimes,
-  writeFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,9 +10,7 @@ import type { ProcessOwnershipResult } from "../../src/core/process-ownership.js
 
 const NOW = new Date("2026-07-23T12:00:00.000Z");
 
-async function fixture(
-  ownership: ProcessOwnershipResult = { status: "idle", matches: [] },
-) {
+async function fixture(ownership: ProcessOwnershipResult = { status: "idle", matches: [] }) {
   const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-"));
   const projectRoot = join(home, "project");
   const artifact = join(projectRoot, "node_modules");
@@ -50,10 +42,7 @@ describe("ArtifactAuditAdapter", () => {
     const { context, adapter } = await fixture();
     const probe = await adapter.probe(context);
     const collection = await adapter.collect(context, probe);
-    const finding = await adapter.classify(
-      context,
-      collection.resources[0]!,
-    );
+    const finding = await adapter.classify(context, collection.resources[0]!);
 
     expect(finding.state).toBe("eligible");
     expect(finding.candidateActions[0]).toMatchObject({
@@ -70,10 +59,7 @@ describe("ArtifactAuditAdapter", () => {
     });
     const probe = await adapter.probe(context);
     const collection = await adapter.collect(context, probe);
-    const finding = await adapter.classify(
-      context,
-      collection.resources[0]!,
-    );
+    const finding = await adapter.classify(context, collection.resources[0]!);
 
     expect(artifact).toContain("node_modules");
     expect(finding.state).toBe("protected");
@@ -107,10 +93,7 @@ describe("ArtifactAuditAdapter", () => {
 
     const probe = await adapter.probe(context);
     const collection = await adapter.collect(context, probe);
-    const finding = await adapter.classify(
-      context,
-      collection.resources[0]!,
-    );
+    const finding = await adapter.classify(context, collection.resources[0]!);
 
     expect(finding.state).toBe("blocked");
     expect(finding.warnings[0]?.code).toBe("ARTIFACT_SYMLINK_BLOCKED");
@@ -118,9 +101,7 @@ describe("ArtifactAuditAdapter", () => {
 
   it("rejects project roots outside the audited home", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-artifact-home-"));
-    const outside = await mkdtemp(
-      join(tmpdir(), "agentrinse-artifact-outside-"),
-    );
+    const outside = await mkdtemp(join(tmpdir(), "agentrinse-artifact-outside-"));
     const context: AuditContext = {
       home,
       now: NOW,
@@ -138,8 +119,6 @@ describe("ArtifactAuditAdapter", () => {
     const probe = await adapter.probe(context);
 
     expect(probe.status).toBe("degraded");
-    expect(probe.diagnostics[0]?.code).toBe(
-      "ARTIFACT_PROJECT_OUTSIDE_HOME",
-    );
+    expect(probe.diagnostics[0]?.code).toBe("ARTIFACT_PROJECT_OUTSIDE_HOME");
   });
 });

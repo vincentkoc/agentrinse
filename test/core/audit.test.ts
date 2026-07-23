@@ -64,8 +64,6 @@ describe("runAudit", () => {
       },
     ];
 
-    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain(
-      "artifacts",
-    );
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("artifacts");
   });
 });

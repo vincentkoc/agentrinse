@@ -1,11 +1,5 @@
 import { execFile } from "node:child_process";
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  readFile,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -51,31 +45,12 @@ await writeFile(
 
 await execFileAsync(
   process.execPath,
-  [
-    "dist/cli.js",
-    "audit",
-    "--home",
-    home,
-    "--config",
-    configPath,
-    "--json",
-    "--output",
-    auditPath,
-  ],
+  ["dist/cli.js", "audit", "--home", home, "--config", configPath, "--json", "--output", auditPath],
   { cwd: process.cwd() },
 );
 await execFileAsync(
   process.execPath,
-  [
-    "dist/cli.js",
-    "plan",
-    "--audit",
-    auditPath,
-    "--config",
-    configPath,
-    "--output",
-    planPath,
-  ],
+  ["dist/cli.js", "plan", "--audit", auditPath, "--config", configPath, "--output", planPath],
   { cwd: process.cwd() },
 );
 
@@ -87,10 +62,8 @@ if (!Array.isArray(audit.findings) || audit.findings.length !== 3) {
 }
 
 if (
-  audit.findings.filter((finding) => finding.state === "protected")
-    .length !== 2 ||
-  audit.findings.filter((finding) => finding.state === "eligible")
-    .length !== 1
+  audit.findings.filter((finding) => finding.state === "protected").length !== 2 ||
+  audit.findings.filter((finding) => finding.state === "eligible").length !== 1
 ) {
   throw new Error("smoke audit classifications are incorrect");
 }
@@ -118,10 +91,7 @@ const apply = await execFileAsync(
 );
 const run = JSON.parse(apply.stdout);
 
-if (
-  run.status !== "completed" ||
-  run.actions?.[0]?.status !== "applied"
-) {
+if (run.status !== "completed" || run.actions?.[0]?.status !== "applied") {
   throw new Error("smoke apply did not complete");
 }
 await access(join(project, "source.ts"));
@@ -129,11 +99,7 @@ try {
   await access(artifact);
   throw new Error("smoke apply left the planned artifact in place");
 } catch (error) {
-  if (
-    !(error instanceof Error) ||
-    !("code" in error) ||
-    error.code !== "ENOENT"
-  ) {
+  if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
     throw error;
   }
 }
