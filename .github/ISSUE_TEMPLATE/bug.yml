@@ -30,6 +30,7 @@ body:
         - Grok Build
         - Git
         - Docker
+        - Artifacts
         - Core or CLI
     validations:
       required: true

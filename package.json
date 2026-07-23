@@ -2,7 +2,7 @@
   "name": "agentrinse",
   "version": "0.1.0",
   "private": false,
-  "description": "Safe, local-first cleanup planning for agentic development.",
+  "description": "Safe, local-first cleanup for agentic development.",
   "homepage": "https://agentrinse.com",
   "bugs": {
     "url": "https://github.com/vincentkoc/agentrinse/issues"
