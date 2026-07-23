@@ -21,4 +21,5 @@ export {
   type CleanupRun,
 } from "./contracts/run.js";
 export { runAudit, type RunAuditOptions } from "./core/audit.js";
+export { applyCleanupPlan, type ApplyCleanupPlanOptions, type ApplyResult } from "./core/apply.js";
 export { createCleanupPlan } from "./core/plan.js";
