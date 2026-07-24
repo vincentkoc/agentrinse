@@ -23,7 +23,7 @@ describe("executeApplyCommand", () => {
     ).rejects.toThrow("apply --json requires --yes");
   });
 
-  it("requires non-interactive authorization and emits JSON", async () => {
+  it("refuses mutation in the reservation release", async () => {
     const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-command-")));
     const project = join(home, "project");
     const target = join(project, "node_modules");
@@ -83,15 +83,16 @@ describe("executeApplyCommand", () => {
       planId: cleanupPlanId(content),
     });
 
-    const result = await executeApplyCommand({
-      plan: planPath,
-      config: configPath,
-      stateDir,
-      yes: true,
-      json: true,
-    });
+    await expect(
+      executeApplyCommand({
+        plan: planPath,
+        config: configPath,
+        stateDir,
+        yes: true,
+        json: true,
+      }),
+    ).rejects.toThrow("apply is unavailable in the unsupported 0.0.0 reservation release");
 
-    expect(result.run.status).toBe("completed");
-    expect(JSON.parse(result.output)).toEqual(result.run);
+    await expect(stat(target)).resolves.toBeDefined();
   });
 });
