@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 
 import { loadConfigForHome } from "../config/load.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
@@ -7,7 +6,7 @@ import { purgeWorktreeQuarantine, type PurgeWorktreeOptions } from "../core/work
 import { ensurePrivateDirectory } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 import { acquireApplyLock } from "../state/lock.js";
-import { listJsonRecords } from "../state/records.js";
+import { listJsonRecordFiles } from "../state/records.js";
 import { confirmMutation, type ConfirmationDependencies } from "./confirmation.js";
 
 export type PurgeCommandOptions = {
@@ -65,10 +64,14 @@ export async function executePurgeCommand(
   }
   const now = options.now ?? new Date();
   const layout = stateLayout(resolveStateRoot(options.home, options.stateDir));
-  const live = (await listJsonRecords(layout.quarantine, quarantineEntrySchema)).filter(
-    (entry) => entry.status === "quarantined",
-  );
-  const entries = live.filter((entry) =>
+  const records = await listJsonRecordFiles(layout.quarantine, quarantineEntrySchema);
+  for (const record of records) {
+    if (record.name !== `${record.value.entryId}.json`) {
+      throw new Error(`quarantine manifest entry ID does not match filename: ${record.name}`);
+    }
+  }
+  const live = records.filter(({ value }) => value.status === "quarantined");
+  const entries = live.filter(({ value: entry }) =>
     options.expired
       ? Date.parse(entry.expiresAt) <= now.getTime()
       : options.runId === undefined || entry.runId === options.runId,
@@ -76,12 +79,19 @@ export async function executePurgeCommand(
 
   if (!options.apply) {
     return {
-      entries,
+      entries: entries.map((record) => record.value),
       applied: false,
       reclaimedBytes: 0,
       output: options.json
-        ? `${JSON.stringify({ applied: false, entries }, null, 2)}\n`
-        : renderPreview(entries, now),
+        ? `${JSON.stringify(
+            { applied: false, entries: entries.map((record) => record.value) },
+            null,
+            2,
+          )}\n`
+        : renderPreview(
+            entries.map((record) => record.value),
+            now,
+          ),
     };
   }
   if (entries.length === 0) {
@@ -108,9 +118,10 @@ export async function executePurgeCommand(
   const purged: QuarantineEntry[] = [];
   let reclaimedBytes = 0;
   try {
-    for (const entry of entries) {
+    for (const record of entries) {
+      const entry = record.value;
       const result = await (options.dependencies?.purge ?? purgeWorktreeQuarantine)(entry, {
-        manifestPath: join(layout.quarantine, `${entry.entryId}.json`),
+        manifestPath: record.path,
         quarantineDirectory: layout.quarantine,
         maxEntries: config.audit.maxEntries,
         allowUnexpired: options.runId !== undefined,

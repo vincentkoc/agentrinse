@@ -105,6 +105,25 @@ describe("undo command", () => {
       }),
     ).rejects.toThrow("undo --json requires --yes");
   });
+
+  it("rejects a manifest whose entry ID does not match its filename", async () => {
+    const value = entry("actual", "run-1", "2026-08-01T00:00:00.000Z");
+    const fixture = await stateFixture([]);
+    const layout = stateLayout(fixture.stateRoot);
+    await writeJsonAtomic(join(layout.quarantine, "different.json"), value, {
+      privateDirectories: [layout.quarantine],
+    });
+
+    await expect(
+      executeUndoCommand({
+        runId: "run-1",
+        home: fixture.home,
+        stateDir: fixture.stateRoot,
+        yes: true,
+        json: false,
+      }),
+    ).rejects.toThrow("entry ID does not match filename");
+  });
 });
 
 describe("purge command", () => {

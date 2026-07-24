@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
 
 import { loadConfigForHome } from "../config/load.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
@@ -7,7 +6,7 @@ import { undoWorktreeQuarantine, type WorktreeRecoveryOptions } from "../core/wo
 import { ensurePrivateDirectory } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 import { acquireApplyLock } from "../state/lock.js";
-import { listJsonRecords } from "../state/records.js";
+import { listJsonRecordFiles } from "../state/records.js";
 import { confirmMutation, type ConfirmationDependencies } from "./confirmation.js";
 
 export type UndoCommandOptions = {
@@ -33,11 +32,17 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
     throw new Error("undo --json requires --yes");
   }
   const layout = stateLayout(resolveStateRoot(options.home, options.stateDir));
-  const entries = (await listJsonRecords(layout.quarantine, quarantineEntrySchema)).filter(
-    (entry) =>
-      entry.status === "quarantined" &&
-      entry.runId === options.runId &&
-      (options.actionId === undefined || entry.actionId === options.actionId),
+  const records = await listJsonRecordFiles(layout.quarantine, quarantineEntrySchema);
+  for (const record of records) {
+    if (record.name !== `${record.value.entryId}.json`) {
+      throw new Error(`quarantine manifest entry ID does not match filename: ${record.name}`);
+    }
+  }
+  const entries = records.filter(
+    ({ value }) =>
+      value.status === "quarantined" &&
+      value.runId === options.runId &&
+      (options.actionId === undefined || value.actionId === options.actionId),
   );
   if (entries.length === 0) {
     throw new Error(`no live quarantine entries found for run ${options.runId}`);
@@ -62,10 +67,11 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
   });
   const restored: QuarantineEntry[] = [];
   try {
-    for (const entry of entries) {
+    for (const record of entries) {
+      const entry = record.value;
       restored.push(
         await (options.dependencies?.undo ?? undoWorktreeQuarantine)(entry, {
-          manifestPath: join(layout.quarantine, `${entry.entryId}.json`),
+          manifestPath: record.path,
           quarantineDirectory: layout.quarantine,
           maxEntries: config.audit.maxEntries,
         }),

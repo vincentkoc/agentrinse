@@ -3,6 +3,10 @@ import { z } from "zod";
 import { diagnosticSchema } from "./diagnostic.js";
 import { worktreeIdentitySchema } from "./action.js";
 
+export const quarantineEntryIdSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u, "entry ID must be filename-safe");
+
 export const quarantineStatusSchema = z.enum([
   "preparing",
   "recovery-ref-created",
@@ -18,7 +22,7 @@ export const quarantineStatusSchema = z.enum([
 export const quarantineEntrySchema = z
   .object({
     schemaVersion: z.literal(1),
-    entryId: z.string().min(1),
+    entryId: quarantineEntryIdSchema,
     runId: z.string().min(1),
     actionId: z.string().min(1),
     resourceId: z.string().min(1),

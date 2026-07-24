@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import type { Stats } from "node:fs";
-import { lstat, rename } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
@@ -9,6 +10,7 @@ import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quaran
 import { writeJsonAtomic } from "../state/json-file.js";
 import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
+import { renameNoReplace } from "./no-clobber-rename.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 
 const execFileAsync = promisify(execFile);
@@ -84,6 +86,17 @@ function branchRef(branch: string | undefined): string | undefined {
   return branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
 }
 
+function assertManifestPath(entry: QuarantineEntry, options: WorktreeRecoveryOptions): void {
+  const expected = resolve(options.quarantineDirectory, `${entry.entryId}.json`);
+  if (resolve(options.manifestPath) !== expected) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_MANIFEST_PATH_MISMATCH",
+      "quarantine manifest filename does not match its entry ID",
+      entry,
+    );
+  }
+}
+
 function registrationMatches(
   output: string,
   path: string,
@@ -104,6 +117,7 @@ async function persist(
   options: WorktreeRecoveryOptions,
 ): Promise<QuarantineEntry> {
   const parsed = quarantineEntrySchema.parse(entry);
+  assertManifestPath(parsed, options);
   await writeJsonAtomic(options.manifestPath, parsed, {
     privateDirectories: [options.quarantineDirectory],
   });
@@ -125,7 +139,10 @@ async function validateQuarantinedEntry(
   const dependencies = {
     runGit: options.dependencies?.runGit ?? defaultGitRunner,
     inspect: options.dependencies?.inspect ?? lstat,
-    move: options.dependencies?.move ?? rename,
+    move:
+      options.dependencies?.move ??
+      ((source: string, destination: string) =>
+        renameNoReplace(source, destination, options.dependencies?.platform ?? process.platform)),
     measure: options.dependencies?.measure ?? measurePath,
     processProbe: options.dependencies?.processProbe ?? findProcessesUsingPath,
     mountProbe: options.dependencies?.mountProbe ?? findMountBoundaries,
@@ -145,6 +162,7 @@ async function validateQuarantinedEntry(
   if (entry.status !== "quarantined") {
     fail("QUARANTINE_NOT_LIVE", `quarantine entry status is ${entry.status}`);
   }
+  assertManifestPath(entry, options);
   const quarantineIdentity =
     entry.quarantineIdentity ??
     fail("QUARANTINE_IDENTITY_MISSING", "post-repair quarantine identity is missing");
@@ -270,6 +288,9 @@ export async function undoWorktreeQuarantine(
       entry.quarantinePath,
     ]);
     unlocked = true;
+    if (await pathExists(entry.originalPath, dependencies.inspect)) {
+      throw new Error(`original path became occupied before undo: ${entry.originalPath}`);
+    }
     await dependencies.move(entry.quarantinePath, entry.originalPath);
     moved = true;
     await dependencies.runGit([
@@ -308,6 +329,14 @@ export async function undoWorktreeQuarantine(
     ) {
       throw new Error("restored worktree Git state could not be verified");
     }
+    entry = await persist(
+      {
+        ...entry,
+        status: "restored",
+        restoredAt: dependencies.clock().toISOString(),
+      },
+      options,
+    );
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,
@@ -316,14 +345,7 @@ export async function undoWorktreeQuarantine(
       entry.recoveryRef,
       entry.target.head,
     ]);
-    return persist(
-      {
-        ...entry,
-        status: "restored",
-        restoredAt: dependencies.clock().toISOString(),
-      },
-      options,
-    );
+    return entry;
   } catch (error) {
     try {
       if (moved) {
@@ -452,14 +474,6 @@ export async function purgeWorktreeQuarantine(
     if (parseWorktreePorcelain(records).some((record) => record.path === entry.quarantinePath)) {
       throw new Error("Git reported success but the quarantine registration remains");
     }
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "update-ref",
-      "-d",
-      entry.recoveryRef,
-      entry.target.head,
-    ]);
     entry = await persist(
       {
         ...entry,
@@ -468,19 +482,29 @@ export async function purgeWorktreeQuarantine(
       },
       options,
     );
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "update-ref",
+      "-d",
+      entry.recoveryRef,
+      entry.target.head,
+    ]);
     return { entry, reclaimedBytes: entry.target.measuredBytes };
   } catch (error) {
     try {
-      if (unlocked && (await pathExists(entry.quarantinePath, dependencies.inspect))) {
-        await dependencies.runGit([
-          "--git-dir",
-          entry.target.repositoryCommonDir,
-          "worktree",
-          "lock",
-          "--reason",
-          `AgentRinse quarantine ${entry.entryId}`,
-          entry.quarantinePath,
-        ]);
+      if (await pathExists(entry.quarantinePath, dependencies.inspect)) {
+        if (unlocked) {
+          await dependencies.runGit([
+            "--git-dir",
+            entry.target.repositoryCommonDir,
+            "worktree",
+            "lock",
+            "--reason",
+            `AgentRinse quarantine ${entry.entryId}`,
+            entry.quarantinePath,
+          ]);
+        }
         entry = await persist(
           {
             ...entry,
@@ -497,7 +521,9 @@ export async function purgeWorktreeQuarantine(
         );
         throw new WorktreeRecoveryError(
           "QUARANTINE_PURGE_FAILED",
-          "purge failed and the quarantine entry was relocked",
+          unlocked
+            ? "purge failed and the quarantine entry was relocked"
+            : "purge failed before mutation and the quarantine entry remains retryable",
           entry,
           { cause: error },
         );

@@ -1,15 +1,23 @@
 import { execFile } from "node:child_process";
 import type { Stats } from "node:fs";
-import { lstat, rename } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
+import { parseGitStatusPorcelainV2 } from "../adapters/git/status.js";
 import type { WorktreeQuarantineAction } from "../contracts/action.js";
-import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
+import {
+  quarantineEntryIdSchema,
+  quarantineEntrySchema,
+  type QuarantineEntry,
+} from "../contracts/quarantine.js";
 import { ensurePrivateDirectory, writeJsonAtomic } from "../state/json-file.js";
 import { sha256 } from "./digest.js";
 import { measurePath, type Measurement } from "./measure.js";
+import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
+import { renameNoReplace } from "./no-clobber-rename.js";
+import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -48,8 +56,11 @@ export type WorktreeExecutorDependencies = {
   inspect?: (path: string) => Promise<Stats>;
   move?: (source: string, destination: string) => Promise<void>;
   measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
+  processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
+  mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   maxEntries?: number;
   clock?: () => Date;
+  platform?: NodeJS.Platform;
   authorization?: {
     expiresAtMs: number;
     now: () => Date;
@@ -100,6 +111,22 @@ function matchesFilesystemIdentity(stats: Stats, action: WorktreeQuarantineActio
     stats.dev === action.target.device &&
     stats.ino === action.target.inode &&
     stats.mtimeMs === action.target.mtimeMs
+  );
+}
+
+function branchRef(branch: string | undefined): string | undefined {
+  if (branch === undefined) {
+    return undefined;
+  }
+  return branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
+}
+
+function cleanStatusMatches(output: string, action: WorktreeQuarantineAction): boolean {
+  const status = parseGitStatusPorcelainV2(output);
+  return (
+    status.head === action.target.head &&
+    branchRef(status.branch) === action.target.branch &&
+    status.staged + status.modified + status.untracked + status.conflicted === 0
   );
 }
 
@@ -160,17 +187,30 @@ export async function executeWorktreeQuarantine(
   const dependencies = options.dependencies ?? {};
   const runGit = dependencies.runGit ?? defaultGitRunner;
   const inspect = dependencies.inspect ?? lstat;
-  const move = dependencies.move ?? rename;
+  const platform = dependencies.platform ?? process.platform;
+  const move =
+    dependencies.move ?? ((source, destination) => renameNoReplace(source, destination, platform));
   const measure = dependencies.measure ?? measurePath;
+  const processProbe = dependencies.processProbe ?? findProcessesUsingPath;
+  const mountProbe = dependencies.mountProbe ?? findMountBoundaries;
   const clock = dependencies.clock ?? (() => new Date());
-  const quarantinePath = worktreeQuarantinePath(action, options.entryId);
+  if (!["darwin", "linux"].includes(platform)) {
+    throw new WorktreeExecutionError(
+      `worktree quarantine mutation is unsupported on ${platform}`,
+      "failed",
+      undefined,
+      { diagnosticCode: "WORKTREE_PLATFORM_UNSUPPORTED" },
+    );
+  }
+  const entryId = quarantineEntryIdSchema.parse(options.entryId);
+  const quarantinePath = worktreeQuarantinePath(action, entryId);
   const quarantineParent = dirname(quarantinePath);
   const recoveryRef = worktreeRecoveryRef(action, options.runId);
-  const manifestPath = join(options.quarantineDirectory, `${options.entryId}.json`);
+  const manifestPath = join(options.quarantineDirectory, `${entryId}.json`);
   const createdAt = clock();
   let entry = quarantineEntrySchema.parse({
     schemaVersion: 1,
-    entryId: options.entryId,
+    entryId,
     runId: options.runId,
     actionId: action.actionId,
     resourceId: action.resourceId,
@@ -263,6 +303,80 @@ export async function executeWorktreeQuarantine(
       status: "recovery-ref-created",
     });
 
+    const boundaryStats = await inspect(action.target.path);
+    if (!matchesFilesystemIdentity(boundaryStats, action)) {
+      throw new WorktreeExecutionError(
+        "worktree filesystem identity changed at the quarantine boundary",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    const boundaryMeasurement = await measure(action.target.path, {
+      maxEntries: dependencies.maxEntries ?? 100_000,
+    });
+    if (
+      boundaryMeasurement.truncated ||
+      boundaryMeasurement.specialEntries > 0 ||
+      boundaryMeasurement.mountBoundaries > 0 ||
+      boundaryMeasurement.bytes !== action.target.measuredBytes ||
+      boundaryMeasurement.newestMtimeMs !== action.target.newestMtimeMs ||
+      boundaryMeasurement.fingerprint !== action.target.fingerprint
+    ) {
+      throw new WorktreeExecutionError(
+        "worktree contents changed at the quarantine boundary",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    const boundaryMounts = await mountProbe(action.target.path);
+    if (boundaryMounts.status !== "clear") {
+      throw new WorktreeExecutionError(
+        boundaryMounts.status === "blocked"
+          ? "worktree gained a mount boundary before quarantine"
+          : "mount boundaries could not be proven absent before quarantine",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    const boundaryStatus = await runGit([
+      "-C",
+      action.target.path,
+      "status",
+      "--porcelain=v2",
+      "--branch",
+      "-z",
+      "--untracked-files=all",
+    ]);
+    if (!cleanStatusMatches(boundaryStatus, action)) {
+      throw new WorktreeExecutionError(
+        "worktree Git state changed before quarantine",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    const boundaryOwnership = await processProbe(action.target.path);
+    if (boundaryOwnership.status !== "idle") {
+      throw new WorktreeExecutionError(
+        boundaryOwnership.status === "busy"
+          ? "a live process acquired the worktree before quarantine"
+          : "live process ownership could not be proven idle before quarantine",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    if (await pathExists(quarantinePath, inspect)) {
+      throw new WorktreeExecutionError(
+        `refusing to overwrite existing quarantine path ${quarantinePath}`,
+        "failed",
+        entry,
+      );
+    }
+
     assertAuthorized(dependencies.authorization, entry);
     try {
       await move(action.target.path, quarantinePath);
@@ -323,7 +437,7 @@ export async function executeWorktreeQuarantine(
       "worktree",
       "lock",
       "--reason",
-      `AgentRinse quarantine ${options.entryId}`,
+      `AgentRinse quarantine ${entryId}`,
       quarantinePath,
     ]);
     locked = true;
@@ -376,6 +490,42 @@ export async function executeWorktreeQuarantine(
     ) {
       throw new WorktreeExecutionError(
         "post-repair quarantine identity could not be proven",
+        "partially-applied",
+        entry,
+      );
+    }
+    const finalStatus = await runGit([
+      "-C",
+      quarantinePath,
+      "status",
+      "--porcelain=v2",
+      "--branch",
+      "-z",
+      "--untracked-files=all",
+    ]);
+    if (!cleanStatusMatches(finalStatus, action)) {
+      throw new WorktreeExecutionError(
+        "quarantined worktree Git state changed before commit",
+        "partially-applied",
+        entry,
+      );
+    }
+    const finalMounts = await mountProbe(quarantinePath);
+    if (finalMounts.status !== "clear") {
+      throw new WorktreeExecutionError(
+        finalMounts.status === "blocked"
+          ? "quarantined worktree gained a mount boundary before commit"
+          : "mount boundaries could not be proven absent before quarantine commit",
+        "partially-applied",
+        entry,
+      );
+    }
+    const finalOwnership = await processProbe(quarantinePath);
+    if (finalOwnership.status !== "idle") {
+      throw new WorktreeExecutionError(
+        finalOwnership.status === "busy"
+          ? "a live process acquired the quarantined worktree before commit"
+          : "live process ownership could not be proven idle before quarantine commit",
         "partially-applied",
         entry,
       );
@@ -459,6 +609,12 @@ export async function executeWorktreeQuarantine(
           throw new Error("restored Git worktree registration could not be verified");
         }
       }
+      entry = await writeManifest(manifestPath, options.quarantineDirectory, {
+        ...entry,
+        status: "restored",
+        restoredAt: clock().toISOString(),
+        diagnostic,
+      });
       if (refCreated) {
         await runGit([
           "--git-dir",
@@ -470,12 +626,6 @@ export async function executeWorktreeQuarantine(
         ]);
         refCreated = false;
       }
-      entry = await writeManifest(manifestPath, options.quarantineDirectory, {
-        ...entry,
-        status: "restored",
-        restoredAt: clock().toISOString(),
-        diagnostic,
-      });
       throw new WorktreeExecutionError(
         moved ? `${executionError.message}; worktree rollback completed` : executionError.message,
         executionError.outcome === "skipped-stale"
