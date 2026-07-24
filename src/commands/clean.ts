@@ -70,9 +70,22 @@ export type CleanCommandResult = {
   audit: AuditReport;
   plan: CleanupPlan;
   run?: CleanupRun;
+  status: "ok" | "degraded" | "failed";
   summary: CloseoutSummary;
   output: string;
 };
+
+export function cleanCommandExitCode(
+  result: Pick<CleanCommandResult, "run" | "status">,
+): number | undefined {
+  if (result.run?.status === "interrupted") {
+    return 130;
+  }
+  if (result.run !== undefined && ["failed", "partial"].includes(result.run.status)) {
+    return 2;
+  }
+  return result.status === "degraded" ? 1 : undefined;
+}
 
 async function defaultRunCommand(
   command: string,
@@ -278,13 +291,14 @@ export async function executeCleanCommand(
   const status =
     run !== undefined && ["failed", "partial"].includes(run.status)
       ? "failed"
-      : audit.diagnostics.length === 0
-        ? "ok"
-        : "degraded";
+      : audit.probes.some((probe) => probe.status === "degraded") || audit.diagnostics.length > 0
+        ? "degraded"
+        : "ok";
   return {
     audit,
     plan,
     ...(run === undefined ? {} : { run }),
+    status,
     summary,
     output: options.json
       ? jsonDocument(

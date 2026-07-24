@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { executeAuditCommand } from "./commands/audit.js";
 import { renderAdapters } from "./commands/adapters.js";
 import { executeApplyCommand } from "./commands/apply.js";
-import { executeCleanCommand } from "./commands/clean.js";
+import { cleanCommandExitCode, executeCleanCommand } from "./commands/clean.js";
 import {
   executeConfigInitCommand,
   executeConfigPathCommand,
@@ -113,13 +113,9 @@ export function buildProgram(): Command {
             signal: controller.signal,
           });
           process.stdout.write(result.output);
-          if (result.run?.status === "interrupted") {
-            process.exitCode = 130;
-          } else if (
-            result.run !== undefined &&
-            ["failed", "partial"].includes(result.run.status)
-          ) {
-            process.exitCode = 2;
+          const exitCode = cleanCommandExitCode(result);
+          if (exitCode !== undefined) {
+            process.exitCode = exitCode;
           }
         } finally {
           process.removeListener("SIGINT", interrupt);

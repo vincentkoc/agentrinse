@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import { executeCleanCommand } from "../../src/commands/clean.js";
+import { cleanCommandExitCode, executeCleanCommand } from "../../src/commands/clean.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import { commandEnvelopeSchema } from "../../src/contracts/output.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
@@ -71,6 +71,11 @@ function fixtureConfig(projects: { root: string; names: ["node_modules"] }[]) {
 }
 
 describe("clean closeout profile", () => {
+  it("returns a nonzero automation status for degraded safety evidence", () => {
+    expect(cleanCommandExitCode({ status: "degraded" })).toBe(1);
+    expect(cleanCommandExitCode({ status: "ok" })).toBeUndefined();
+  });
+
   it("scopes a compact dry run to one repository and protects the current worktree", async () => {
     const value = await gitFixture();
     const currentArtifact = join(value.linked, "node_modules");
@@ -122,6 +127,7 @@ describe("clean closeout profile", () => {
     expect(artifactFindings[0]?.roots.map((root) => root.code)).toContain("current-worktree");
     expect(result.audit.probes.map((probe) => probe.adapter)).not.toContain("cursor");
     expect(envelope.command).toBe("clean");
+    expect(result.status).toBe("ok");
     await Promise.all([
       access(result.summary.auditPath),
       access(result.summary.planPath),
@@ -131,6 +137,39 @@ describe("clean closeout profile", () => {
     expect(scopedConfig.artifacts.projects).toEqual([
       { root: value.linked, names: ["node_modules"] },
     ]);
+  });
+
+  it("marks incomplete provider reachability as degraded", async () => {
+    const value = await gitFixture();
+    const codexRoot = join(value.home, ".codex");
+    await mkdir(codexRoot);
+    const config = fixtureConfig([]);
+    config.adapters.codex = { enabled: true };
+    await writeJsonAtomic(value.configPath, config);
+
+    const result = await executeCleanCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateDir,
+      profile: "closeout",
+      cwd: value.linked,
+      apply: false,
+      yes: false,
+      json: true,
+      dependencies: {
+        platform: "linux",
+        now: () => NOW,
+        runCommand: run,
+      },
+    });
+    const envelope = commandEnvelopeSchema.parse(JSON.parse(result.output));
+
+    expect(result.status).toBe("degraded");
+    expect(cleanCommandExitCode(result)).toBe(1);
+    expect(envelope.status).toBe("degraded");
+    expect(result.audit.diagnostics.map((item) => item.code)).toContain(
+      "CODEX_WORKSPACE_METADATA_MISSING",
+    );
   });
 
   it("applies only an existing safe artifact action from a fresh closeout plan", async () => {

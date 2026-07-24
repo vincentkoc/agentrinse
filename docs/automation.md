@@ -105,6 +105,10 @@ Current `0.2.0` behavior:
 
 The run journal remains the source of truth for apply outcomes.
 
+A degraded `audit` remains report-only and exits `0`. A degraded `clean`
+closeout exits `1` so automation does not treat incomplete safety evidence as
+a clean closeout.
+
 ## Closeout Profile
 
 The closeout profile starts from the current Git worktree, inventories every
