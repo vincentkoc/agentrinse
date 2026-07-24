@@ -168,8 +168,8 @@ locked, verified, and recorded in an owner-only manifest.
 
 Permanent purge reloads configuration and provider workspace metadata under
 the mutation lock. A current path, resource-ID, or Git-ref pin, provider-managed
-root, active/recent session, or unknown provider state protects the quarantined
-worktree and refuses deletion.
+root, active/recent session, or unknown provider state protects the original,
+quarantine, or purge-isolation location and refuses deletion.
 
 AgentRinse never removes provider sessions, transcripts, databases,
 credentials, configuration, plugins, skills, memories, Git branches, stashes,

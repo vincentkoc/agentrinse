@@ -802,7 +802,7 @@ async function resumeInterruptedUndo(
   );
 }
 
-function purgeIsolationPath(entry: QuarantineEntry): string {
+export function worktreePurgeIsolationPath(entry: QuarantineEntry): string {
   return `${entry.quarantinePath}.purging`;
 }
 
@@ -898,7 +898,7 @@ async function resumeInterruptedPurge(
   options: PurgeWorktreeOptions,
 ): Promise<{ entry: QuarantineEntry; reclaimedBytes: number } | QuarantineEntry> {
   const dependencies = resolveDependencies(options);
-  const isolationPath = purgeIsolationPath(entry);
+  const isolationPath = worktreePurgeIsolationPath(entry);
   const [quarantineExists, isolationExists] = await Promise.all([
     pathExists(entry.quarantinePath, dependencies.inspect),
     pathExists(isolationPath, dependencies.inspect),
@@ -1203,7 +1203,7 @@ export async function purgeWorktreeQuarantine(
     );
   }
   entry = await persist({ ...entry, status: "purging" }, options);
-  const isolationPath = purgeIsolationPath(entry);
+  const isolationPath = worktreePurgeIsolationPath(entry);
   let unlocked = false;
   let isolated = false;
   let removed = false;

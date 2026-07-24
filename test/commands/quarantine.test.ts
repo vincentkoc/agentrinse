@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { executePurgeCommand } from "../../src/commands/purge.js";
 import { executeUndoCommand } from "../../src/commands/undo.js";
 import { quarantineRecoveryRef, type QuarantineEntry } from "../../src/contracts/quarantine.js";
+import { worktreePurgeIsolationPath } from "../../src/core/worktree-recovery.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 import { stateLayout } from "../../src/state/layout.js";
 
@@ -260,6 +261,10 @@ describe("purge command", () => {
   it.each([
     ["original path", (value: QuarantineEntry) => ({ path: value.originalPath })],
     ["quarantine path", (value: QuarantineEntry) => ({ path: value.quarantinePath })],
+    [
+      "purge isolation path",
+      (value: QuarantineEntry) => ({ path: worktreePurgeIsolationPath(value) }),
+    ],
     ["resource ID", (value: QuarantineEntry) => ({ resourceId: value.resourceId })],
     ["Git ref", (value: QuarantineEntry) => ({ gitRef: value.target.branch! })],
   ])("revalidates a current %s pin before destructive purge", async (_label, pinFor) => {

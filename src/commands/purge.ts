@@ -10,7 +10,11 @@ import type { RootEvidence } from "../contracts/finding.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
 import type { ResourceRef } from "../contracts/resource.js";
 import { ReachabilityIndex } from "../core/reachability.js";
-import { purgeWorktreeQuarantine, type PurgeWorktreeOptions } from "../core/worktree-recovery.js";
+import {
+  purgeWorktreeQuarantine,
+  worktreePurgeIsolationPath,
+  type PurgeWorktreeOptions,
+} from "../core/worktree-recovery.js";
 import { ensurePrivateDirectory } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 import { acquireApplyLock } from "../state/lock.js";
@@ -79,6 +83,7 @@ async function currentProtectionRoots(
   const roots = [
     ...reachability.rootsForResource(resource, facts, observedAt),
     ...reachability.rootsFor(entry.quarantinePath, observedAt),
+    ...reachability.rootsFor(worktreePurgeIsolationPath(entry), observedAt),
   ];
   const unique = new Map(
     roots.map((root) => [

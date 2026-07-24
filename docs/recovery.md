@@ -95,9 +95,9 @@ registration removal, then deletes the exact recovery ref.
 
 Immediately before each destructive purge, AgentRinse reloads configuration
 and provider workspace metadata while holding the mutation lock. It checks the
-recorded resource ID and Git ref plus both the original and quarantine paths.
-Current pins, provider-managed roots, active or recent sessions, and unknown
-provider state all refuse permanent removal.
+recorded resource ID and Git ref plus the original, quarantine, and deterministic
+purge-isolation paths. Current pins, provider-managed roots, active or recent
+sessions, and unknown provider state all refuse permanent removal.
 
 If AgentRinse restarts while the worktree is at the purge isolation path, it
 repeats full validation there. A failed validation moves the worktree back to
