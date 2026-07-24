@@ -1228,8 +1228,12 @@ describe("worktree quarantine recovery", () => {
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
     const calls: string[][] = [];
     let manifestPath: string | undefined;
+    let protectionChecked = false;
     const runGit = async (args: string[]) => {
       calls.push(args);
+      if (args.includes("worktree") && args.includes("remove")) {
+        expect(protectionChecked).toBe(true);
+      }
       if (args.includes("update-ref") && args.includes("-d") && manifestPath !== undefined) {
         const persisted = quarantineEntrySchema.parse(await readJsonFile(manifestPath));
         expect(persisted.status).toBe("purging");
@@ -1252,6 +1256,9 @@ describe("worktree quarantine recovery", () => {
     const purged = await purgeWorktreeQuarantine(manifest, {
       manifestPath: result.manifestPath,
       quarantineDirectory,
+      revalidateProtection: async () => {
+        protectionChecked = true;
+      },
       dependencies: {
         runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
@@ -1267,6 +1274,52 @@ describe("worktree quarantine recovery", () => {
     expect(removeCall).toBeDefined();
     expect(removeCall).not.toContain("--force");
     expect(await missing(fixture.linked)).toBe(false);
+  });
+
+  it("rechecks protection immediately before permanent removal", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    let removeCalled = false;
+    const runGit = async (args: string[]) => {
+      if (args.includes("worktree") && args.includes("remove")) {
+        removeCalled = true;
+      }
+      return fixture.runGit(args);
+    };
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-purge-protection-race",
+      entryId: "entry-purge-protection-race",
+      quarantineDirectory,
+      dependencies: {
+        runGit,
+        clock: () => new Date("2026-07-01T00:00:00.000Z"),
+      },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        revalidateProtection: async () => {
+          throw new Error("new protection root");
+        },
+        dependencies: {
+          runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+          clock: () => new Date("2026-07-24T00:00:00.000Z"),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_PURGE_FAILED",
+    });
+
+    expect(removeCalled).toBe(false);
+    expect(await missing(result.quarantinePath)).toBe(false);
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "quarantined",
+    );
   });
 
   it("refuses purge when a Git operation marker appears after quarantine", async () => {
@@ -1491,12 +1544,22 @@ describe("worktree quarantine recovery", () => {
     await writeJsonAtomic(result.manifestPath, purging, {
       privateDirectories: [quarantineDirectory],
     });
+    let protectionChecked = false;
+    const runGit = async (args: string[]) => {
+      if (args.includes("worktree") && args.includes("remove")) {
+        expect(protectionChecked).toBe(true);
+      }
+      return fixture.runGit(args);
+    };
 
     const purged = await purgeWorktreeQuarantine(purging, {
       manifestPath: result.manifestPath,
       quarantineDirectory,
+      revalidateProtection: async () => {
+        protectionChecked = true;
+      },
       dependencies: {
-        runGit: fixture.runGit,
+        runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
         clock: () => new Date("2026-07-24T00:00:00.000Z"),

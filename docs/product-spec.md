@@ -3315,7 +3315,8 @@ The supported npm release remains the first distribution target. A formula in
   ID, Git ref, original path, quarantine path, and deterministic purge-isolation
   path against all current reachability roots. A matching pin, provider-managed
   root, active/recent session, or unknown provider state refuses permanent
-  removal.
+  removal. The purge state machine repeats this refresh immediately before each
+  normal or resumed `git worktree remove`.
 - Quarantine reports zero immediately reclaimed bytes and records the full
   byte count as pending expiry. The default undo TTL is seven days.
 - macOS and Linux are supported. Native Windows worktree mutation remains

@@ -31,7 +31,8 @@ The project follows semantic versioning after its first supported release.
 - atomic worktree-lock ownership handoff that preserves foreign locks and
   recovers interrupted AgentRinse lock claims
 - mutation-locked purge protection refresh for path, resource, Git-ref,
-  provider-managed, active-session, recent-session, and unknown-provider roots
+  provider-managed, active-session, recent-session, and unknown-provider roots,
+  repeated at the permanent-removal boundary
 - packaged end-to-end quarantine, undo, and clean purge smoke proof
 - Homebrew distribution through `vincentkoc/tap`
 

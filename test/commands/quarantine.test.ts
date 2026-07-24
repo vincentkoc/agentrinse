@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 import { executePurgeCommand } from "../../src/commands/purge.js";
 import { executeUndoCommand } from "../../src/commands/undo.js";
 import { quarantineRecoveryRef, type QuarantineEntry } from "../../src/contracts/quarantine.js";
-import { worktreePurgeIsolationPath } from "../../src/core/worktree-recovery.js";
+import {
+  worktreePurgeIsolationPath,
+  type PurgeWorktreeOptions,
+} from "../../src/core/worktree-recovery.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 import { stateLayout } from "../../src/state/layout.js";
 
@@ -334,6 +337,52 @@ describe("purge command", () => {
     ).rejects.toThrow("active-session");
 
     expect(purge).not.toHaveBeenCalled();
+  });
+
+  it("reloads protections at the permanent-removal callback", async () => {
+    const value = entry("late-protected", "run-2", "2026-08-01T00:00:00.000Z");
+    const fixture = await stateFixture([value]);
+    const configPath = join(fixture.home, "agentrinse.json");
+    const config = {
+      schemaVersion: 1,
+      adapters: {
+        codex: { enabled: false },
+        claude: { enabled: false },
+        cursor: { enabled: false },
+        copilot: { enabled: false },
+        zed: { enabled: false },
+        opencode: { enabled: false },
+        grok: { enabled: false },
+        git: { enabled: true },
+      },
+      pins: [] as { path: string }[],
+    };
+    await writeFile(configPath, `${JSON.stringify(config)}\n`);
+    const purge = vi.fn(async (candidate: QuarantineEntry, purgeOptions: PurgeWorktreeOptions) => {
+      await writeFile(
+        configPath,
+        `${JSON.stringify({ ...config, pins: [{ path: candidate.quarantinePath }] })}\n`,
+      );
+      await purgeOptions.revalidateProtection?.(candidate);
+      throw new Error("expected boundary protection refusal");
+    });
+
+    await expect(
+      executePurgeCommand({
+        home: fixture.home,
+        config: configPath,
+        stateDir: fixture.stateRoot,
+        expired: false,
+        runId: "run-2",
+        apply: true,
+        yes: true,
+        json: false,
+        now: new Date("2026-07-24T00:00:00.000Z"),
+        dependencies: { purge },
+      }),
+    ).rejects.toThrow("purge refused protected quarantine entry late-protected");
+
+    expect(purge).toHaveBeenCalledOnce();
   });
 
   it("refuses unscoped destructive purge", async () => {

@@ -56,6 +56,7 @@ export type WorktreeRecoveryOptions = {
 
 export type PurgeWorktreeOptions = WorktreeRecoveryOptions & {
   allowUnexpired?: boolean;
+  revalidateProtection?: (entry: QuarantineEntry) => Promise<void>;
 };
 
 async function defaultGitRunner(args: string[]): Promise<string> {
@@ -947,6 +948,7 @@ async function resumeInterruptedPurge(
         isolationPath,
       ]);
       await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
+      await options.revalidateProtection?.(entry);
       await dependencies.runGit([
         "--git-dir",
         entry.target.repositoryCommonDir,
@@ -1237,6 +1239,7 @@ export async function purgeWorktreeQuarantine(
       isolationPath,
     ]);
     await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
+    await options.revalidateProtection?.(entry);
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,

@@ -180,18 +180,22 @@ export async function executePurgeCommand(
   try {
     for (const record of entries) {
       const entry = record.value;
-      const { config } = await loadConfigForHome(home, options.config);
-      const protectionRoots = await currentProtectionRoots(entry, home, config, now);
-      if (protectionRoots.length > 0) {
-        const codes = [...new Set(protectionRoots.map((root) => root.code))].sort();
-        throw new Error(
-          `purge refused protected quarantine entry ${entry.entryId}: ${codes.join(", ")}`,
-        );
-      }
+      const revalidateProtection = async (candidate: QuarantineEntry): Promise<void> => {
+        const { config } = await loadConfigForHome(home, options.config);
+        const protectionRoots = await currentProtectionRoots(candidate, home, config, now);
+        if (protectionRoots.length > 0) {
+          const codes = [...new Set(protectionRoots.map((root) => root.code))].sort();
+          throw new Error(
+            `purge refused protected quarantine entry ${candidate.entryId}: ${codes.join(", ")}`,
+          );
+        }
+      };
+      await revalidateProtection(entry);
       const result = await (options.dependencies?.purge ?? purgeWorktreeQuarantine)(entry, {
         manifestPath: record.path,
         quarantineDirectory: layout.quarantine,
         allowUnexpired: options.runId !== undefined,
+        revalidateProtection,
       });
       purged.push(result.entry);
       reclaimedBytes += result.reclaimedBytes;
