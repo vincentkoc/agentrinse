@@ -45,5 +45,16 @@ jobs:
         run: |
           test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
 
+      - name: Verify bootstrap package
+        if: github.event.release.tag_name == 'v0.0.0'
+        run: |
+          npm pack --json > package.json.out
+          package_file="$(node -p "require('./package.json.out')[0].filename")"
+          local_integrity="$(node -p "require('./package.json.out')[0].integrity")"
+          registry_integrity="$(npm view agentrinse@0.0.0 dist.integrity)"
+          rm "$package_file" package.json.out
+          test "$local_integrity" = "$registry_integrity"
+
       - name: Publish to npm
+        if: github.event.release.tag_name != 'v0.0.0'
         run: npm publish --access public

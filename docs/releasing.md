@@ -17,7 +17,9 @@ npm publish --access public
 
 Verify that `npm view agentrinse@0.0.0` succeeds and that a clean global install
 reports `0.0.0`. This is the only release that should require local registry
-credentials.
+credentials. Create the `v0.0.0` GitHub release only after that verification.
+The release workflow compares the registry tarball integrity with the tagged
+source instead of trying to publish the reservation package again.
 
 ## Trusted Publisher
 
