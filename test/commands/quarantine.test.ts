@@ -28,6 +28,7 @@ function entry(
     recoveryRef: `refs/agentrinse/quarantine/${runId}/${entryId}`,
     createdAt: "2026-07-01T00:00:00.000Z",
     expiresAt,
+    measurementMaxEntries: 10_000,
     target: {
       path: `/tmp/${entryId}`,
       repositoryCommonDir: "/tmp/repo/.git",
@@ -106,6 +107,31 @@ describe("undo command", () => {
     ).rejects.toThrow("undo --json requires --yes");
   });
 
+  it("resumes a persisted restoring entry", async () => {
+    const restoring = {
+      ...entry("restoring", "run-1", "2026-08-01T00:00:00.000Z"),
+      status: "restoring" as const,
+    };
+    const fixture = await stateFixture([restoring]);
+    const undo = vi.fn(async (value: QuarantineEntry) => ({
+      ...value,
+      status: "restored" as const,
+      restoredAt: "2026-07-24T00:00:00.000Z",
+    }));
+
+    const result = await executeUndoCommand({
+      runId: "run-1",
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      yes: true,
+      json: false,
+      dependencies: { undo },
+    });
+
+    expect(undo).toHaveBeenCalledWith(restoring, expect.any(Object));
+    expect(result.entries[0]?.status).toBe("restored");
+  });
+
   it("rejects a manifest whose entry ID does not match its filename", async () => {
     const value = entry("actual", "run-1", "2026-08-01T00:00:00.000Z");
     const fixture = await stateFixture([]);
@@ -173,6 +199,36 @@ describe("purge command", () => {
     expect(purge).toHaveBeenCalledWith(live, expect.objectContaining({ allowUnexpired: true }));
     expect(result.applied).toBe(true);
     expect(result.reclaimedBytes).toBe(1024);
+  });
+
+  it("resumes a persisted purging entry", async () => {
+    const purging = {
+      ...entry("purging", "run-2", "2026-08-01T00:00:00.000Z"),
+      status: "purging" as const,
+    };
+    const fixture = await stateFixture([purging]);
+    const purge = vi.fn(async (value: QuarantineEntry) => ({
+      entry: {
+        ...value,
+        status: "purged" as const,
+        purgedAt: "2026-07-24T00:00:00.000Z",
+      },
+      reclaimedBytes: value.target.measuredBytes,
+    }));
+
+    const result = await executePurgeCommand({
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      expired: false,
+      runId: "run-2",
+      apply: true,
+      yes: true,
+      json: false,
+      dependencies: { purge },
+    });
+
+    expect(purge).toHaveBeenCalledWith(purging, expect.any(Object));
+    expect(result.entries[0]?.status).toBe("purged");
   });
 
   it("refuses unscoped destructive purge", async () => {

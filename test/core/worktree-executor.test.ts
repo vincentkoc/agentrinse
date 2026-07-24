@@ -21,8 +21,9 @@ import {
   purgeWorktreeQuarantine,
   undoWorktreeQuarantine,
 } from "../../src/core/worktree-recovery.js";
+import { measurePath } from "../../src/core/measure.js";
 import { renameNoReplace } from "../../src/core/no-clobber-rename.js";
-import { readJsonFile } from "../../src/state/json-file.js";
+import { readJsonFile, writeJsonAtomic } from "../../src/state/json-file.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -361,9 +362,12 @@ describe("worktree quarantine recovery", () => {
       dependencies: {
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-01T00:00:00.000Z"),
+        maxEntries: 12_345,
       },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    expect(manifest.measurementMaxEntries).toBe(12_345);
+    const measurementLimits: number[] = [];
     const runGit = async (args: string[]) => {
       if (args.includes("update-ref") && args.includes("-d")) {
         const persisted = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
@@ -375,9 +379,12 @@ describe("worktree quarantine recovery", () => {
     const restored = await undoWorktreeQuarantine(manifest, {
       manifestPath: result.manifestPath,
       quarantineDirectory,
-      maxEntries: 10_000,
       dependencies: {
         runGit,
+        measure: async (path, options) => {
+          measurementLimits.push(options.maxEntries);
+          return measurePath(path, options);
+        },
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
         clock: () => new Date("2026-07-24T00:00:00.000Z"),
@@ -385,6 +392,7 @@ describe("worktree quarantine recovery", () => {
     });
 
     expect(restored.status).toBe("restored");
+    expect(measurementLimits).toEqual([12_345]);
     expect(await missing(fixture.linked)).toBe(false);
     expect(await missing(result.quarantinePath)).toBe(true);
     await expect(
@@ -417,6 +425,73 @@ describe("worktree quarantine recovery", () => {
     );
   });
 
+  it("resumes an interrupted undo before unlock", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-resume-undo-locked",
+      entryId: "entry-resume-undo-locked",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const restoring = quarantineEntrySchema.parse({ ...manifest, status: "restoring" });
+    await writeJsonAtomic(result.manifestPath, restoring, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(restoring, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(result.quarantinePath)).toBe(true);
+  });
+
+  it("finishes an interrupted undo after the worktree move", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-resume-undo-moved",
+      entryId: "entry-resume-undo-moved",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await renameNoReplace(result.quarantinePath, fixture.linked);
+    const restoring = quarantineEntrySchema.parse({ ...manifest, status: "restoring" });
+    await writeJsonAtomic(result.manifestPath, restoring, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(restoring, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+  });
+
   it("does not overwrite a destination that appears in the final undo window", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
@@ -432,7 +507,6 @@ describe("worktree quarantine recovery", () => {
       undoWorktreeQuarantine(manifest, {
         manifestPath: result.manifestPath,
         quarantineDirectory,
-        maxEntries: 10_000,
         dependencies: {
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
@@ -487,7 +561,6 @@ describe("worktree quarantine recovery", () => {
     const purged = await purgeWorktreeQuarantine(manifest, {
       manifestPath: result.manifestPath,
       quarantineDirectory,
-      maxEntries: 10_000,
       dependencies: {
         runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
@@ -526,7 +599,6 @@ describe("worktree quarantine recovery", () => {
       purgeWorktreeQuarantine(manifest, {
         manifestPath: result.manifestPath,
         quarantineDirectory,
-        maxEntries: 10_000,
         allowUnexpired: true,
         dependencies: {
           runGit,
@@ -541,6 +613,51 @@ describe("worktree quarantine recovery", () => {
     const persisted = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     expect(persisted.status).toBe("quarantined");
     expect(await missing(result.quarantinePath)).toBe(false);
+  });
+
+  it("finishes an interrupted purge after Git removed the worktree", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-resume-purge",
+      entryId: "entry-resume-purge",
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        clock: () => new Date("2026-07-01T00:00:00.000Z"),
+      },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "remove",
+      result.quarantinePath,
+    ]);
+    const purging = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
+    await writeJsonAtomic(result.manifestPath, purging, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const purged = await purgeWorktreeQuarantine(purging, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        clock: () => new Date("2026-07-24T00:00:00.000Z"),
+      },
+    });
+
+    expect(purged.entry.status).toBe("purged");
+    expect(purged.reclaimedBytes).toBe(fixture.action.target.measuredBytes);
   });
 
   it("refuses purge after quarantined contents change", async () => {
@@ -562,7 +679,6 @@ describe("worktree quarantine recovery", () => {
       purgeWorktreeQuarantine(manifest, {
         manifestPath: result.manifestPath,
         quarantineDirectory,
-        maxEntries: 10_000,
         dependencies: {
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
@@ -591,7 +707,6 @@ describe("worktree quarantine recovery", () => {
       undoWorktreeQuarantine(manifest, {
         manifestPath: result.manifestPath,
         quarantineDirectory,
-        maxEntries: 10_000,
         dependencies: {
           platform: "win32",
           runGit: fixture.runGit,

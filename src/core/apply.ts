@@ -262,6 +262,10 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             quarantineEntryId: executionError?.entry?.entryId ?? isolationId,
             quarantinePath: executionError?.entry?.quarantinePath ?? quarantinePath,
             recoveryRef: executionError?.entry?.recoveryRef ?? recoveryRef,
+            quarantinedBytes:
+              executionError?.outcome === "partially-applied"
+                ? (executionError.quarantinedBytes ?? 0)
+                : 0,
             diagnostic: {
               severity: executionError?.outcome === "skipped-stale" ? "warning" : "error",
               code:

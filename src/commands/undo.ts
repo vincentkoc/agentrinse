@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { loadConfigForHome } from "../config/load.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
 import { undoWorktreeQuarantine, type WorktreeRecoveryOptions } from "../core/worktree-recovery.js";
 import { ensurePrivateDirectory } from "../state/json-file.js";
@@ -40,7 +39,7 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
   }
   const entries = records.filter(
     ({ value }) =>
-      value.status === "quarantined" &&
+      ["quarantined", "restoring"].includes(value.status) &&
       value.runId === options.runId &&
       (options.actionId === undefined || value.actionId === options.actionId),
   );
@@ -57,7 +56,6 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
     throw new Error("undo cancelled");
   }
 
-  const { config } = await loadConfigForHome(options.home, options.config);
   await ensurePrivateDirectory(layout.locks);
   const operationId = randomUUID();
   const lock = await acquireApplyLock(layout.locks, {
@@ -73,7 +71,6 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
         await (options.dependencies?.undo ?? undoWorktreeQuarantine)(entry, {
           manifestPath: record.path,
           quarantineDirectory: layout.quarantine,
-          maxEntries: config.audit.maxEntries,
         }),
       );
     }

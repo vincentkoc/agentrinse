@@ -16,6 +16,7 @@ describe("quarantineEntrySchema", () => {
       recoveryRef: "refs/agentrinse/quarantine/run-1/fixture",
       createdAt: "2026-07-24T00:00:00.000Z",
       expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: 10_000,
       target: {
         path: "/tmp/repo-worktree",
         repositoryCommonDir: "/tmp/repo/.git",
@@ -60,6 +61,7 @@ describe("quarantineEntrySchema", () => {
         recoveryRef: "refs/agentrinse/quarantine/run-1/fixture",
         createdAt: "2026-07-01T00:00:00.000Z",
         expiresAt: "2026-08-01T00:00:00.000Z",
+        measurementMaxEntries: 10_000,
         target: {
           path: "/tmp/worktree",
           repositoryCommonDir: "/tmp/repo/.git",

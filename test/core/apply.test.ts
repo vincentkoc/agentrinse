@@ -23,6 +23,7 @@ import { sha256Json } from "../../src/core/digest.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
+import { WorktreeExecutionError } from "../../src/core/worktree-executor.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import { createRunJournal } from "../../src/state/run-journal.js";
 
@@ -251,6 +252,63 @@ describe("applyCleanupPlan", () => {
       type: "worktree.quarantine",
       status: "applied",
       reclaimedBytes: 0,
+      quarantinedBytes: value.action.target.measuredBytes,
+    });
+  });
+
+  it("accounts for bytes left in partial worktree quarantine", async () => {
+    const value = await worktreeFixture();
+    const partialEntry = {
+      schemaVersion: 1 as const,
+      entryId: "partial-entry",
+      runId: "partial-run",
+      actionId: value.action.actionId,
+      resourceId: value.action.resourceId,
+      status: "partial" as const,
+      originalPath: value.action.target.path,
+      quarantinePath: join(value.plan.home, ".agentrinse-quarantine", "partial-entry"),
+      recoveryRef: "refs/agentrinse/quarantine/partial-run/fixture",
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: value.config.audit.maxEntries,
+      target: value.action.target,
+    };
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidateWorktree: async () => ({
+          status: "valid",
+          report: {
+            schemaVersion: 1,
+            auditId: "fresh-audit",
+            startedAt: "2026-07-23T00:14:00.000Z",
+            completedAt: "2026-07-23T00:14:01.000Z",
+            home: value.plan.home,
+            probes: [],
+            findings: [],
+            diagnostics: [],
+          },
+          action: value.action,
+        }),
+        executeWorktree: async () => {
+          throw new WorktreeExecutionError(
+            "injected partial quarantine",
+            "partially-applied",
+            partialEntry,
+            { quarantinedBytes: value.action.target.measuredBytes },
+          );
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("failed");
+    expect(result.run.quarantinedBytes).toBe(value.action.target.measuredBytes);
+    expect(result.run.actions[0]).toMatchObject({
+      status: "partially-applied",
       quarantinedBytes: value.action.target.measuredBytes,
     });
   });

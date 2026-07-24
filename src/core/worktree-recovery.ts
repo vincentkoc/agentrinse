@@ -6,7 +6,11 @@ import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
 import { parseGitStatusPorcelainV2 } from "../adapters/git/status.js";
-import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
+import {
+  quarantineEntrySchema,
+  type QuarantineEntry,
+  type QuarantineStatus,
+} from "../contracts/quarantine.js";
 import { writeJsonAtomic } from "../state/json-file.js";
 import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
@@ -42,7 +46,6 @@ export type WorktreeRecoveryDependencies = {
 export type WorktreeRecoveryOptions = {
   manifestPath: string;
   quarantineDirectory: string;
-  maxEntries: number;
   dependencies?: WorktreeRecoveryDependencies;
 };
 
@@ -112,6 +115,39 @@ function registrationMatches(
   );
 }
 
+type ResolvedRecoveryDependencies = Required<
+  Pick<
+    WorktreeRecoveryDependencies,
+    "runGit" | "inspect" | "move" | "measure" | "processProbe" | "mountProbe" | "clock"
+  >
+>;
+
+function resolveDependencies(options: WorktreeRecoveryOptions): ResolvedRecoveryDependencies {
+  return {
+    runGit: options.dependencies?.runGit ?? defaultGitRunner,
+    inspect: options.dependencies?.inspect ?? lstat,
+    move:
+      options.dependencies?.move ??
+      ((source: string, destination: string) =>
+        renameNoReplace(source, destination, options.dependencies?.platform ?? process.platform)),
+    measure: options.dependencies?.measure ?? measurePath,
+    processProbe: options.dependencies?.processProbe ?? findProcessesUsingPath,
+    mountProbe: options.dependencies?.mountProbe ?? findMountBoundaries,
+    clock: options.dependencies?.clock ?? (() => new Date()),
+  };
+}
+
+function assertSupportedPlatform(entry: QuarantineEntry, options: WorktreeRecoveryOptions): void {
+  const platform = options.dependencies?.platform ?? process.platform;
+  if (!["darwin", "linux"].includes(platform)) {
+    throw new WorktreeRecoveryError(
+      "WORKTREE_PLATFORM_UNSUPPORTED",
+      `worktree recovery mutation is unsupported on ${platform}`,
+      entry,
+    );
+  }
+}
+
 async function persist(
   entry: QuarantineEntry,
   options: WorktreeRecoveryOptions,
@@ -128,38 +164,19 @@ async function validateQuarantinedEntry(
   entry: QuarantineEntry,
   options: WorktreeRecoveryOptions,
   requireOriginalVacant: boolean,
+  acceptedStatuses: QuarantineStatus[] = ["quarantined"],
+  requireLocked = true,
 ): Promise<{
-  dependencies: Required<
-    Pick<
-      WorktreeRecoveryDependencies,
-      "runGit" | "inspect" | "move" | "measure" | "processProbe" | "mountProbe" | "clock"
-    >
-  >;
+  dependencies: ResolvedRecoveryDependencies;
+  registrationLocked: boolean;
 }> {
-  const dependencies = {
-    runGit: options.dependencies?.runGit ?? defaultGitRunner,
-    inspect: options.dependencies?.inspect ?? lstat,
-    move:
-      options.dependencies?.move ??
-      ((source: string, destination: string) =>
-        renameNoReplace(source, destination, options.dependencies?.platform ?? process.platform)),
-    measure: options.dependencies?.measure ?? measurePath,
-    processProbe: options.dependencies?.processProbe ?? findProcessesUsingPath,
-    mountProbe: options.dependencies?.mountProbe ?? findMountBoundaries,
-    clock: options.dependencies?.clock ?? (() => new Date()),
-  };
+  const dependencies = resolveDependencies(options);
   const fail = (code: string, message: string): never => {
     throw new WorktreeRecoveryError(code, message, entry);
   };
 
-  const platform = options.dependencies?.platform ?? process.platform;
-  if (!["darwin", "linux"].includes(platform)) {
-    fail(
-      "WORKTREE_PLATFORM_UNSUPPORTED",
-      `worktree recovery mutation is unsupported on ${platform}`,
-    );
-  }
-  if (entry.status !== "quarantined") {
+  assertSupportedPlatform(entry, options);
+  if (!acceptedStatuses.includes(entry.status)) {
     fail("QUARANTINE_NOT_LIVE", `quarantine entry status is ${entry.status}`);
   }
   assertManifestPath(entry, options);
@@ -188,7 +205,7 @@ async function validateQuarantinedEntry(
   }
 
   const measurement = await dependencies.measure(entry.quarantinePath, {
-    maxEntries: options.maxEntries,
+    maxEntries: entry.measurementMaxEntries,
   });
   if (
     measurement.truncated ||
@@ -239,15 +256,30 @@ async function validateQuarantinedEntry(
   ) {
     fail("QUARANTINE_GIT_STATE_CHANGED", "quarantined worktree is no longer clean at planned HEAD");
   }
-  const records = await dependencies.runGit([
-    "--git-dir",
-    entry.target.repositoryCommonDir,
-    "worktree",
-    "list",
-    "--porcelain",
-    "-z",
-  ]);
-  if (!registrationMatches(records, entry.quarantinePath, entry, true)) {
+  const records = parseWorktreePorcelain(
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]),
+  );
+  const registration = records.find(
+    (record) =>
+      record.path === entry.quarantinePath &&
+      record.head === entry.target.head &&
+      record.branch === entry.target.branch,
+  );
+  if (registration === undefined) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_REGISTRATION_CHANGED",
+      "quarantined worktree is no longer registered",
+      entry,
+    );
+  }
+  if (requireLocked && registration.locked === undefined) {
     fail(
       "QUARANTINE_REGISTRATION_CHANGED",
       "quarantined worktree is no longer registered and locked",
@@ -266,7 +298,301 @@ async function validateQuarantinedEntry(
     fail("QUARANTINE_RECOVERY_REF_CHANGED", "recovery ref no longer points to the planned HEAD");
   }
 
-  return { dependencies };
+  return { dependencies, registrationLocked: registration.locked !== undefined };
+}
+
+async function deleteRecoveryRef(
+  entry: QuarantineEntry,
+  dependencies: ResolvedRecoveryDependencies,
+): Promise<void> {
+  await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "update-ref",
+    "-d",
+    entry.recoveryRef,
+    entry.target.head,
+  ]);
+}
+
+async function verifyLockedRegistration(
+  entry: QuarantineEntry,
+  dependencies: ResolvedRecoveryDependencies,
+): Promise<void> {
+  const records = await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "worktree",
+    "list",
+    "--porcelain",
+    "-z",
+  ]);
+  if (!registrationMatches(records, entry.quarantinePath, entry, true)) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_REGISTRATION_CHANGED",
+      "quarantined worktree could not be relocked during recovery",
+      entry,
+    );
+  }
+}
+
+async function verifyRestoredTransition(
+  entry: QuarantineEntry,
+  options: WorktreeRecoveryOptions,
+  dependencies: ResolvedRecoveryDependencies,
+): Promise<void> {
+  assertSupportedPlatform(entry, options);
+  assertManifestPath(entry, options);
+  const identity =
+    entry.quarantineIdentity ??
+    (() => {
+      throw new WorktreeRecoveryError(
+        "QUARANTINE_IDENTITY_MISSING",
+        "post-repair quarantine identity is missing",
+        entry,
+      );
+    })();
+  const [stats, commonDirStats] = await Promise.all([
+    dependencies.inspect(entry.originalPath),
+    dependencies.inspect(entry.target.repositoryCommonDir),
+  ]);
+  if (
+    !stats.isDirectory() ||
+    stats.isSymbolicLink() ||
+    stats.dev !== identity.device ||
+    stats.ino !== identity.inode ||
+    stats.mtimeMs !== identity.mtimeMs ||
+    !commonDirStats.isDirectory() ||
+    commonDirStats.isSymbolicLink()
+  ) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_IDENTITY_CHANGED",
+      "restored worktree filesystem identity changed during interrupted undo",
+      entry,
+    );
+  }
+  const measurement = await dependencies.measure(entry.originalPath, {
+    maxEntries: entry.measurementMaxEntries,
+  });
+  if (
+    measurement.truncated ||
+    measurement.specialEntries > 0 ||
+    measurement.mountBoundaries > 0 ||
+    measurement.bytes !== identity.measuredBytes ||
+    measurement.newestMtimeMs !== identity.newestMtimeMs ||
+    measurement.fingerprint !== identity.fingerprint
+  ) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_CONTENT_CHANGED",
+      "restored worktree contents changed during interrupted undo",
+      entry,
+    );
+  }
+  const ownership = await dependencies.processProbe(entry.originalPath);
+  if (ownership.status !== "idle") {
+    throw new WorktreeRecoveryError(
+      ownership.status === "busy" ? "QUARANTINE_PROCESS_ACTIVE" : "QUARANTINE_PROCESS_UNKNOWN",
+      "restored worktree process ownership is not idle",
+      entry,
+    );
+  }
+  const mounts = await dependencies.mountProbe(entry.originalPath);
+  if (mounts.status !== "clear") {
+    throw new WorktreeRecoveryError(
+      mounts.status === "blocked"
+        ? "QUARANTINE_MOUNT_BOUNDARY"
+        : "QUARANTINE_MOUNT_INSPECTION_UNKNOWN",
+      "restored worktree mount state is not clear",
+      entry,
+    );
+  }
+
+  await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "worktree",
+    "repair",
+    entry.originalPath,
+  ]);
+  const status = parseGitStatusPorcelainV2(
+    await dependencies.runGit([
+      "-C",
+      entry.originalPath,
+      "status",
+      "--porcelain=v2",
+      "--branch",
+      "-z",
+      "--untracked-files=all",
+    ]),
+  );
+  if (
+    status.head !== entry.target.head ||
+    branchRef(status.branch) !== entry.target.branch ||
+    status.staged + status.modified + status.untracked + status.conflicted > 0
+  ) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_GIT_STATE_CHANGED",
+      "restored worktree Git state changed during interrupted undo",
+      entry,
+    );
+  }
+  const records = await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "worktree",
+    "list",
+    "--porcelain",
+    "-z",
+  ]);
+  if (!registrationMatches(records, entry.originalPath, entry, false)) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_REGISTRATION_CHANGED",
+      "restored worktree registration could not be repaired",
+      entry,
+    );
+  }
+  const recoveryHead = (
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "rev-parse",
+      "--verify",
+      entry.recoveryRef,
+    ])
+  ).trim();
+  if (recoveryHead !== entry.target.head) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_RECOVERY_REF_CHANGED",
+      "recovery ref no longer points to the planned HEAD",
+      entry,
+    );
+  }
+}
+
+async function resumeInterruptedUndo(
+  entry: QuarantineEntry,
+  options: WorktreeRecoveryOptions,
+): Promise<QuarantineEntry> {
+  const dependencies = resolveDependencies(options);
+  const [originalExists, quarantineExists] = await Promise.all([
+    pathExists(entry.originalPath, dependencies.inspect),
+    pathExists(entry.quarantinePath, dependencies.inspect),
+  ]);
+  if (quarantineExists && !originalExists) {
+    const validated = await validateQuarantinedEntry(entry, options, false, ["restoring"], false);
+    if (!validated.registrationLocked) {
+      await dependencies.runGit([
+        "--git-dir",
+        entry.target.repositoryCommonDir,
+        "worktree",
+        "lock",
+        "--reason",
+        `AgentRinse quarantine ${entry.entryId}`,
+        entry.quarantinePath,
+      ]);
+      await verifyLockedRegistration(entry, dependencies);
+    }
+    return persist({ ...entry, status: "quarantined" }, options);
+  }
+  if (originalExists && !quarantineExists) {
+    await verifyRestoredTransition(entry, options, dependencies);
+    const restored = await persist(
+      {
+        ...entry,
+        status: "restored",
+        restoredAt: dependencies.clock().toISOString(),
+      },
+      options,
+    );
+    await deleteRecoveryRef(restored, dependencies);
+    return restored;
+  }
+  throw new WorktreeRecoveryError(
+    "QUARANTINE_UNDO_TRANSITION_AMBIGUOUS",
+    "interrupted undo has ambiguous source and destination paths",
+    entry,
+  );
+}
+
+async function resumeInterruptedPurge(
+  entry: QuarantineEntry,
+  options: PurgeWorktreeOptions,
+): Promise<{ entry: QuarantineEntry; reclaimedBytes: number } | QuarantineEntry> {
+  const dependencies = resolveDependencies(options);
+  const [originalExists, quarantineExists] = await Promise.all([
+    pathExists(entry.originalPath, dependencies.inspect),
+    pathExists(entry.quarantinePath, dependencies.inspect),
+  ]);
+  if (quarantineExists && !originalExists) {
+    const validated = await validateQuarantinedEntry(entry, options, false, ["purging"], false);
+    if (!validated.registrationLocked) {
+      await dependencies.runGit([
+        "--git-dir",
+        entry.target.repositoryCommonDir,
+        "worktree",
+        "lock",
+        "--reason",
+        `AgentRinse quarantine ${entry.entryId}`,
+        entry.quarantinePath,
+      ]);
+      await verifyLockedRegistration(entry, dependencies);
+    }
+    return persist({ ...entry, status: "quarantined" }, options);
+  }
+  if (!originalExists && !quarantineExists) {
+    assertSupportedPlatform(entry, options);
+    assertManifestPath(entry, options);
+    const records = await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]);
+    if (
+      parseWorktreePorcelain(records).some(
+        (record) => record.path === entry.originalPath || record.path === entry.quarantinePath,
+      )
+    ) {
+      throw new WorktreeRecoveryError(
+        "QUARANTINE_REGISTRATION_CHANGED",
+        "interrupted purge left a worktree registration behind",
+        entry,
+      );
+    }
+    const recoveryHead = (
+      await dependencies.runGit([
+        "--git-dir",
+        entry.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        entry.recoveryRef,
+      ])
+    ).trim();
+    if (recoveryHead !== entry.target.head) {
+      throw new WorktreeRecoveryError(
+        "QUARANTINE_RECOVERY_REF_CHANGED",
+        "recovery ref no longer points to the planned HEAD",
+        entry,
+      );
+    }
+    const purged = await persist(
+      {
+        ...entry,
+        status: "purged",
+        purgedAt: dependencies.clock().toISOString(),
+      },
+      options,
+    );
+    await deleteRecoveryRef(purged, dependencies);
+    return { entry: purged, reclaimedBytes: purged.target.measuredBytes };
+  }
+  throw new WorktreeRecoveryError(
+    "QUARANTINE_PURGE_TRANSITION_AMBIGUOUS",
+    "interrupted purge has ambiguous source and destination paths",
+    entry,
+  );
 }
 
 export async function undoWorktreeQuarantine(
@@ -274,6 +600,12 @@ export async function undoWorktreeQuarantine(
   options: WorktreeRecoveryOptions,
 ): Promise<QuarantineEntry> {
   let entry = quarantineEntrySchema.parse(input);
+  if (entry.status === "restoring") {
+    entry = await resumeInterruptedUndo(entry, options);
+    if (entry.status === "restored") {
+      return entry;
+    }
+  }
   const { dependencies } = await validateQuarantinedEntry(entry, options, true);
   entry = await persist({ ...entry, status: "restoring" }, options);
   let unlocked = false;
@@ -337,14 +669,7 @@ export async function undoWorktreeQuarantine(
       },
       options,
     );
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "update-ref",
-      "-d",
-      entry.recoveryRef,
-      entry.target.head,
-    ]);
+    await deleteRecoveryRef(entry, dependencies);
     return entry;
   } catch (error) {
     try {
@@ -430,6 +755,13 @@ export async function purgeWorktreeQuarantine(
   options: PurgeWorktreeOptions,
 ): Promise<{ entry: QuarantineEntry; reclaimedBytes: number }> {
   let entry = quarantineEntrySchema.parse(input);
+  if (entry.status === "purging") {
+    const resumed = await resumeInterruptedPurge(entry, options);
+    if ("entry" in resumed) {
+      return resumed;
+    }
+    entry = resumed;
+  }
   const { dependencies } = await validateQuarantinedEntry(entry, options, false);
   if (
     options.allowUnexpired !== true &&
@@ -482,14 +814,7 @@ export async function purgeWorktreeQuarantine(
       },
       options,
     );
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "update-ref",
-      "-d",
-      entry.recoveryRef,
-      entry.target.head,
-    ]);
+    await deleteRecoveryRef(entry, dependencies);
     return { entry, reclaimedBytes: entry.target.measuredBytes };
   } catch (error) {
     try {

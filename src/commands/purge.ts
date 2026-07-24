@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { loadConfigForHome } from "../config/load.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
 import { purgeWorktreeQuarantine, type PurgeWorktreeOptions } from "../core/worktree-recovery.js";
 import { ensurePrivateDirectory } from "../state/json-file.js";
@@ -70,7 +69,7 @@ export async function executePurgeCommand(
       throw new Error(`quarantine manifest entry ID does not match filename: ${record.name}`);
     }
   }
-  const live = records.filter(({ value }) => value.status === "quarantined");
+  const live = records.filter(({ value }) => ["quarantined", "purging"].includes(value.status));
   const entries = live.filter(({ value: entry }) =>
     options.expired
       ? Date.parse(entry.expiresAt) <= now.getTime()
@@ -107,7 +106,6 @@ export async function executePurgeCommand(
     throw new Error("purge cancelled");
   }
 
-  const { config } = await loadConfigForHome(options.home, options.config);
   await ensurePrivateDirectory(layout.locks);
   const operationId = randomUUID();
   const lock = await acquireApplyLock(layout.locks, {
@@ -123,7 +121,6 @@ export async function executePurgeCommand(
       const result = await (options.dependencies?.purge ?? purgeWorktreeQuarantine)(entry, {
         manifestPath: record.path,
         quarantineDirectory: layout.quarantine,
-        maxEntries: config.audit.maxEntries,
         allowUnexpired: options.runId !== undefined,
       });
       purged.push(result.entry);

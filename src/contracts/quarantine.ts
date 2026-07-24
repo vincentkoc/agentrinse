@@ -32,6 +32,7 @@ export const quarantineEntrySchema = z
     recoveryRef: z.string().min(1),
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
+    measurementMaxEntries: z.number().int().positive().max(1_000_000),
     target: worktreeIdentitySchema,
     quarantineIdentity: worktreeIdentitySchema.optional(),
     restoredAt: z.string().datetime().optional(),

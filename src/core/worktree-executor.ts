@@ -34,13 +34,15 @@ export class WorktreeExecutionError extends Error {
     message: string,
     readonly outcome: WorktreeExecutionOutcome,
     readonly entry?: QuarantineEntry,
-    options?: ErrorOptions & { diagnosticCode?: string },
+    options?: ErrorOptions & { diagnosticCode?: string; quarantinedBytes?: number },
   ) {
     super(message, options);
     this.diagnosticCode = options?.diagnosticCode;
+    this.quarantinedBytes = options?.quarantinedBytes;
   }
 
   readonly diagnosticCode: string | undefined;
+  readonly quarantinedBytes: number | undefined;
 }
 
 export type WorktreeExecutionResult = {
@@ -208,6 +210,7 @@ export async function executeWorktreeQuarantine(
   const recoveryRef = worktreeRecoveryRef(action, options.runId);
   const manifestPath = join(options.quarantineDirectory, `${entryId}.json`);
   const createdAt = clock();
+  const measurementMaxEntries = dependencies.maxEntries ?? 100_000;
   let entry = quarantineEntrySchema.parse({
     schemaVersion: 1,
     entryId,
@@ -220,6 +223,7 @@ export async function executeWorktreeQuarantine(
     recoveryRef,
     createdAt: createdAt.toISOString(),
     expiresAt: new Date(createdAt.getTime() + action.quarantineTtlMinutes * 60_000).toISOString(),
+    measurementMaxEntries,
     target: action.target,
   });
   let refCreated = false;
@@ -313,7 +317,7 @@ export async function executeWorktreeQuarantine(
       );
     }
     const boundaryMeasurement = await measure(action.target.path, {
-      maxEntries: dependencies.maxEntries ?? 100_000,
+      maxEntries: measurementMaxEntries,
     });
     if (
       boundaryMeasurement.truncated ||
@@ -406,7 +410,7 @@ export async function executeWorktreeQuarantine(
     const [quarantinedStats, isolatedMeasurement] = await Promise.all([
       inspect(quarantinePath),
       measure(quarantinePath, {
-        maxEntries: dependencies.maxEntries ?? 100_000,
+        maxEntries: measurementMaxEntries,
       }),
     ]);
     if (
@@ -475,7 +479,7 @@ export async function executeWorktreeQuarantine(
     const [quarantineStats, quarantineMeasurement] = await Promise.all([
       inspect(quarantinePath),
       measure(quarantinePath, {
-        maxEntries: dependencies.maxEntries ?? 100_000,
+        maxEntries: measurementMaxEntries,
       }),
     ]);
     if (
@@ -664,7 +668,11 @@ export async function executeWorktreeQuarantine(
         `worktree quarantine failed with partial state; inspect ${manifestPath}`,
         "partially-applied",
         entry,
-        { cause: rollbackError, diagnosticCode: "WORKTREE_QUARANTINE_PARTIAL" },
+        {
+          cause: rollbackError,
+          diagnosticCode: "WORKTREE_QUARANTINE_PARTIAL",
+          quarantinedBytes: moved ? action.target.measuredBytes : 0,
+        },
       );
     }
   }
