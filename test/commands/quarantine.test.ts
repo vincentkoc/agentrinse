@@ -294,8 +294,10 @@ describe("purge command", () => {
     ],
     ["resource ID", (value: QuarantineEntry) => ({ resourceId: value.resourceId })],
     ["Git ref", (value: QuarantineEntry) => ({ gitRef: value.target.branch! })],
+    ["Git tag", () => ({ gitRef: "refs/tags/keep" })],
   ])("revalidates a current %s pin before destructive purge", async (_label, pinFor) => {
     const value = entry("protected", "run-2", "2026-08-01T00:00:00.000Z");
+    const pin = pinFor(value);
     const fixture = await stateFixture([value]);
     const configPath = join(fixture.home, "agentrinse.json");
     await writeFile(
@@ -312,7 +314,7 @@ describe("purge command", () => {
           grok: { enabled: false },
           git: { enabled: true },
         },
-        pins: [pinFor(value)],
+        pins: [pin],
       })}\n`,
     );
     const purge = vi.fn();
@@ -328,7 +330,19 @@ describe("purge command", () => {
         yes: true,
         json: false,
         now: new Date("2026-07-24T00:00:00.000Z"),
-        dependencies: { purge },
+        dependencies: {
+          purge,
+          runGit: async (args) => {
+            if (
+              args.includes("--points-at") &&
+              "gitRef" in pin &&
+              pin.gitRef.startsWith("refs/tags/")
+            ) {
+              return `${pin.gitRef}\n`;
+            }
+            return args.includes("--contains") ? `${value.target.branch}\n` : "";
+          },
+        },
       }),
     ).rejects.toThrow("purge refused protected quarantine entry protected");
 

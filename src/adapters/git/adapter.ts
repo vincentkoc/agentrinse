@@ -20,6 +20,7 @@ import {
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
 import { parseWorktreePorcelain } from "./porcelain.js";
+import { listGitRefsForCommit } from "./refs.js";
 import {
   countStatusSuppressedIndexEntries,
   parseGitStatusPorcelainV2,
@@ -249,34 +250,16 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           );
           const head = status.head ?? record.head;
           if (head !== undefined) {
-            containingRefs = lines(
-              await this.runGit([
-                "-C",
-                worktreePath,
-                "for-each-ref",
-                "--contains",
-                head,
-                "--format=%(refname)",
-                "refs/heads",
-                "refs/remotes",
-              ]),
+            const refs = await listGitRefsForCommit(
+              (args) => this.runGit(["-C", worktreePath, ...args]),
+              head,
             );
-            const tagRefs = lines(
-              await this.runGit([
-                "-C",
-                worktreePath,
-                "for-each-ref",
-                "--points-at",
-                head,
-                "--format=%(refname)",
-                "refs/tags",
-              ]),
-            );
+            containingRefs = refs.containingRefs;
             gitRefs = [
               record.branch,
               branchRef(status.branch),
               upstreamRef(status.upstream),
-              ...tagRefs,
+              ...refs.gitRefs,
             ]
               .filter((value): value is string => value !== undefined)
               .filter((value, index, values) => values.indexOf(value) === index)

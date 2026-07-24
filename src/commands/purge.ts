@@ -1,6 +1,9 @@
+import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
+import { promisify } from "node:util";
 
+import { listGitRefsForCommit } from "../adapters/git/refs.js";
 import { createAuditAdapters } from "../adapters/registry.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import { loadConfigForHome } from "../config/load.js";
@@ -21,6 +24,17 @@ import { acquireApplyLock } from "../state/lock.js";
 import { listJsonRecordFiles } from "../state/records.js";
 import { confirmMutation, type ConfirmationDependencies } from "./confirmation.js";
 
+const execFileAsync = promisify(execFile);
+
+async function defaultGitRunner(args: string[]): Promise<string> {
+  const result = await execFileAsync("git", args, {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    timeout: 15_000,
+  });
+  return result.stdout;
+}
+
 export type PurgeCommandOptions = {
   home: string;
   config?: string;
@@ -36,6 +50,7 @@ export type PurgeCommandOptions = {
       entry: QuarantineEntry,
       options: PurgeWorktreeOptions,
     ) => Promise<{ entry: QuarantineEntry; reclaimedBytes: number }>;
+    runGit?: (args: string[]) => Promise<string>;
   };
 };
 
@@ -51,6 +66,7 @@ async function currentProtectionRoots(
   home: string,
   config: AgentRinseConfig,
   now: Date,
+  runGit: (args: string[]) => Promise<string>,
 ): Promise<RootEvidence[]> {
   const reachability = new ReachabilityIndex();
   const adapters = createAuditAdapters(config, process.platform, {
@@ -76,10 +92,19 @@ async function currentProtectionRoots(
     path: entry.originalPath,
   };
   const observedAt = now.toISOString();
-  const facts =
-    entry.target.branch === undefined
-      ? {}
-      : { branch: entry.target.branch, gitRefs: [entry.target.branch] };
+  const currentRefs = config.pins.some((pin) => "gitRef" in pin)
+    ? await listGitRefsForCommit(
+        (args) => runGit(["--git-dir", entry.target.repositoryCommonDir, ...args]),
+        entry.target.head,
+      )
+    : { gitRefs: [] };
+  const facts = {
+    ...(entry.target.branch === undefined ? {} : { branch: entry.target.branch }),
+    gitRefs: [
+      ...(entry.target.branch === undefined ? [] : [entry.target.branch]),
+      ...currentRefs.gitRefs,
+    ],
+  };
   const roots = [
     ...reachability.rootsForResource(resource, facts, observedAt),
     ...reachability.rootsFor(entry.quarantinePath, observedAt),
@@ -177,12 +202,13 @@ export async function executePurgeCommand(
   });
   const purged: QuarantineEntry[] = [];
   let reclaimedBytes = 0;
+  const runGit = options.dependencies?.runGit ?? defaultGitRunner;
   try {
     for (const record of entries) {
       const entry = record.value;
       const revalidateProtection = async (candidate: QuarantineEntry): Promise<void> => {
         const { config } = await loadConfigForHome(home, options.config);
-        const protectionRoots = await currentProtectionRoots(candidate, home, config, now);
+        const protectionRoots = await currentProtectionRoots(candidate, home, config, now, runGit);
         if (protectionRoots.length > 0) {
           const codes = [...new Set(protectionRoots.map((root) => root.code))].sort();
           throw new Error(

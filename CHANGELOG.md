@@ -34,7 +34,8 @@ The project follows semantic versioning after its first supported release.
   recovers interrupted AgentRinse lock claims
 - mutation-locked purge protection refresh for path, resource, Git-ref,
   provider-managed, active-session, recent-session, and unknown-provider roots,
-  repeated at the permanent-removal boundary
+  including containing heads/remotes and exact tags, repeated at the
+  permanent-removal boundary
 - packaged end-to-end quarantine, undo, and clean purge smoke proof
 - Homebrew distribution through `vincentkoc/tap`
 
