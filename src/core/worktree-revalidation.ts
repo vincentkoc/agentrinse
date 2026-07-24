@@ -1,8 +1,13 @@
 import { createAuditAdapters } from "../adapters/registry.js";
+import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { WorktreeQuarantineAction } from "../contracts/action.js";
+import type { AuditContext } from "../contracts/adapter.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
+import type { RootEvidence } from "../contracts/finding.js";
 import type { AuditReport } from "../contracts/report.js";
+import type { ResourceRef } from "../contracts/resource.js";
+import { ReachabilityIndex } from "./reachability.js";
 import { runAudit } from "./audit.js";
 
 export type WorktreeRevalidationResult =
@@ -22,6 +27,54 @@ export type WorktreeRevalidationDependencies = {
     platform: NodeJS.Platform;
   }) => Promise<AuditReport>;
 };
+
+export async function currentWorktreeProtectionRoots(
+  action: WorktreeQuarantineAction,
+  home: string,
+  config: AgentRinseConfig,
+  now: Date,
+): Promise<RootEvidence[]> {
+  const reachability = new ReachabilityIndex();
+  const adapters = createAuditAdapters(config, process.platform, {
+    providerInventory: false,
+    reachability,
+  }).filter((adapter) => Object.hasOwn(PROVIDER_SPECS, adapter.id));
+  const context: AuditContext = {
+    home,
+    now,
+    auditId: `apply-${action.actionId}`,
+  };
+  for (const adapter of adapters) {
+    const probe = await adapter.probe(context);
+    await adapter.collect(context, probe);
+  }
+
+  const resource: ResourceRef = {
+    id: action.resourceId,
+    adapter: "git",
+    kind: "git-worktree",
+    canonicalKey: `git:git-worktree:${action.target.path}`,
+    displayName: "Linked worktree",
+    path: action.target.path,
+  };
+  const observedAt = now.toISOString();
+  const facts =
+    action.target.branch === undefined
+      ? {}
+      : { branch: action.target.branch, gitRefs: [action.target.branch] };
+  const roots = [
+    ...reachability.rootsForResource(resource, facts, observedAt),
+    ...reachability.rootsFor(action.target.path, observedAt),
+  ];
+  return [
+    ...new Map(
+      roots.map((root) => [
+        `${root.code}\0${root.source}\0${root.evidenceRef ?? ""}\0${root.detail}`,
+        root,
+      ]),
+    ).values(),
+  ];
+}
 
 function stale(
   action: WorktreeQuarantineAction,

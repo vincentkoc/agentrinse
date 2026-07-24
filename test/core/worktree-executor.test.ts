@@ -120,6 +120,7 @@ describe("executeWorktreeQuarantine", () => {
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
     const runId = "run-fixture";
     const entryId = "entry-fixture";
+    let protectionChecked = false;
 
     const result = await executeWorktreeQuarantine(fixture.action, {
       runId,
@@ -128,6 +129,13 @@ describe("executeWorktreeQuarantine", () => {
       dependencies: {
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-24T00:00:00.000Z"),
+        revalidateProtection: async () => {
+          protectionChecked = true;
+        },
+        move: async (source, destination) => {
+          expect(protectionChecked).toBe(true);
+          await renameNoReplace(source, destination);
+        },
       },
     });
 
@@ -170,6 +178,42 @@ describe("executeWorktreeQuarantine", () => {
       quarantinePath: result.quarantinePath,
     });
     expect(result.quarantinedBytes).toBe(fixture.action.target.measuredBytes);
+  });
+
+  it("refuses protection acquired at the atomic quarantine boundary", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-boundary-protected";
+    const runId = "run-boundary-protected";
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId,
+        entryId,
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          revalidateProtection: async () => {
+            throw new Error("active-session");
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "WORKTREE_PROTECTION_CHANGED",
+    });
+
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(worktreeQuarantinePath(fixture.action, entryId))).toBe(true);
+    await expect(
+      fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        worktreeRecoveryRef(fixture.action, runId),
+      ]),
+    ).rejects.toThrow();
   });
 
   it("rejects a worktree that occupies the reserved quarantine container", async () => {

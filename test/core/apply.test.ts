@@ -214,6 +214,7 @@ describe("applyCleanupPlan", () => {
 
   it("dispatches and journals recoverable worktree quarantine", async () => {
     const value = await worktreeFixture();
+    const worktreeProtectionRoots = vi.fn(async () => []);
 
     const result = await applyCleanupPlan({
       input: value.plan,
@@ -235,19 +236,24 @@ describe("applyCleanupPlan", () => {
           },
           action: value.action,
         }),
-        executeWorktree: async (action, options) => ({
-          quarantineEntryId: options.entryId,
-          quarantinePath: join(value.plan.home, ".agentrinse-quarantine", options.entryId),
-          recoveryRef: `refs/agentrinse/quarantine/${options.runId}/fixture`,
-          quarantinedBytes: action.target.measuredBytes,
-          manifestPath: join(options.quarantineDirectory, `${options.entryId}.json`),
-        }),
+        worktreeProtectionRoots,
+        executeWorktree: async (action, options) => {
+          await options.dependencies?.revalidateProtection?.();
+          return {
+            quarantineEntryId: options.entryId,
+            quarantinePath: join(value.plan.home, ".agentrinse-quarantine", options.entryId),
+            recoveryRef: `refs/agentrinse/quarantine/${options.runId}/fixture`,
+            quarantinedBytes: action.target.measuredBytes,
+            manifestPath: join(options.quarantineDirectory, `${options.entryId}.json`),
+          };
+        },
       },
     });
 
     expect(result.run.status).toBe("completed");
     expect(result.run.reclaimedBytes).toBe(0);
     expect(result.run.quarantinedBytes).toBe(value.action.target.measuredBytes);
+    expect(worktreeProtectionRoots).toHaveBeenCalledOnce();
     expect(result.run.actions[0]).toMatchObject({
       type: "worktree.quarantine",
       status: "applied",

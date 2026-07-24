@@ -12,7 +12,10 @@ import type { AgentRinseConfig } from "../../src/config/schema.js";
 import type { WorktreeQuarantineAction } from "../../src/contracts/action.js";
 import type { AuditReport } from "../../src/contracts/report.js";
 import { runAudit } from "../../src/core/audit.js";
-import { revalidateWorktreeQuarantine } from "../../src/core/worktree-revalidation.js";
+import {
+  currentWorktreeProtectionRoots,
+  revalidateWorktreeQuarantine,
+} from "../../src/core/worktree-revalidation.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -165,6 +168,7 @@ describe("revalidateWorktreeQuarantine", () => {
       }),
     );
     const result = await revalidateWorktreeQuarantine(action!, home, config, { platform });
+    const roots = await currentWorktreeProtectionRoots(action!, home, config, new Date());
 
     expect(result).toMatchObject({
       status: "stale",
@@ -173,6 +177,9 @@ describe("revalidateWorktreeQuarantine", () => {
         message: expect.stringContaining("active-session"),
       },
     });
+    expect(roots).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "active-session" })]),
+    );
   });
 
   it("blocks mutation on native Windows", async () => {

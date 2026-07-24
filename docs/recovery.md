@@ -75,6 +75,10 @@ verifies the recorded identity, clean content, registration, lock ownership,
 process state, mount state, and recovery ref before repairing the transition.
 Ambiguous or missing path state is refused for manual inspection.
 
+Immediately before the atomic quarantine rename, AgentRinse rereads current
+provider workspace metadata and configured protection roots. A worktree newly
+claimed by an active or recent agent session is skipped without moving it.
+
 ## Purge Quarantine
 
 Preview is the default:

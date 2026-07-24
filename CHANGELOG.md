@@ -30,6 +30,7 @@ The project follows semantic versioning after its first supported release.
   transitions
 - mutation-time Git operation checks, moved-registration refusal, and reserved
   quarantine-container protection
+- provider and pin protection refresh at the atomic quarantine boundary
 - registered-worktree container refusal and symmetric relocated-registration
   checks during purge finalization
 - atomic worktree-lock ownership handoff that preserves foreign locks and

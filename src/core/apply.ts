@@ -31,9 +31,11 @@ import {
   type WorktreeExecutionResult,
 } from "./worktree-executor.js";
 import {
+  currentWorktreeProtectionRoots,
   revalidateWorktreeQuarantine,
   type WorktreeRevalidationResult,
 } from "./worktree-revalidation.js";
+import type { RootEvidence } from "../contracts/finding.js";
 
 export class ApplySafetyError extends Error {
   override readonly name = "ApplySafetyError";
@@ -63,6 +65,12 @@ export type ApplyDependencies = {
     action: WorktreeQuarantineAction,
     options: ExecuteWorktreeQuarantineOptions,
   ) => Promise<WorktreeExecutionResult>;
+  worktreeProtectionRoots?: (
+    action: WorktreeQuarantineAction,
+    home: string,
+    config: AgentRinseConfig,
+    now: Date,
+  ) => Promise<RootEvidence[]>;
 };
 
 export type ApplyCleanupPlanOptions = {
@@ -251,6 +259,17 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
               authorization: {
                 expiresAtMs: Date.parse(plan.expiresAt),
                 now: clock,
+              },
+              revalidateProtection: async () => {
+                const roots = await (
+                  options.dependencies?.worktreeProtectionRoots ?? currentWorktreeProtectionRoots
+                )(action, plan.home, config, clock());
+                if (roots.length > 0) {
+                  const codes = [...new Set(roots.map((root) => root.code))].sort();
+                  throw new ApplySafetyError(
+                    `worktree is protected at quarantine boundary: ${codes.join(", ")}`,
+                  );
+                }
               },
             },
           });

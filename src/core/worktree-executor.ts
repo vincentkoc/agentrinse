@@ -79,6 +79,7 @@ export type WorktreeExecutorDependencies = {
     expiresAtMs: number;
     now: () => Date;
   };
+  revalidateProtection?: () => Promise<void>;
 };
 
 export type ExecuteWorktreeQuarantineOptions = {
@@ -599,6 +600,20 @@ export async function executeWorktreeQuarantine(
         { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
       );
     }
+    try {
+      await dependencies.revalidateProtection?.();
+    } catch (error) {
+      throw new WorktreeExecutionError(
+        "worktree became protected before quarantine",
+        "skipped-stale",
+        entry,
+        {
+          cause: error,
+          diagnosticCode: "WORKTREE_PROTECTION_CHANGED",
+        },
+      );
+    }
+    assertAuthorized(dependencies.authorization, entry);
     try {
       await move(action.target.path, quarantinePath);
     } catch (error) {
