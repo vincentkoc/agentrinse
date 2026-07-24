@@ -88,10 +88,10 @@ agentrinse purge --run <run-id> --apply --yes
 
 `--expired` respects the manifest TTL. `--run` is an explicit operator choice
 and can purge before expiry. Purge revalidates the unchanged clean worktree,
-unlocks it, atomically renames it to a deterministic same-filesystem isolation
-path, repairs and revalidates the Git registration there, invokes
-`git worktree remove` without `--force`, verifies path and registration
-removal, then deletes the exact recovery ref.
+conditionally releases its owned lock, atomically renames it to a deterministic
+same-filesystem isolation path, repairs and revalidates the Git registration
+there, invokes `git worktree remove` without `--force`, verifies path and
+registration removal, then deletes the exact recovery ref.
 
 If AgentRinse restarts while the worktree is at the purge isolation path, it
 repeats full validation there. A failed validation moves the worktree back to
@@ -105,6 +105,15 @@ the recovery ref or manifest can be finalized.
 The root `.git` control file is excluded from worktree content fingerprints
 because `git worktree repair` owns and rewrites it. Ignored files and every
 other worktree entry remain inside the fingerprint and refusal boundary.
+
+AgentRinse does not use `git worktree unlock` for recovery mutations because
+that command removes whichever lock exists at execution time. Instead it
+atomically moves the administrative `locked` file to an AgentRinse claim,
+verifies the captured reason, and restores the file if ownership changed. A
+verified release becomes a tiny `locked.agentrinse-released-*` proof marker in
+the linked-worktree administrative directory. Git ignores the marker and
+removes it with that worktree's administrative directory. A deterministic
+in-progress claim is restored before later validation after interruption.
 
 Atomic quarantine itself does not free disk. Only purge reports those bytes as
 reclaimed.

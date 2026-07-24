@@ -1381,19 +1381,19 @@ describe("worktree quarantine recovery", () => {
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     await mkdir(fixture.linked);
     await writeFile(join(fixture.linked, "replacement.txt"), "unrelated replacement\n");
-    const purgingBeforeUnlock = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
-    await writeJsonAtomic(result.manifestPath, purgingBeforeUnlock, {
-      privateDirectories: [quarantineDirectory],
-    });
+    let lockPathLookups = 0;
     const runGit = async (args: string[]) => {
-      if (args.includes("worktree") && args.includes("unlock")) {
-        throw new Error("injected unlock failure");
+      if (args.includes("--git-path") && args.includes("locked")) {
+        lockPathLookups += 1;
+        if (lockPathLookups === 2) {
+          throw new Error("injected lock claim failure");
+        }
       }
       return fixture.runGit(args);
     };
 
     await expect(
-      purgeWorktreeQuarantine(purgingBeforeUnlock, {
+      purgeWorktreeQuarantine(manifest, {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         allowUnexpired: true,

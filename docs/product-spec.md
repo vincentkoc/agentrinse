@@ -3293,13 +3293,20 @@ The supported npm release remains the first distribution target. A formula in
   A foreign or operator-owned Git worktree lock is immutable protection and
   is checked before any `git worktree repair`. The registration must also be
   at an exact old or new path owned by the current transition.
+- Undo, rollback, and purge never call Git's unconditional worktree unlock.
+  AgentRinse atomically captures the administrative lock file, verifies its
+  exact ownership reason after capture, restores a foreign replacement, and
+  retains a released owned lock as a small proof marker. An interrupted claim
+  is restored before later validation.
 - Git operation markers are re-read immediately before every quarantine,
   undo, and purge mutation; clean status alone is not terminal-state proof.
-- Undo unlocks, atomically renames, repairs, verifies, and only then deletes
-  the exact recovery ref. It never overwrites an occupied destination.
-- Purge is a separate destructive command. It unlocks, atomically renames to a
-  deterministic same-filesystem isolation path, repairs and repeats full
-  validation there, then invokes clean `git worktree remove` without
+- Undo conditionally releases its owned lock, atomically renames, repairs,
+  verifies, and only then deletes the exact recovery ref. It never overwrites
+  an occupied destination.
+- Purge is a separate destructive command. It conditionally releases its owned
+  lock, atomically renames to a deterministic same-filesystem isolation path,
+  repairs and repeats full validation there, then invokes clean
+  `git worktree remove` without
   `--force`; changed or unclean quarantine state is refused and an interrupted
   isolation failure is rolled back to locked quarantine. Finalization refuses
   a matching branch and HEAD registration at any unexpected path.

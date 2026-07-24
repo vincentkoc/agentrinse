@@ -22,6 +22,7 @@ import { measurePath, type Measurement, type MeasureOptions } from "./measure.js
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
+import { unlockOwnedWorktree } from "./worktree-lock.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -694,13 +695,14 @@ export async function executeWorktreeQuarantine(
     let rollbackFinalizing = false;
     try {
       if (locked) {
-        await runGit([
-          "--git-dir",
-          action.target.repositoryCommonDir,
-          "worktree",
-          "unlock",
-          quarantinePath,
-        ]);
+        await unlockOwnedWorktree({
+          worktreePath: quarantinePath,
+          repositoryCommonDir: action.target.repositoryCommonDir,
+          expectedReason: worktreeLockReason(entryId),
+          claimId: entryId,
+          runGit,
+          platform,
+        });
         locked = false;
       }
       if (moved) {

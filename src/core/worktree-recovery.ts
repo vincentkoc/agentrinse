@@ -20,6 +20,7 @@ import { measurePath, type Measurement, type MeasureOptions } from "./measure.js
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
+import { reconcileOwnedWorktreeLockClaim, unlockOwnedWorktree } from "./worktree-lock.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -291,6 +292,14 @@ async function validateQuarantinedEntry(
   if (!commonDirStats.isDirectory() || commonDirStats.isSymbolicLink()) {
     fail("QUARANTINE_REPOSITORY_CHANGED", "Git common directory is no longer a real directory");
   }
+  await reconcileOwnedWorktreeLockClaim({
+    worktreePath,
+    repositoryCommonDir: entry.target.repositoryCommonDir,
+    expectedReason: quarantineLockReason(entry),
+    claimId: entry.entryId,
+    runGit: dependencies.runGit,
+    platform: options.dependencies?.platform ?? process.platform,
+  });
 
   const measurement = await dependencies.measure(worktreePath, {
     maxEntries: entry.measurementMaxEntries,
@@ -513,6 +522,14 @@ async function verifyRecoveryPath(
       entry,
     );
   }
+  await reconcileOwnedWorktreeLockClaim({
+    worktreePath: path,
+    repositoryCommonDir: entry.target.repositoryCommonDir,
+    expectedReason: quarantineLockReason(entry),
+    claimId: entry.entryId,
+    runGit: dependencies.runGit,
+    platform: options.dependencies?.platform ?? process.platform,
+  });
   const measurement = await dependencies.measure(path, {
     maxEntries: entry.measurementMaxEntries,
     excludeRootEntries: [".git"],
@@ -1022,14 +1039,16 @@ export async function undoWorktreeQuarantine(
   let finalizing = false;
 
   try {
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "unlock",
-      entry.quarantinePath,
-    ]);
+    await unlockOwnedWorktree({
+      worktreePath: entry.quarantinePath,
+      repositoryCommonDir: entry.target.repositoryCommonDir,
+      expectedReason: quarantineLockReason(entry),
+      claimId: entry.entryId,
+      runGit: dependencies.runGit,
+      platform: options.dependencies?.platform ?? process.platform,
+    });
     unlocked = true;
+    await assertTargetRegistrationLock(entry, dependencies, "unlocked", [entry.quarantinePath]);
     if (await pathExists(entry.originalPath, dependencies.inspect)) {
       throw new Error(`original path became occupied before undo: ${entry.originalPath}`);
     }
@@ -1190,13 +1209,14 @@ export async function purgeWorktreeQuarantine(
   let removed = false;
 
   try {
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "unlock",
-      entry.quarantinePath,
-    ]);
+    await unlockOwnedWorktree({
+      worktreePath: entry.quarantinePath,
+      repositoryCommonDir: entry.target.repositoryCommonDir,
+      expectedReason: quarantineLockReason(entry),
+      claimId: entry.entryId,
+      runGit: dependencies.runGit,
+      platform: options.dependencies?.platform ?? process.platform,
+    });
     unlocked = true;
     await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked");
     if (await pathExists(isolationPath, dependencies.inspect)) {
