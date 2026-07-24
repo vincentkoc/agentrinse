@@ -98,7 +98,7 @@ function scopedConfig(
   maxRisk: ActionRisk | undefined,
 ): AgentRinseConfig {
   const scoped = structuredClone(config);
-  for (const id of ["cursor", "copilot", "zed", "opencode", "grok", "docker"] as const) {
+  for (const id of ["cursor", "copilot", "zed", "opencode", "grok", "runtime", "docker"] as const) {
     scoped.adapters[id] = { enabled: false };
   }
   scoped.adapters.git = { enabled: true, root: currentWorktree };

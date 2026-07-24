@@ -3381,12 +3381,12 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] initial Claude inventory
 - [x] initial Docker inventory
 - [x] Cursor, Copilot CLI, Zed, OpenCode, and Grok inventory
-- [ ] runtime audit
+- [x] runtime audit
 - [x] Mole probe
 - [x] exact configured artifact removal
-- [ ] Git dirty, staged, untracked, operation, detached, and push-state proof
-- [ ] Codex and Claude session-to-worktree roots
-- [ ] provider-managed worktree and pin roots
+- [x] Git dirty, staged, untracked, operation, detached, and push-state proof
+- [x] Codex and Claude session-to-worktree roots
+- [x] provider-managed worktree and pin roots
 - [ ] Docker safe cleanup
 - [ ] worktree quarantine
 - [ ] worktree undo

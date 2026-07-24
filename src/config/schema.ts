@@ -12,6 +12,7 @@ export const adapterIdSchema = z.enum([
   "zed",
   "opencode",
   "grok",
+  "runtime",
   "git",
   "docker",
 ]);

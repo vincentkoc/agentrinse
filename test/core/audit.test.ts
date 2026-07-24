@@ -56,6 +56,13 @@ describe("runAudit", () => {
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("docker");
   });
 
+  it("adds runtime inventory only when explicitly enabled", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.runtime = { enabled: true };
+
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("runtime");
+  });
+
   it("adds artifacts only when explicit projects are configured", () => {
     const config = structuredClone(DEFAULT_CONFIG);
     config.artifacts.projects = [

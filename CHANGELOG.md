@@ -14,6 +14,8 @@ The project follows semantic versioning after its first supported release.
 - repository-scoped `clean --profile closeout` with persisted audit, plan,
   exact derived config, optional safe apply, compact JSON, and external Mole
   dry-run suggestions
+- opt-in report-only inventory for selected agent executables and Claude
+  native installed versions
 
 ### Safety
 

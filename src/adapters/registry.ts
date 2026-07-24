@@ -7,12 +7,14 @@ import { DockerAuditAdapter } from "./docker/adapter.js";
 import { GitWorktreeAuditAdapter } from "./git/adapter.js";
 import { ProviderAuditAdapter } from "./provider-adapter.js";
 import { PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
+import { RuntimeAuditAdapter } from "./runtime/adapter.js";
 
 const PROVIDER_IDS = Object.keys(PROVIDER_SPECS) as ProviderAdapterId[];
 
 export type AuditAdapterRegistryOptions = {
   providerInventory?: boolean;
   roots?: ReachabilityRoot[];
+  environment?: NodeJS.ProcessEnv;
 };
 
 export function createAuditAdapters(
@@ -65,6 +67,15 @@ export function createAuditAdapters(
         undefined,
         reachability,
       ),
+    );
+  }
+
+  if (config.adapters.runtime?.enabled !== false) {
+    adapters.push(
+      new RuntimeAuditAdapter({
+        platform,
+        ...(options.environment === undefined ? {} : { environment: options.environment }),
+      }),
     );
   }
 

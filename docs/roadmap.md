@@ -45,7 +45,7 @@ This phase requires a separate mutation-boundary decision.
 - Cursor database diagnostics and optional compaction
 - provider-native retention operations
 - filtered Docker build-cache cleanup
-- old agent runtime inventory and owner-managed removal
+- owner-managed old agent runtime removal
 
 Every owner-specific mutation remains disabled until its current upstream
 contract, offline requirements, and recovery behavior are proven.
