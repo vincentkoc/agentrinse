@@ -7,6 +7,7 @@ Development and CI use synthetic homes only.
 ```bash
 pnpm check
 pnpm smoke
+pnpm smoke:package
 pnpm pack:check
 ```
 

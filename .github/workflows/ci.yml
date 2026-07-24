@@ -42,3 +42,6 @@ jobs:
 
       - name: Smoke synthetic audit, plan, and apply
         run: pnpm smoke
+
+      - name: Smoke installed package
+        run: pnpm smoke:package

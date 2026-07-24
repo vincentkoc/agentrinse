@@ -68,6 +68,9 @@ jobs:
             sha256sum --check *.sha256
           )
 
+      - name: Smoke exact release package
+        run: pnpm smoke:package -- release/agentrinse-*.tgz
+
       - name: Store release package
         uses: actions/upload-artifact@v7
         with:
@@ -218,6 +221,9 @@ jobs:
             sha256sum agentrinse-*.tgz > agentrinse-$(node -p "require('../package.json').version").tgz.sha256
             sha256sum --check *.sha256
           )
+
+      - name: Smoke exact release package
+        run: pnpm smoke:package -- release/agentrinse-*.tgz
 
       - name: Verify bootstrap package
         if: env.RELEASE_TAG == 'v0.0.0'

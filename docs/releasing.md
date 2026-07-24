@@ -52,6 +52,7 @@ The release workflow builds the package once in an unprivileged job. That
 exact tarball is:
 
 - checksummed with SHA-256
+- installed and exercised through audit, plan, and apply
 - passed to the OIDC-only npm publish job
 - attached to the GitHub release with its `.sha256` file
 
