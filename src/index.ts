@@ -20,6 +20,14 @@ export {
   type DoctorCheck,
   type DoctorReport,
 } from "./contracts/doctor.js";
+export {
+  commandEnvelopeSchema,
+  commandEnvelopeStatusSchema,
+  commandEventSchema,
+  type CommandEnvelope,
+  type CommandEnvelopeStatus,
+  type CommandEvent,
+} from "./contracts/output.js";
 export { cleanupPlanSchema, type CleanupPlan } from "./contracts/plan.js";
 export { auditReportSchema, type AdapterProbe, type AuditReport } from "./contracts/report.js";
 export {
@@ -28,6 +36,6 @@ export {
   type ActionExecution,
   type CleanupRun,
 } from "./contracts/run.js";
-export { runAudit, type RunAuditOptions } from "./core/audit.js";
+export { runAudit, type AuditProgressEvent, type RunAuditOptions } from "./core/audit.js";
 export { applyCleanupPlan, type ApplyCleanupPlanOptions, type ApplyResult } from "./core/apply.js";
 export { createCleanupPlan } from "./core/plan.js";

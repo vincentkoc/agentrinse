@@ -33,6 +33,8 @@ export function buildProgram(): Command {
     .option("--home <path>", "home directory to audit")
     .option("--config <path>", "explicit JSON config")
     .option("--json", "emit the versioned JSON report", false)
+    .option("--ndjson", "stream versioned NDJSON events", false)
+    .option("--redact", "redact paths and identifiers in machine output", false)
     .option("--output <path>", "write the JSON report atomically")
     .option("--state-dir <path>", "override the AgentRinse state directory")
     .action(
@@ -40,14 +42,19 @@ export function buildProgram(): Command {
         home?: string;
         config?: string;
         json: boolean;
+        ndjson: boolean;
+        redact: boolean;
         output?: string;
         stateDir?: string;
       }) => {
         const result = await executeAuditCommand({
           ...options,
           home: options.home ?? homedir(),
+          ...(options.ndjson ? { emit: (output) => process.stdout.write(output) } : {}),
         });
-        process.stdout.write(result.output);
+        if (result.output !== "") {
+          process.stdout.write(result.output);
+        }
       },
     );
 
