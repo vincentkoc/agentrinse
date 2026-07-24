@@ -29,7 +29,7 @@ export class ReachabilityIndex {
     this.roots.set(key, { ...root, path });
   }
 
-  addGlobal(root: Omit<RootEvidence, "observedAt">): void {
+  addGlobal(root: ReachabilityEvidence): void {
     const key = `${root.code}\0${root.source}\0${root.evidenceRef ?? ""}`;
     this.globalRoots.set(key, root);
   }
@@ -42,6 +42,43 @@ export class ReachabilityIndex {
   addGitRef(gitRef: string, root: ReachabilityEvidence): void {
     const key = `${gitRef}\0${root.code}\0${root.source}\0${root.evidenceRef ?? ""}`;
     this.gitRefRoots.set(key, root);
+  }
+
+  bindGitRefsToPath(
+    path: string,
+    gitRefs: Iterable<string>,
+    observedAt: string,
+    inspectionComplete = true,
+  ): void {
+    const refs = new Set(gitRefs);
+    for (const [key, root] of this.gitRefRoots) {
+      if (!this.isCurrent(root, observedAt)) {
+        continue;
+      }
+      const gitRef = key.slice(0, key.indexOf("\0"));
+      if (inspectionComplete && !refs.has(gitRef)) {
+        continue;
+      }
+      this.add({
+        ...root,
+        path,
+        scope: "subtree",
+        ...(inspectionComplete
+          ? {}
+          : { detail: "A configured Git ref pin could not be ruled out for this worktree." }),
+      });
+    }
+  }
+
+  protectUnresolvedGitRefs(observedAt: string): void {
+    for (const root of this.gitRefRoots.values()) {
+      if (this.isCurrent(root, observedAt)) {
+        this.addGlobal({
+          ...root,
+          detail: "Configured Git ref pins could not be resolved.",
+        });
+      }
+    }
   }
 
   private isCurrent(root: ReachabilityEvidence, observedAt: string): boolean {
@@ -100,6 +137,11 @@ export class ReachabilityIndex {
 
     const branch = typeof facts.branch === "string" ? facts.branch : undefined;
     const upstream = typeof facts.upstream === "string" ? facts.upstream : undefined;
+    const gitRefs = new Set(
+      Array.isArray(facts.gitRefs)
+        ? facts.gitRefs.filter((value): value is string => typeof value === "string")
+        : [],
+    );
     for (const [key, root] of this.gitRefRoots) {
       const gitRef = key.slice(0, key.indexOf("\0"));
       const matchesBranch =
@@ -108,7 +150,10 @@ export class ReachabilityIndex {
       const matchesUpstream =
         upstream === gitRef ||
         (gitRef.startsWith("refs/remotes/") && upstream === gitRef.slice("refs/remotes/".length));
-      if ((matchesBranch || matchesUpstream) && this.isCurrent(root, observedAt)) {
+      if (
+        (matchesBranch || matchesUpstream || gitRefs.has(gitRef)) &&
+        this.isCurrent(root, observedAt)
+      ) {
         roots.push(this.evidence(root, observedAt));
       }
     }

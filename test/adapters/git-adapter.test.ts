@@ -71,6 +71,9 @@ describe("GitWorktreeAuditAdapter", () => {
         return "origin\n";
       }
       if (command === "for-each-ref") {
+        if (args.includes("--points-at")) {
+          return worktree === linked ? "refs/tags/v0.2.0\n" : "";
+        }
         return worktree === linked
           ? "refs/heads/task\n"
           : "refs/heads/main\nrefs/remotes/origin/main\n";
@@ -91,6 +94,13 @@ describe("GitWorktreeAuditAdapter", () => {
       code: "user-pin",
       source: "config",
       detail: "User configuration pins this resource.",
+      evidenceRef: "pin:branch",
+    });
+    reachability.addGitRef("refs/tags/v0.2.0", {
+      code: "user-pin",
+      source: "config",
+      detail: "User configuration pins this resource.",
+      evidenceRef: "pin:tag",
     });
     const adapter = new GitWorktreeAuditAdapter(
       main,
@@ -134,6 +144,11 @@ describe("GitWorktreeAuditAdapter", () => {
       processMatches: [{ pid: 42, source: "cwd" }],
       inspectionComplete: true,
     });
+    expect(
+      reachability
+        .rootsFor(join(linked, "node_modules"), context.now.toISOString())
+        .filter((root) => root.code === "user-pin"),
+    ).toHaveLength(2);
   });
 
   it("keeps the primary worktree identity when auditing from a linked worktree", async () => {

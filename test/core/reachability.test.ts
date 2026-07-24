@@ -116,4 +116,44 @@ describe("ReachabilityIndex", () => {
     expect(roots.every((item) => item.code === "user-pin")).toBe(true);
     expect(JSON.stringify(roots)).not.toContain("expiresAt");
   });
+
+  it("binds exact Git ref pins to nested resources in their worktree", () => {
+    const index = new ReachabilityIndex();
+    index.addGitRef("refs/tags/v0.2.0", {
+      code: "user-pin",
+      source: "config",
+      detail: "User configuration pins this resource.",
+    });
+
+    index.bindGitRefsToPath("/tmp/repo/task", ["refs/tags/v0.2.0"], "2026-07-24T00:00:00.000Z");
+
+    expect(index.rootsFor("/tmp/repo/task/node_modules", "2026-07-24T00:00:00.000Z")).toEqual([
+      {
+        code: "user-pin",
+        source: "config",
+        observedAt: "2026-07-24T00:00:00.000Z",
+        detail: "User configuration pins this resource.",
+      },
+    ]);
+  });
+
+  it("fails closed when Git ref pin resolution is incomplete", () => {
+    const index = new ReachabilityIndex();
+    index.addGitRef("refs/heads/task", {
+      code: "user-pin",
+      source: "config",
+      detail: "User configuration pins this resource.",
+    });
+
+    index.bindGitRefsToPath("/tmp/repo/task", [], "2026-07-24T00:00:00.000Z", false);
+
+    expect(index.rootsFor("/tmp/repo/task/dist", "2026-07-24T00:00:00.000Z")).toEqual([
+      {
+        code: "user-pin",
+        source: "config",
+        observedAt: "2026-07-24T00:00:00.000Z",
+        detail: "A configured Git ref pin could not be ruled out for this worktree.",
+      },
+    ]);
+  });
 });

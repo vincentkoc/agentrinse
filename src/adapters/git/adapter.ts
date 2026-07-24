@@ -65,6 +65,20 @@ function lines(input: string): string[] {
     .filter((line) => line !== "");
 }
 
+function branchRef(branch: string | undefined): string | undefined {
+  if (branch === undefined) {
+    return undefined;
+  }
+  return branch.startsWith("refs/") ? branch : `refs/heads/${branch}`;
+}
+
+function upstreamRef(upstream: string | undefined): string | undefined {
+  if (upstream === undefined) {
+    return undefined;
+  }
+  return upstream.startsWith("refs/") ? upstream : `refs/remotes/${upstream}`;
+}
+
 export class GitWorktreeAuditAdapter implements AuditAdapter {
   readonly id = "git";
 
@@ -125,6 +139,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
   async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
+      this.reachability?.protectUnresolvedGitRefs(context.now.toISOString());
       return { resources: [], diagnostics: [] };
     }
 
@@ -151,6 +166,8 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       let inspectionComplete = exists;
       let status: GitStatusFacts | undefined;
       let containingRefs: string[] = [];
+      let gitRefs: string[] = [];
+      let gitRefInspectionComplete = false;
       let remotes: string[] = [];
       const operations = new Set<string>();
       let processOwnership: ProcessOwnershipResult = {
@@ -187,6 +204,27 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
                 "refs/remotes",
               ]),
             );
+            const tagRefs = lines(
+              await this.runGit([
+                "-C",
+                worktreePath,
+                "for-each-ref",
+                "--points-at",
+                head,
+                "--format=%(refname)",
+                "refs/tags",
+              ]),
+            );
+            gitRefs = [
+              record.branch,
+              branchRef(status.branch),
+              upstreamRef(status.upstream),
+              ...tagRefs,
+            ]
+              .filter((value): value is string => value !== undefined)
+              .filter((value, index, values) => values.indexOf(value) === index)
+              .sort();
+            gitRefInspectionComplete = true;
           }
           for (const [operation, marker] of OPERATION_MARKERS) {
             const reportedMarkerPath = (
@@ -214,6 +252,12 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           });
         }
       }
+      this.reachability?.bindGitRefsToPath(
+        worktreePath,
+        gitRefs,
+        context.now.toISOString(),
+        gitRefInspectionComplete,
+      );
 
       const localReachable = containingRefs.some((ref) => ref.startsWith("refs/heads/"));
       const remoteReachable = containingRefs.some((ref) => ref.startsWith("refs/remotes/"));
@@ -239,6 +283,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           head: status?.head ?? record.head,
           branch: status?.branch ?? record.branch,
           upstream: status?.upstream,
+          gitRefs,
           detached: record.detached,
           bare: record.bare,
           locked: record.locked,
@@ -270,6 +315,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           reportOnly: true,
         },
       });
+    }
+    if (records.length === 0) {
+      this.reachability?.protectUnresolvedGitRefs(context.now.toISOString());
     }
 
     return { resources, diagnostics };

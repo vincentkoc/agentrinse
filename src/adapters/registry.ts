@@ -23,6 +23,7 @@ export function createAuditAdapters(
   options: AuditAdapterRegistryOptions = {},
 ): AuditAdapter[] {
   const reachability = new ReachabilityIndex();
+  const gitEnabled = config.adapters.git?.enabled === true;
   for (const root of options.roots ?? []) {
     reachability.add(root);
   }
@@ -38,8 +39,13 @@ export function createAuditAdapters(
       reachability.add({ ...root, path: pin.path });
     } else if ("resourceId" in pin) {
       reachability.addResource(pin.resourceId, root);
-    } else {
+    } else if (gitEnabled) {
       reachability.addGitRef(pin.gitRef, root);
+    } else {
+      reachability.addGlobal({
+        ...root,
+        detail: "Git ref pin resolution requires the Git adapter.",
+      });
     }
   }
   const adapters: AuditAdapter[] = PROVIDER_IDS.filter(
@@ -55,6 +61,18 @@ export function createAuditAdapters(
         inventoryResources: options.providerInventory ?? true,
       }),
   );
+
+  if (gitEnabled) {
+    adapters.push(
+      new GitWorktreeAuditAdapter(
+        config.adapters.git?.root,
+        undefined,
+        undefined,
+        undefined,
+        reachability,
+      ),
+    );
+  }
 
   if (config.artifacts.projects.length > 0) {
     adapters.push(
@@ -76,18 +94,6 @@ export function createAuditAdapters(
         platform,
         ...(options.environment === undefined ? {} : { environment: options.environment }),
       }),
-    );
-  }
-
-  if (config.adapters.git?.enabled === true) {
-    adapters.push(
-      new GitWorktreeAuditAdapter(
-        config.adapters.git.root,
-        undefined,
-        undefined,
-        undefined,
-        reachability,
-      ),
     );
   }
 

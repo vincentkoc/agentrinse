@@ -85,6 +85,10 @@ path, one exact AgentRinse resource ID, or one full Git ref under
 ignored. Pin evidence is hashed in findings; AgentRinse does not emit the
 configured path or ref as the evidence reference.
 
+Git ref pins resolve through the Git adapter before artifact classification.
+If Git is disabled or ref inspection is incomplete, AgentRinse conservatively
+protects the unresolved scope instead of allowing an artifact action.
+
 ## Provider Adapters
 
 Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, and Grok Build
