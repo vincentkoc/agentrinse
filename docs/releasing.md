@@ -48,10 +48,10 @@ provenance and avoids a long-lived publish secret.
 
 The workflow refuses tags that do not exactly match `package.json`.
 
-If a release-triggered run fails because its tagged commit contains obsolete
-release automation, rerun the current workflow manually with `release_tag` set
-to that existing tag. The workflow checks out the selected tag before
-verification or publishing.
+If a release-triggered run contains obsolete verification automation, run the
+current workflow manually with `release_tag` set to the existing tag. Manual
+dispatches validate tag contents but never publish because their provenance is
+bound to the dispatch ref. Publishing remains release-event-only.
 
 The first supported release is `0.1.0`. Never advertise `0.0.0` for cleanup
 against real developer state.

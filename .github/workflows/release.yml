@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing release tag to validate or publish
+        description: Existing release tag to validate without publishing
         required: true
         type: string
 
@@ -27,7 +27,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Verify selected tag
+        run: |
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -81,5 +86,5 @@ jobs:
           rm -rf "$bootstrap_root"
 
       - name: Publish to npm
-        if: env.RELEASE_TAG != 'v0.0.0'
+        if: github.event_name == 'release' && env.RELEASE_TAG != 'v0.0.0'
         run: npm publish --access public
