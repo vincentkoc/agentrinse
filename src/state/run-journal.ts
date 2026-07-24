@@ -84,6 +84,10 @@ export async function createRunJournal(
         ...run,
         completedAt: completedAt.toISOString(),
         status: "interrupted",
+        reclaimedBytes: run.actions.reduce(
+          (total, action) => total + (action.reclaimedBytes ?? 0),
+          0,
+        ),
         diagnostics: [...run.diagnostics, diagnostic],
       };
       return persist();

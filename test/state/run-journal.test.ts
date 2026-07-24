@@ -121,6 +121,9 @@ describe("run journal", () => {
 
     expect(interrupted.status).toBe("interrupted");
     expect(interrupted.actions[0]?.status).toBe("applying");
+    expect(interrupted.reclaimedBytes).toBe(
+      interrupted.actions.reduce((total, action) => total + (action.reclaimedBytes ?? 0), 0),
+    );
     expect(interrupted.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
     expect(await readJsonFile(journal.path)).toEqual(interrupted);
   });
