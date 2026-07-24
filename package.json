@@ -23,7 +23,7 @@
     "url": "git+https://github.com/vincentkoc/agentrinse.git"
   },
   "bin": {
-    "agentrinse": "./dist/cli.js"
+    "agentrinse": "dist/cli.js"
   },
   "files": [
     "dist",
@@ -46,7 +46,7 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint src test",
-    "pack:check": "pnpm build && pnpm schemas:check && publint && pnpm pack --dry-run",
+    "pack:check": "pnpm build && pnpm schemas:check && node scripts/check-package-manifest.mjs && publint && npm pack --dry-run",
     "schemas:check": "pnpm build && node scripts/generate-schemas.mjs --check",
     "schemas:generate": "pnpm build && node scripts/generate-schemas.mjs",
     "smoke": "pnpm build && node scripts/smoke.mjs",
