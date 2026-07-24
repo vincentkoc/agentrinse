@@ -12,6 +12,7 @@ import type { AgentRinseConfig } from "../config/schema.js";
 import { cleanupPlanSchema } from "../contracts/plan.js";
 import { auditReportSchema } from "../contracts/report.js";
 import { cleanupRunSchema } from "../contracts/run.js";
+import { quarantineEntrySchema } from "../contracts/quarantine.js";
 import { doctorReportSchema, type DoctorCheck, type DoctorReport } from "../contracts/doctor.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
@@ -649,6 +650,7 @@ export async function executeDoctorCommand(
     await schemaDirectoryCheck("schema:audits", layout.audits, auditReportSchema),
     await schemaDirectoryCheck("schema:plans", layout.plans, cleanupPlanSchema),
     await schemaDirectoryCheck("schema:runs", layout.runs, cleanupRunSchema),
+    await schemaDirectoryCheck("schema:quarantine", layout.quarantine, quarantineEntrySchema),
   ];
   const report = doctorReportSchema.parse({
     schemaVersion: 1,
