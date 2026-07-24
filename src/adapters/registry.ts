@@ -70,6 +70,11 @@ export function createAuditAdapters(
         undefined,
         undefined,
         reachability,
+        {
+          ...config.audit,
+          ...config.worktrees,
+          platform,
+        },
       ),
     );
   }

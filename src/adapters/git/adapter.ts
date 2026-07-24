@@ -1,14 +1,18 @@
 import { execFile } from "node:child_process";
-import { lstat } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 import { promisify } from "node:util";
 
+import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
+import type { WorktreeQuarantineAction } from "../../contracts/action.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";
 import type { Finding, RootEvidence } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
+import { measurePath, type Measurement } from "../../core/measure.js";
+import { findMountBoundaries, type MountBoundaryResult } from "../../core/mount-boundaries.js";
 import {
   findProcessesUsingPath,
   type ProcessOwnershipResult,
@@ -30,6 +34,22 @@ const OPERATION_MARKERS = [
 export type GitRunner = (args: string[]) => Promise<string>;
 export type GitPathExists = (path: string) => Promise<boolean>;
 export type GitProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
+export type GitWorktreeOptions = AgentRinseConfig["audit"] &
+  AgentRinseConfig["worktrees"] & {
+    platform: NodeJS.Platform;
+  };
+export type GitWorktreeDependencies = {
+  measure?: typeof measurePath;
+  mountProbe?: (path: string) => Promise<MountBoundaryResult>;
+};
+
+const DEFAULT_OPTIONS: GitWorktreeOptions = {
+  maxEntries: 100_000,
+  measureBytes: true,
+  minAgeMinutes: 14 * 24 * 60,
+  quarantineTtlMinutes: 7 * 24 * 60,
+  platform: process.platform,
+};
 
 async function defaultGitRunner(args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, {
@@ -88,6 +108,8 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     private readonly pathExists: GitPathExists = defaultPathExists,
     private readonly processProbe: GitProcessProbe = (path) => findProcessesUsingPath(path),
     private readonly reachability?: ReachabilityIndex,
+    private readonly options: GitWorktreeOptions = DEFAULT_OPTIONS,
+    private readonly dependencies: GitWorktreeDependencies = {},
   ) {}
 
   async probe(_context: AuditContext): Promise<AdapterProbe> {
@@ -169,6 +191,15 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       let gitRefs: string[] = [];
       let gitRefInspectionComplete = false;
       let remotes: string[] = [];
+      let repositoryCommonDir: string | undefined;
+      let measurement: Measurement | undefined;
+      let mountBoundaries: MountBoundaryResult = {
+        status: "unknown",
+        paths: [],
+        reason: "worktree does not exist",
+      };
+      let hasSubmodules = false;
+      let stats: Awaited<ReturnType<typeof lstat>> | undefined;
       const operations = new Set<string>();
       let processOwnership: ProcessOwnershipResult = {
         status: "unknown",
@@ -178,6 +209,8 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
       if (exists) {
         try {
+          stats = await lstat(worktreePath);
+          await realpath(worktreePath);
           status = parseGitStatusPorcelainV2(
             await this.runGit([
               "-C",
@@ -190,6 +223,28 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
             ]),
           );
           remotes = lines(await this.runGit(["-C", worktreePath, "remote"]));
+          const commonDirOutput = (
+            await this.runGit([
+              "-C",
+              worktreePath,
+              "rev-parse",
+              "--path-format=absolute",
+              "--git-common-dir",
+            ])
+          ).trim();
+          repositoryCommonDir = resolve(worktreePath, commonDirOutput);
+          hasSubmodules = (await this.runGit(["-C", worktreePath, "ls-files", "-z", "--stage"]))
+            .split("\0")
+            .some((entry) => entry.startsWith("160000 "));
+          if (this.options.measureBytes) {
+            measurement = await (this.dependencies.measure ?? measurePath)(worktreePath, {
+              maxEntries: this.options.maxEntries,
+              ...(context.signal === undefined ? {} : { signal: context.signal }),
+            });
+          }
+          mountBoundaries = await (this.dependencies.mountProbe ?? findMountBoundaries)(
+            worktreePath,
+          );
           const head = status.head ?? record.head;
           if (head !== undefined) {
             containingRefs = lines(
@@ -239,7 +294,11 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
             }
           }
           processOwnership = await this.processProbe(worktreePath);
-          if (processOwnership.status === "unknown") {
+          if (
+            processOwnership.status === "unknown" ||
+            repositoryCommonDir === undefined ||
+            stats === undefined
+          ) {
             inspectionComplete = false;
           }
         } catch (error) {
@@ -288,6 +347,25 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           bare: record.bare,
           locked: record.locked,
           prunable: record.prunable,
+          repositoryCommonDir,
+          device: stats?.dev,
+          inode: stats?.ino,
+          mtimeMs: stats?.mtimeMs,
+          newestMtimeMs: measurement?.newestMtimeMs,
+          fingerprint: measurement?.fingerprint,
+          measurementTruncated: measurement?.truncated ?? !this.options.measureBytes,
+          specialEntries: measurement?.specialEntries,
+          mountBoundaries: measurement?.mountBoundaries,
+          mountBoundaryStatus: mountBoundaries.status,
+          mountBoundaryPaths: mountBoundaries.paths,
+          mountBoundaryReason:
+            mountBoundaries.status === "unknown" ? mountBoundaries.reason : undefined,
+          ageMinutes:
+            measurement === undefined
+              ? undefined
+              : Math.max(0, (context.now.getTime() - measurement.newestMtimeMs) / 60_000),
+          hasSubmodules,
+          platform: this.options.platform,
           staged,
           modified,
           untracked,
@@ -314,6 +392,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           inspectionComplete,
           reportOnly: true,
         },
+        ...(measurement === undefined ? {} : { measuredBytes: measurement.bytes }),
       });
     }
     if (records.length === 0) {
@@ -336,6 +415,22 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       });
     }
 
+    if (!["darwin", "linux"].includes(String(resource.facts.platform))) {
+      roots.push({
+        code: "worktree-mutation-unsupported",
+        source: "git",
+        observedAt,
+        detail: "Recoverable worktree quarantine is supported only on macOS and Linux.",
+      });
+    }
+    if (resource.facts.bare === true || resource.facts.prunable !== undefined) {
+      roots.push({
+        code: "worktree-registration-unsafe",
+        source: "git",
+        observedAt,
+        detail: "Bare or prunable worktree registrations are not quarantine candidates.",
+      });
+    }
     if (resource.facts.locked !== undefined) {
       roots.push({
         code: "git-lock",
@@ -393,16 +488,75 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         detail: "No configured remote is available for reachability proof.",
       });
     }
-    if (
-      resource.facts.detached === true &&
-      resource.facts.localReachable !== true &&
-      resource.facts.remoteReachable !== true
-    ) {
+    if (resource.facts.detached === true) {
       roots.push({
-        code: "unreachable-detached-commit",
+        code: "detached-worktree",
         source: "git",
         observedAt,
-        detail: "The detached HEAD is not contained by a local or remote-tracking ref.",
+        detail: "Detached worktrees are outside the 0.3 quarantine boundary.",
+      });
+    }
+    if (
+      typeof resource.facts.head !== "string" ||
+      typeof resource.facts.branch !== "string" ||
+      typeof resource.facts.repositoryCommonDir !== "string"
+    ) {
+      roots.push({
+        code: "worktree-identity-incomplete",
+        source: "git",
+        observedAt,
+        detail: "Worktree HEAD, branch, or common Git directory could not be proven.",
+      });
+    }
+    if (resource.facts.hasSubmodules === true) {
+      roots.push({
+        code: "worktree-submodules",
+        source: "git",
+        observedAt,
+        detail: "Worktrees containing gitlink entries are not quarantine candidates.",
+      });
+    }
+    if (
+      resource.measuredBytes === undefined ||
+      resource.facts.measurementTruncated === true ||
+      typeof resource.facts.fingerprint !== "string"
+    ) {
+      roots.push({
+        code: "worktree-measurement-incomplete",
+        source: "git",
+        observedAt,
+        detail: "Worktree contents could not be measured completely.",
+      });
+    }
+    if (
+      (typeof resource.facts.specialEntries === "number" && resource.facts.specialEntries > 0) ||
+      (typeof resource.facts.mountBoundaries === "number" && resource.facts.mountBoundaries > 0) ||
+      resource.facts.mountBoundaryStatus === "blocked"
+    ) {
+      roots.push({
+        code: "worktree-filesystem-boundary",
+        source: "git",
+        observedAt,
+        detail: "Worktree contents include an unsupported filesystem entry or mount boundary.",
+      });
+    }
+    if (resource.facts.mountBoundaryStatus !== "clear") {
+      roots.push({
+        code: "worktree-mount-inspection-incomplete",
+        source: "git",
+        observedAt,
+        detail: "Filesystem mount boundaries could not be proven absent.",
+      });
+    }
+    if (
+      typeof resource.facts.ageMinutes !== "number" ||
+      resource.facts.ageMinutes < this.options.minAgeMinutes
+    ) {
+      roots.push({
+        code: "recent-resource",
+        source: "git",
+        observedAt,
+        detail: `Worktree is newer than ${this.options.minAgeMinutes} minutes.`,
       });
     }
     if (resource.facts.inspectionComplete !== true) {
@@ -416,13 +570,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     roots.push(
       ...(this.reachability?.rootsForResource(resource.resource, resource.facts, observedAt) ?? []),
     );
-    roots.push({
-      code: "worktree-removal-unavailable",
-      source: "git",
-      observedAt,
-      detail: "AgentRinse 0.2 reports reachability but does not remove worktrees.",
-    });
     roots.sort((left, right) => left.code.localeCompare(right.code));
+    const eligible = resource.exists && roots.length === 0;
+    const candidateActions: WorktreeQuarantineAction[] = eligible ? [this.actionFor(resource)] : [];
 
     return {
       schemaVersion: 1,
@@ -430,14 +580,54 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       auditId: context.auditId,
       observedAt,
       resource: resource.resource,
-      state:
-        resource.exists && resource.facts.inspectionComplete === true ? "protected" : "unknown",
+      state: eligible
+        ? "eligible"
+        : resource.exists && resource.facts.inspectionComplete === true
+          ? "protected"
+          : "unknown",
       confidence:
         resource.exists && resource.facts.inspectionComplete === true ? "certain" : "unknown",
       roots,
       facts: resource.facts,
-      candidateActions: [],
+      candidateActions,
+      ...(resource.measuredBytes === undefined
+        ? {}
+        : {
+            measuredBytes: resource.measuredBytes,
+            estimatedReclaimBytes: 0,
+          }),
       warnings: [],
+    };
+  }
+
+  private actionFor(resource: ResourceSnapshot): WorktreeQuarantineAction {
+    const facts = resource.facts;
+    const branch =
+      typeof facts.branch === "string" ? (branchRef(facts.branch) ?? facts.branch) : undefined;
+    const target = {
+      path: resource.resource.path!,
+      repositoryCommonDir: String(facts.repositoryCommonDir),
+      head: String(facts.head),
+      ...(branch === undefined ? {} : { branch }),
+      device: Number(facts.device),
+      inode: Number(facts.inode),
+      mtimeMs: Number(facts.mtimeMs),
+      measuredBytes: resource.measuredBytes!,
+      newestMtimeMs: Number(facts.newestMtimeMs),
+      fingerprint: String(facts.fingerprint),
+    };
+
+    return {
+      actionId: `worktree.quarantine:${sha256(JSON.stringify(target))}`,
+      type: "worktree.quarantine",
+      adapter: "git",
+      resourceId: resource.resource.id,
+      risk: "recoverable",
+      description: `Quarantine inactive linked worktree ${target.path}`,
+      expectedReclaimBytes: 0,
+      pendingQuarantineBytes: target.measuredBytes,
+      quarantineTtlMinutes: this.options.quarantineTtlMinutes,
+      target,
     };
   }
 }
