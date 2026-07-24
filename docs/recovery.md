@@ -20,6 +20,64 @@ $XDG_STATE_HOME/agentrinse/runs/<run-id>.json
 
 or `$HOME/.local/state/agentrinse/runs` when `XDG_STATE_HOME` is unset.
 
+Quarantine manifests live beside them under:
+
+```text
+$XDG_STATE_HOME/agentrinse/quarantine/<entry-id>.json
+```
+
+They record both the planned worktree identity and its post-repair quarantine
+identity.
+
+## Restore a Quarantined Worktree
+
+Inspect the run first:
+
+```bash
+agentrinse show run <run-id>
+agentrinse undo <run-id>
+agentrinse undo <run-id> --action <action-id>
+```
+
+Undo prompts before mutation; automation must use `--yes`. It refuses to
+overwrite a recreated original path. It also refuses changed content, a dirty
+Git status, a live process, a mount boundary, a changed registration, or a
+recovery ref that no longer points to the recorded HEAD.
+
+Successful undo:
+
+1. unlocks the quarantined Git worktree
+2. atomically renames it to the original path
+3. repairs and verifies the Git registration
+4. verifies the exact HEAD, branch, and clean status
+5. deletes only the recorded recovery ref
+6. persists the manifest as `restored`
+
+## Purge Quarantine
+
+Preview is the default:
+
+```bash
+agentrinse purge
+agentrinse purge --expired
+agentrinse purge --run <run-id>
+```
+
+Destructive purge requires an explicit selection and apply:
+
+```bash
+agentrinse purge --expired --apply --yes
+agentrinse purge --run <run-id> --apply --yes
+```
+
+`--expired` respects the manifest TTL. `--run` is an explicit operator choice
+and can purge before expiry. Purge revalidates the unchanged clean worktree,
+unlocks it, invokes `git worktree remove` without `--force`, verifies path and
+registration removal, then deletes the exact recovery ref.
+
+Atomic quarantine itself does not free disk. Only purge reports those bytes as
+reclaimed.
+
 ## Interrupted Runs
 
 The first SIGINT requests cooperative cancellation. AgentRinse finishes any
@@ -86,6 +144,12 @@ Run:
 agentrinse doctor
 ```
 
-Doctor validates persisted audit, plan, and run schemas without rewriting
-them. Preserve incompatible files before moving them out of the state
-directory. Never delete a journal that is the only record of a partial action.
+Doctor validates persisted audit, plan, run, and quarantine schemas without
+rewriting them. Preserve incompatible files before moving them out of the
+state directory. Never delete a journal or quarantine manifest that is the
+only record of a partial action.
+
+For a `partial` quarantine entry, do not run Git prune or delete the recovery
+ref. Inspect the manifest paths and current `git worktree list --porcelain`
+output first. Preserve the ref until either the original or quarantined path is
+verified at the recorded HEAD.

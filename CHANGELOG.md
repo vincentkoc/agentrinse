@@ -6,6 +6,35 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-24
+
+### Added
+
+- recoverable `worktree.quarantine` actions for fully proven inactive linked
+  worktrees on macOS and Linux
+- same-filesystem atomic quarantine with recovery refs, locked repaired Git
+  registrations, durable manifests, and post-repair identity snapshots
+- `agentrinse undo <run-id>` with exact destination, content, process, mount,
+  Git state, and recovery-ref revalidation
+- preview-first `agentrinse purge`, including expired-entry and explicit-run
+  selection
+- separate immediate-reclaim and pending-quarantine byte accounting
+- quarantine schema validation in `doctor`
+- packaged end-to-end quarantine, undo, and clean purge smoke proof
+- Homebrew distribution through `vincentkoc/tap`
+
+### Safety
+
+- the default `safe` risk ceiling excludes whole-worktree mutation
+- quarantine requires an explicit `recoverable` ceiling, a clean pushed
+  branch, complete measurement, no submodules, no live process, no pin or
+  provider root, and at least the configured age
+- detached, locked, dirty, busy, recent, unpushed, unknown-remote, prunable,
+  cross-device, mounted, or incompletely inspected worktrees fail closed
+- purge uses `git worktree remove` without `--force` and refuses changed or
+  dirty quarantine state
+- native Windows worktree mutation remains blocked
+
 ## [0.2.0] - 2026-07-24
 
 ### Added

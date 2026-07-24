@@ -33,6 +33,8 @@ Shipped:
 
 ## 0.3: Recoverable Worktrees
 
+Shipped:
+
 - recovery refs
 - same-filesystem quarantine
 - tested undo and expiry

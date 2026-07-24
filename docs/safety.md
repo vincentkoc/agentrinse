@@ -19,7 +19,36 @@ Only `artifacts.remove` mutates:
 - same-user process ownership is proven idle
 - the action risk is `safe`
 
-Provider state, Git worktrees, and Docker resources remain report-only.
+Provider state and Docker resources remain report-only.
+
+## Recoverable Worktree Boundary
+
+`worktree.quarantine` is the only whole-worktree mutation. It is
+`recoverable`, excluded by the default `safe` risk ceiling, and requires:
+
+- a linked, branch-attached, unlocked, clean worktree
+- configured remote reachability with no unpushed commit
+- no Git operation, submodule, provider/session root, user pin, or live process
+- complete filesystem measurement with no special entry or mount boundary
+- age since the newest measured entry at or above the configured threshold
+- macOS or Linux
+
+Apply performs a fresh provider and Git audit under the mutation lock. It
+creates an exact recovery ref, atomically renames the worktree into an
+owner-only sibling quarantine directory, repairs the Git registration, locks
+it, and records a post-repair identity. Cross-device fallback is forbidden.
+
+Quarantine reclaims zero disk bytes. The run records moved bytes separately as
+pending purge.
+
+Undo refuses an occupied destination or any drift in content, filesystem
+identity, process ownership, mount state, Git cleanliness, registration, or
+recovery ref. It unlocks, renames, repairs, verifies, then deletes only the
+recorded recovery ref.
+
+Purge is a separate destructive command. It repeats the quarantine checks and
+uses `git worktree remove` without `--force`. Changed or dirty quarantine state
+is never purged.
 
 ## Authorization
 
@@ -110,6 +139,9 @@ critical section, persists its exact outcome, and marks the run interrupted at
 the next safe checkpoint.
 
 The state directory is rejected if it is inside a planned cleanup target.
+Quarantine manifests are schema-validated by doctor and retain the exact
+original path, quarantine path, recovery ref, pre-move identity, post-repair
+identity, TTL, and last recovery state.
 
 ## Hard Invariants
 
@@ -121,6 +153,8 @@ The state directory is rejected if it is inside a planned cleanup target.
 - no `sudo`
 - no generic force flag
 - no wildcard or unfiltered prune
+- no `git worktree remove --force`
+- no cross-device worktree copy-and-delete fallback
 - no provider database mutation
 - no provider sessions, transcripts, credentials, configuration, plugins,
   skills, memories, branches, stashes, or Docker volumes are removed

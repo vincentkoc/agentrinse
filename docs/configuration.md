@@ -56,6 +56,10 @@ An explicitly requested missing or invalid file is an error.
     "minBytes": 67108864,
     "processCheck": "required"
   },
+  "worktrees": {
+    "minAgeMinutes": 20160,
+    "quarantineTtlMinutes": 10080
+  },
   "pins": [
     { "path": "/absolute/project-worktree" },
     { "resourceId": "git:git-worktree:..." },
@@ -96,11 +100,22 @@ are enabled for read-only inventory by default. Each accepts an optional
 `root`. Missing default roots mean the provider is absent, not broken. A
 missing explicit root is a doctor warning.
 
-Git is disabled by default and requires an explicit repository root. Runtime
+Git is disabled by default and requires an explicit repository root. When
+enabled, eligible linked worktrees may produce `recoverable` quarantine
+actions; the default `safe` plan ceiling excludes them. Runtime
 inventory is disabled by default because it searches `PATH` and may execute
 selected binaries with `--version`. Docker is disabled by default and uses
-the active Docker context when enabled. All three adapters remain report-only
-in `0.2.0`.
+the active Docker context when enabled. Runtime and Docker remain report-only.
+
+## Worktree Quarantine
+
+`worktrees.minAgeMinutes` defaults to 14 days and is measured from the newest
+entry in the complete worktree scan. `worktrees.quarantineTtlMinutes` defaults
+to 7 days and may not exceed 30 days.
+
+Quarantine is never selected unless `plan.maxRisk` or a command-specific
+`--max-risk` is `recoverable` or higher. It retains all bytes until explicit
+purge.
 
 ## Artifact Projects
 
@@ -134,5 +149,5 @@ State is resolved in this order:
 2. `$XDG_STATE_HOME/agentrinse`
 3. `$HOME/.local/state/agentrinse`
 
-The state root stores exact audits, plans, run journals, and the apply lock.
-Do not place it inside a configured cleanup target.
+The state root stores exact audits, plans, run journals, quarantine manifests,
+and the apply lock. Do not place it inside a configured cleanup target.

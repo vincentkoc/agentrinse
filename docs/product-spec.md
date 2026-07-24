@@ -3387,7 +3387,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] implement canonical JSON hashing
 - [x] implement initial schema compatibility tests
 - [x] define `0.2.0` reachability facts and roots
-- [ ] define `0.3.0` quarantine, recovery, undo, and purge records
+- [x] define `0.3.0` quarantine, recovery, undo, and purge records
 
 ### Core safety
 
@@ -3418,8 +3418,8 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] Codex and Claude session-to-worktree roots
 - [x] provider-managed worktree and pin roots
 - [ ] Docker safe cleanup
-- [ ] worktree quarantine
-- [ ] worktree undo
+- [x] worktree quarantine
+- [x] worktree undo
 - [ ] offline database compaction
 
 ### Documentation and release

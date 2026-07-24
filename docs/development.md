@@ -24,7 +24,13 @@ tests, and JSON Schema drift verification.
 6. applies the plan with an isolated state directory
 7. verifies the exact artifact is gone
 8. verifies the project source file remains
-9. validates the completed run journal
+9. creates a disposable Git remote, main worktree, and pushed linked worktree
+10. audits and quarantines the linked worktree at `recoverable` risk
+11. verifies zero immediate reclaim and durable pending bytes
+12. restores it through `agentrinse undo`
+13. quarantines it again and purges it through clean Git removal
+14. verifies the path and Git registration are gone
+15. validates the completed journals and quarantine manifests
 
 It never reads data from `$HOME`.
 
@@ -41,6 +47,8 @@ It never reads data from `$HOME`.
 - use fake process and owner-command runners where practical
 - test every new mutation with stale identity, symlink, active process,
   rollback, partial failure, and source-preservation cases
+- worktree tests must use disposable repositories and must never target a
+  developer checkout
 
 ## Remote Proof
 

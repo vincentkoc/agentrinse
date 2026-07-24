@@ -11,22 +11,24 @@ CLI
   -> authorization
   -> exclusive apply lock
   -> per-action revalidation
-  -> same-parent isolation
-  -> bounded executor
+  -> same-parent isolation or worktree quarantine
+  -> type-specific executor
   -> durable run journal
 ```
 
 ## Contracts
 
 Zod schemas validate resources, diagnostics, findings, reports, actions,
-plans, and runs. Generated JSON Schemas under `schemas/` are checked for drift
-in CI and shipped in the npm package.
+plans, runs, and quarantine manifests. Generated JSON Schemas under `schemas/`
+are checked for drift in CI and shipped in the npm package.
 
 ## Adapters
 
-Collectors and classifiers are read-only. Provider, Git, and Docker adapters
-emit protected findings. The artifact adapter can emit one exact
-`artifacts.remove` action for each eligible configured directory.
+Collectors and classifiers are read-only. Provider and Docker adapters emit
+protected findings. The artifact adapter can emit one exact
+`artifacts.remove` action for each eligible configured directory. The Git
+adapter can emit one exact `worktree.quarantine` action for each fully proven
+inactive linked worktree.
 
 No adapter mutates directly.
 
@@ -51,11 +53,17 @@ The apply engine:
 9. stops after an execution failure
 10. finalizes the run and releases the owned lock
 
-## Artifact Executor
+## Executors
 
-The executor performs a second inode check, atomically renames the exact target
-to a same-parent tombstone, verifies the moved inode, removes the tombstone,
-and verifies postconditions. It never searches for additional targets.
+The artifact executor performs a second inode check, atomically renames the
+exact target to a same-parent tombstone, verifies the moved inode, removes the
+tombstone, and verifies postconditions. It never searches for additional
+targets.
+
+The worktree executor creates a recovery ref, atomically renames the exact
+linked worktree to a sibling owner-only quarantine directory, repairs and
+locks its Git registration, then records a post-repair identity. Undo and purge
+revalidate that identity before any recovery mutation.
 
 ## State
 
@@ -67,6 +75,7 @@ $XDG_STATE_HOME/agentrinse/
   plans/<plan-id>.json
   locks/apply.lock
   runs/<run-id>.json
+  quarantine/<entry-id>.json
 ```
 
 Without `XDG_STATE_HOME`, the root is

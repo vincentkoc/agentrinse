@@ -45,6 +45,8 @@ provenance and avoids a long-lived publish secret.
 4. push the exact validated commit
 5. publish a GitHub release tagged `v<package-version>`
 6. verify the Release workflow, npm version, package contents, and CLI smoke
+7. update `vincentkoc/tap` to the exact GitHub release tarball and SHA-256
+8. verify a clean Homebrew install, formula test, and upgrade path
 
 The workflow refuses tags that do not exactly match `package.json`.
 
@@ -68,3 +70,22 @@ OIDC permission. Publishing remains release-event-only.
 
 The first supported release is `0.1.0`. Never advertise `0.0.0` for cleanup
 against real developer state.
+
+## Homebrew
+
+The formula lives in `vincentkoc/tap` as `Formula/agentrinse.rb`. It installs
+the released npm tarball with its production dependencies and links the
+`agentrinse` executable.
+
+For each release:
+
+1. download the exact `agentrinse-<version>.tgz` GitHub release asset
+2. verify its `.sha256` file
+3. update formula `version`, `url`, and `sha256`
+4. run `brew audit --strict vincentkoc/tap/agentrinse`
+5. run `brew test vincentkoc/tap/agentrinse`
+6. install in a clean prefix and verify `agentrinse --version`
+7. exercise packaged audit, plan, quarantine, undo, and purge against only a
+   disposable repository
+
+Never point formula tests at the operator's home or existing worktrees.
