@@ -27,9 +27,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ github.event_name == 'release' && github.sha || format('refs/tags/{0}', inputs.release_tag) }}
 
       - name: Verify selected tag
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
