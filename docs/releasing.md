@@ -48,5 +48,10 @@ provenance and avoids a long-lived publish secret.
 
 The workflow refuses tags that do not exactly match `package.json`.
 
+If a release-triggered run contains obsolete verification automation, run the
+current workflow manually with `release_tag` set to the existing tag. Manual
+dispatches run in a separate validation job without the `npm` environment or
+OIDC permission. Publishing remains release-event-only.
+
 The first supported release is `0.1.0`. Never advertise `0.0.0` for cleanup
 against real developer state.

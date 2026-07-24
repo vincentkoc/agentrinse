@@ -4,20 +4,33 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to validate without publishing
+        required: true
+        type: string
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   npm:
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -40,13 +53,11 @@ jobs:
           pnpm pack:check
 
       - name: Verify release version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
 
       - name: Verify bootstrap package
-        if: github.event.release.tag_name == 'v0.0.0'
+        if: env.RELEASE_TAG == 'v0.0.0'
         run: |
           bootstrap_root="$RUNNER_TEMP/agentrinse-bootstrap"
           mkdir -p \
@@ -73,5 +84,76 @@ jobs:
           rm -rf "$bootstrap_root"
 
       - name: Publish to npm
-        if: github.event.release.tag_name != 'v0.0.0'
+        if: env.RELEASE_TAG != 'v0.0.0'
         run: npm publish --access public
+
+  validate:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+
+      - name: Verify selected tag
+        run: |
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install verification npm
+        run: npm install --global npm@11.18.0
+
+      - name: Verify source and package
+        run: |
+          pnpm check
+          pnpm pack:check
+
+      - name: Verify release version
+        run: |
+          test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
+
+      - name: Verify bootstrap package
+        if: env.RELEASE_TAG == 'v0.0.0'
+        run: |
+          bootstrap_root="$RUNNER_TEMP/agentrinse-bootstrap"
+          mkdir -p \
+            "$bootstrap_root/local-pack" \
+            "$bootstrap_root/local-tree" \
+            "$bootstrap_root/registry-pack" \
+            "$bootstrap_root/registry-tree"
+
+          npm pack --json \
+            --pack-destination "$bootstrap_root/local-pack" \
+            > "$bootstrap_root/local.json"
+          npm pack agentrinse@0.0.0 --json \
+            --pack-destination "$bootstrap_root/registry-pack" \
+            > "$bootstrap_root/registry.json"
+
+          local_file="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$bootstrap_root/local.json")"
+          registry_file="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$bootstrap_root/registry.json")"
+          tar -xzf "$bootstrap_root/local-pack/$local_file" -C "$bootstrap_root/local-tree"
+          tar -xzf "$bootstrap_root/registry-pack/$registry_file" -C "$bootstrap_root/registry-tree"
+
+          diff -qr \
+            "$bootstrap_root/local-tree/package" \
+            "$bootstrap_root/registry-tree/package"
+          rm -rf "$bootstrap_root"
