@@ -87,6 +87,18 @@ export function cleanCommandExitCode(
   return result.status === "degraded" ? 1 : undefined;
 }
 
+export function cleanCommandStatus(
+  audit: Pick<AuditReport, "diagnostics" | "probes">,
+  run?: Pick<CleanupRun, "status">,
+): CleanCommandResult["status"] {
+  if (run !== undefined && ["failed", "interrupted", "partial"].includes(run.status)) {
+    return "failed";
+  }
+  return audit.probes.some((probe) => probe.status === "degraded") || audit.diagnostics.length > 0
+    ? "degraded"
+    : "ok";
+}
+
 async function defaultRunCommand(
   command: string,
   args: string[],
@@ -288,12 +300,7 @@ export async function executeCleanCommand(
   };
   const startedAt = audit.startedAt;
   const completedAt = clock().toISOString();
-  const status =
-    run !== undefined && ["failed", "partial"].includes(run.status)
-      ? "failed"
-      : audit.probes.some((probe) => probe.status === "degraded") || audit.diagnostics.length > 0
-        ? "degraded"
-        : "ok";
+  const status = cleanCommandStatus(audit, run);
   return {
     audit,
     plan,

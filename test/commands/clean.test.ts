@@ -6,7 +6,11 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import { cleanCommandExitCode, executeCleanCommand } from "../../src/commands/clean.js";
+import {
+  cleanCommandExitCode,
+  cleanCommandStatus,
+  executeCleanCommand,
+} from "../../src/commands/clean.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import { commandEnvelopeSchema } from "../../src/contracts/output.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
@@ -74,6 +78,9 @@ describe("clean closeout profile", () => {
   it("returns a nonzero automation status for degraded safety evidence", () => {
     expect(cleanCommandExitCode({ status: "degraded" })).toBe(1);
     expect(cleanCommandExitCode({ status: "ok" })).toBeUndefined();
+    expect(cleanCommandStatus({ probes: [], diagnostics: [] }, { status: "interrupted" })).toBe(
+      "failed",
+    );
   });
 
   it("scopes a compact dry run to one repository and protects the current worktree", async () => {
