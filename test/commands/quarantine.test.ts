@@ -137,6 +137,30 @@ describe("undo command", () => {
     expect(result.entries[0]?.status).toBe("restored");
   });
 
+  it("selects a persisted partial entry for recovery", async () => {
+    const partial = {
+      ...entry("partial", "run-1", "2026-08-01T00:00:00.000Z"),
+      status: "partial" as const,
+    };
+    const fixture = await stateFixture([partial]);
+    const undo = vi.fn(async (value: QuarantineEntry) => ({
+      ...value,
+      status: "restored" as const,
+      restoredAt: "2026-07-24T00:00:00.000Z",
+    }));
+
+    await executeUndoCommand({
+      runId: "run-1",
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      yes: true,
+      json: false,
+      dependencies: { undo },
+    });
+
+    expect(undo).toHaveBeenCalledWith(partial, expect.any(Object));
+  });
+
   it("selects an interrupted initial quarantine entry for recovery", async () => {
     const interrupted = {
       ...entry("initial", "run-1", "2026-08-01T00:00:00.000Z"),

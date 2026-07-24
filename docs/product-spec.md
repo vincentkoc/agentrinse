@@ -3289,6 +3289,9 @@ The supported npm release remains the first distribution target. A formula in
 - Undo reconciles durable `preparing`, `recovery-ref-created`, and `moved`
   manifests by inspecting both paths, repairing the actual registration, and
   preserving or recreating only the exact namespaced recovery ref.
+- Undo reconciles `partial` quarantine manifests only when exactly one known
+  original, quarantine, or purge-isolation path exists and passes full
+  identity, content, registration, lock, process, mount, and ref validation.
 - Mutation verifies the exact `AgentRinse quarantine <entry-id>` lock reason.
   A foreign or operator-owned Git worktree lock is immutable protection and
   is checked before any `git worktree repair`. The registration must also be

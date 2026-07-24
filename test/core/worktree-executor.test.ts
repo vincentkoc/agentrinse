@@ -1147,6 +1147,95 @@ describe("worktree quarantine recovery", () => {
     expect(await missing(result.quarantinePath)).toBe(true);
   });
 
+  it("restores a partial entry from the quarantine path", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-partial-undo-quarantine",
+      entryId: "entry-partial-undo-quarantine",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const partial = quarantineEntrySchema.parse({
+      ...manifest,
+      status: "partial",
+      diagnostic: {
+        severity: "error",
+        code: "QUARANTINE_UNDO_PARTIAL",
+        message: "injected interrupted undo",
+        adapter: "git",
+        resourceId: manifest.resourceId,
+      },
+    });
+    await writeJsonAtomic(result.manifestPath, partial, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(partial, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(result.quarantinePath)).toBe(true);
+  });
+
+  it("rolls a partial purge isolation back before undo", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-partial-undo-isolation",
+      entryId: "entry-partial-undo-isolation",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const isolationPath = `${result.quarantinePath}.purging`;
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await renameNoReplace(result.quarantinePath, isolationPath);
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const partial = quarantineEntrySchema.parse({
+      ...manifest,
+      status: "partial",
+      diagnostic: {
+        severity: "error",
+        code: "QUARANTINE_PURGE_PARTIAL",
+        message: "injected interrupted purge rollback",
+        adapter: "git",
+        resourceId: manifest.resourceId,
+      },
+    });
+    await writeJsonAtomic(result.manifestPath, partial, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(partial, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(isolationPath)).toBe(true);
+  });
+
   it("refuses undo and purge after a foreign worktree lock replaces its lock", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
@@ -1989,9 +2078,13 @@ describe("worktree quarantine recovery", () => {
       privateDirectories: [quarantineDirectory],
     });
 
+    let protectionChecked = false;
     const purged = await purgeWorktreeQuarantine(purging, {
       manifestPath: result.manifestPath,
       quarantineDirectory,
+      revalidateProtection: async () => {
+        protectionChecked = true;
+      },
       dependencies: {
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-24T00:00:00.000Z"),
@@ -1999,10 +2092,67 @@ describe("worktree quarantine recovery", () => {
     });
 
     expect(purged.entry.status).toBe("purged");
+    expect(protectionChecked).toBe(true);
     expect(purged.reclaimedBytes).toBe(fixture.action.target.measuredBytes);
     await expect(readFile(join(fixture.linked, "replacement.txt"), "utf8")).resolves.toBe(
       "unrelated replacement\n",
     );
+  });
+
+  it("preserves recovery state when resumed purge finalization becomes protected", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-resume-purge-protected",
+      entryId: "entry-resume-purge-protected",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "remove",
+      result.quarantinePath,
+    ]);
+    const purging = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
+    await writeJsonAtomic(result.manifestPath, purging, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    await expect(
+      purgeWorktreeQuarantine(purging, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        revalidateProtection: async () => {
+          throw new Error("new protection root");
+        },
+        dependencies: { runGit: fixture.runGit },
+      }),
+    ).rejects.toThrow("new protection root");
+
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "purging",
+    );
+    expect(
+      (
+        await fixture.runGit([
+          "--git-dir",
+          fixture.action.target.repositoryCommonDir,
+          "rev-parse",
+          "--verify",
+          result.recoveryRef,
+        ])
+      ).trim(),
+    ).toBe(fixture.action.target.head);
   });
 
   it("refuses purge after quarantined contents change", async () => {

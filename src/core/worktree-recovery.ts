@@ -807,6 +807,128 @@ export function worktreePurgeIsolationPath(entry: QuarantineEntry): string {
   return `${entry.quarantinePath}.purging`;
 }
 
+async function recoverPartialForUndo(
+  entry: QuarantineEntry,
+  options: WorktreeRecoveryOptions,
+): Promise<QuarantineEntry> {
+  const dependencies = resolveDependencies(options);
+  const isolationPath = worktreePurgeIsolationPath(entry);
+  const [originalExists, quarantineExists, isolationExists] = await Promise.all([
+    pathExists(entry.originalPath, dependencies.inspect),
+    pathExists(entry.quarantinePath, dependencies.inspect),
+    pathExists(isolationPath, dependencies.inspect),
+  ]);
+  if ([originalExists, quarantineExists, isolationExists].filter(Boolean).length !== 1) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_PARTIAL_TRANSITION_AMBIGUOUS",
+      "partial quarantine recovery requires exactly one known worktree path",
+      entry,
+    );
+  }
+
+  if (originalExists) {
+    await verifyRecoveryPath(
+      entry,
+      options,
+      dependencies,
+      entry.originalPath,
+      entry.quarantineIdentity ?? entry.target,
+      true,
+      "unlocked",
+      [entry.originalPath, entry.quarantinePath, isolationPath],
+    );
+    await deleteRecoveryRef(entry, dependencies);
+    return persist(
+      {
+        ...entry,
+        status: "restored",
+        restoredAt: dependencies.clock().toISOString(),
+      },
+      options,
+    );
+  }
+
+  if (isolationExists) {
+    const identity =
+      entry.quarantineIdentity ??
+      (() => {
+        throw new WorktreeRecoveryError(
+          "QUARANTINE_IDENTITY_MISSING",
+          "partial purge recovery requires post-repair quarantine identity",
+          entry,
+        );
+      })();
+    await verifyRecoveryPath(
+      entry,
+      options,
+      dependencies,
+      isolationPath,
+      identity,
+      false,
+      "unlocked",
+      [entry.quarantinePath, isolationPath],
+    );
+    await dependencies.move(isolationPath, entry.quarantinePath);
+  }
+
+  const identity = entry.quarantineIdentity ?? entry.target;
+  await verifyRecoveryPath(
+    entry,
+    options,
+    dependencies,
+    entry.quarantinePath,
+    identity,
+    true,
+    "owned-or-unlocked",
+    [entry.originalPath, entry.quarantinePath, isolationPath],
+  );
+  await ensureRecoveryRef(entry, dependencies);
+  const records = await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "worktree",
+    "list",
+    "--porcelain",
+    "-z",
+  ]);
+  if (!registrationMatches(records, entry.quarantinePath, entry, "owned")) {
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "lock",
+      "--reason",
+      quarantineLockReason(entry),
+      entry.quarantinePath,
+    ]);
+    await verifyLockedRegistration(entry, dependencies);
+  }
+  const [stats, measurement] = await Promise.all([
+    dependencies.inspect(entry.quarantinePath),
+    dependencies.measure(entry.quarantinePath, {
+      maxEntries: entry.measurementMaxEntries,
+      excludeRootEntries: [".git"],
+    }),
+  ]);
+  return persist(
+    {
+      ...entry,
+      status: "quarantined",
+      quarantineIdentity: {
+        ...identity,
+        path: entry.quarantinePath,
+        device: stats.dev,
+        inode: stats.ino,
+        mtimeMs: stats.mtimeMs,
+        measuredBytes: measurement.bytes,
+        newestMtimeMs: measurement.newestMtimeMs,
+        fingerprint: measurement.fingerprint,
+      },
+    },
+    options,
+  );
+}
+
 async function rollbackPurgeIsolation(
   entry: QuarantineEntry,
   isolationPath: string,
@@ -1003,6 +1125,7 @@ async function resumeInterruptedPurge(
         entry,
       );
     }
+    await options.revalidateProtection?.(entry);
     await deleteRecoveryRef(entry, dependencies);
     const purged = await persist(
       {
@@ -1022,6 +1145,12 @@ export async function undoWorktreeQuarantine(
   options: WorktreeRecoveryOptions,
 ): Promise<QuarantineEntry> {
   let entry = quarantineEntrySchema.parse(input);
+  if (entry.status === "partial") {
+    entry = await recoverPartialForUndo(entry, options);
+    if (entry.status === "restored") {
+      return entry;
+    }
+  }
   if (["preparing", "recovery-ref-created", "moved"].includes(entry.status)) {
     entry = await recoverInitialQuarantineForUndo(entry, options);
     if (entry.status === "restored") {

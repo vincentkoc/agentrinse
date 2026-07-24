@@ -69,6 +69,12 @@ the exact old or new path for that transition; a third path is refused.
 Merge, rebase, cherry-pick, revert, and bisect markers are rechecked from the
 worktree's Git administration directory immediately before mutation.
 
+Undo also selects `partial` quarantine manifests. Recovery proceeds only when
+exactly one recorded original, quarantine, or purge-isolation path exists. It
+verifies the recorded identity, clean content, registration, lock ownership,
+process state, mount state, and recovery ref before repairing the transition.
+Ambiguous or missing path state is refused for manual inspection.
+
 ## Purge Quarantine
 
 Preview is the default:
@@ -199,5 +205,6 @@ only record of a partial action.
 
 For a `partial` quarantine entry, do not run Git prune or delete the recovery
 ref. Inspect the manifest paths and current `git worktree list --porcelain`
-output first. Preserve the ref until either the original or quarantined path is
-verified at the recorded HEAD.
+output first, then use `agentrinse undo <run-id>` to attempt the fail-closed
+reconciliation above. Preserve the ref until AgentRinse verifies and restores
+the recorded worktree.
