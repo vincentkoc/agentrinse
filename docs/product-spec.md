@@ -3409,8 +3409,8 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] add package artifact smoke
 - [x] configure and prove npm trusted publishing
 - [x] add security policy and contribution guide
-- [ ] protect `main` with required CI
-- [ ] protect the GitHub `npm` release environment
+- [x] protect `main` with required CI
+- [x] protect the GitHub `npm` release environment
 
 ### Contracts
 
@@ -3465,13 +3465,35 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] adapter capability matrix
 - [x] config reference
 - [ ] website docs
-- [ ] npm provenance proof
-- [ ] Homebrew formula
+- [x] npm provenance proof
+- [x] Homebrew formula
 - [ ] real workstation read-only audit proof
 - [ ] disposable real-project apply canary
-- [ ] npm and `npx` install smoke
-- [ ] Homebrew install and upgrade smoke
+- [x] npm and `npx` install smoke
+- [x] Homebrew install and upgrade smoke
 - [ ] 1.0 security review
+
+### 0.3.0 release evidence
+
+Verified on 2026-07-24:
+
+- GitHub release `v0.3.0` was published from
+  `92fe6f346d4a0d67f38cbd56f7cefaf4b22fddc3` with the package tarball and
+  matching SHA-256 asset.
+- npm published `agentrinse@0.3.0` through trusted publishing with an SLSA
+  provenance attestation at
+  `https://registry.npmjs.org/-/npm/v1/attestations/agentrinse@0.3.0`.
+- a clean global npm install and
+  `npx --yes agentrinse@0.3.0 --version` both reported `0.3.0`.
+- the canonical `vincentkoc/homebrew-tap` formula landed at
+  `4702c0dfaf7a08cbbd06bca01a1b7c5dd054cf43`.
+- `brew install vincentkoc/tap/agentrinse`, `brew audit --strict`,
+  `brew test`, the synthetic audit/apply/quarantine/undo/purge workflow, and
+  the installed-formula upgrade check all passed.
+- `main` requires the strict `test` status check with admin enforcement,
+  linear history, conversation resolution, and force pushes disabled.
+- the GitHub `npm` environment requires maintainer approval and restricts
+  deployments through a custom branch policy.
 
 ## Reference Links
 
