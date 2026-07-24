@@ -216,7 +216,9 @@ export async function executePurgeCommand(
           );
         }
       };
-      await revalidateProtection(entry);
+      if (entry.status !== "purging") {
+        await revalidateProtection(entry);
+      }
       const result = await (options.dependencies?.purge ?? purgeWorktreeQuarantine)(entry, {
         manifestPath: record.path,
         quarantineDirectory: layout.quarantine,
