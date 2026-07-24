@@ -1,5 +1,6 @@
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter } from "../contracts/adapter.js";
+import { sha256 } from "../core/digest.js";
 import { ReachabilityIndex } from "../core/reachability.js";
 import { ArtifactAuditAdapter } from "./artifacts/adapter.js";
 import { DockerAuditAdapter } from "./docker/adapter.js";
@@ -14,6 +15,22 @@ export function createAuditAdapters(
   platform: NodeJS.Platform = process.platform,
 ): AuditAdapter[] {
   const reachability = new ReachabilityIndex();
+  for (const pin of config.pins) {
+    const root = {
+      code: "user-pin",
+      source: "config",
+      detail: "User configuration pins this resource.",
+      evidenceRef: sha256(JSON.stringify(pin)),
+      ...(pin.expiresAt === undefined ? {} : { expiresAt: pin.expiresAt }),
+    };
+    if ("path" in pin) {
+      reachability.add({ ...root, path: pin.path });
+    } else if ("resourceId" in pin) {
+      reachability.addResource(pin.resourceId, root);
+    } else {
+      reachability.addGitRef(pin.gitRef, root);
+    }
+  }
   const adapters: AuditAdapter[] = PROVIDER_IDS.filter(
     (id) => config.adapters[id]?.enabled !== false,
   ).map(

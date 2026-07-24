@@ -83,4 +83,37 @@ describe("ReachabilityIndex", () => {
 
     expect(index.size()).toBe(1);
   });
+
+  it("matches resource and Git ref pins while ignoring expired pins", () => {
+    const index = new ReachabilityIndex();
+    const root = {
+      code: "user-pin",
+      source: "config",
+      detail: "User configuration pins this resource.",
+    };
+    index.addResource("git:git-worktree:fixture", root);
+    index.addGitRef("refs/heads/task", root);
+    index.add({
+      ...root,
+      path: "/tmp/repo/task",
+      expiresAt: "2026-07-23T00:00:00.000Z",
+    });
+
+    const roots = index.rootsForResource(
+      {
+        id: "git:git-worktree:fixture",
+        adapter: "git",
+        kind: "git-worktree",
+        canonicalKey: "git:git-worktree:/tmp/repo/task",
+        displayName: "Linked worktree",
+        path: "/tmp/repo/task",
+      },
+      { branch: "task" },
+      "2026-07-24T00:00:00.000Z",
+    );
+
+    expect(roots).toHaveLength(2);
+    expect(roots.every((item) => item.code === "user-pin")).toBe(true);
+    expect(JSON.stringify(roots)).not.toContain("expiresAt");
+  });
 });

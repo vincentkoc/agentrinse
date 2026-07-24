@@ -360,9 +360,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         detail: "Git state or reachability could not be proven completely.",
       });
     }
-    if (resource.resource.path !== undefined) {
-      roots.push(...(this.reachability?.rootsFor(resource.resource.path, observedAt) ?? []));
-    }
+    roots.push(
+      ...(this.reachability?.rootsForResource(resource.resource, resource.facts, observedAt) ?? []),
+    );
     roots.push({
       code: "worktree-removal-unavailable",
       source: "git",

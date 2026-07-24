@@ -6,6 +6,17 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- path, resource-id, and Git-ref pins with optional expiry
+- Codex and Claude workspace roots derived from metadata without reading
+  transcript bodies
+
+### Safety
+
+- malformed or unreadable provider metadata protects all affected Git
+  worktrees instead of being treated as empty
+
 ## [0.1.0] - 2026-07-24
 
 ### Added

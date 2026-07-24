@@ -55,6 +55,14 @@ An explicitly requested missing or invalid file is an error.
     "minBytes": 67108864,
     "processCheck": "required"
   },
+  "pins": [
+    { "path": "/absolute/project-worktree" },
+    { "resourceId": "git:git-worktree:..." },
+    {
+      "gitRef": "refs/heads/release",
+      "expiresAt": "2026-08-01T00:00:00.000Z"
+    }
+  ],
   "plan": {
     "ttlMinutes": 30,
     "maxRisk": "safe"
@@ -65,6 +73,16 @@ An explicitly requested missing or invalid file is an error.
 Unknown keys are discarded by the current schema. Project roots must be
 unique absolute paths. Cleanup targets from different project entries may not
 overlap.
+
+## Pins
+
+Pins are explicit user-owned protection roots. A pin may name one absolute
+path, one exact AgentRinse resource ID, or one full Git ref under
+`refs/heads`, `refs/remotes`, or `refs/tags`.
+
+`expiresAt` is optional and must be an ISO 8601 timestamp. An expired pin is
+ignored. Pin evidence is hashed in findings; AgentRinse does not emit the
+configured path or ref as the evidence reference.
 
 ## Provider Adapters
 

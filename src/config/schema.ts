@@ -29,6 +29,29 @@ export const artifactProjectSchema = z.object({
     .refine((names) => new Set(names).size === names.length, "artifact names must be unique"),
 });
 
+const expiresAtSchema = z.string().datetime().optional();
+
+export const pinSchema = z.union([
+  z
+    .object({
+      path: z.string().min(1).refine(isAbsolute, "pin path must be absolute"),
+      expiresAt: expiresAtSchema,
+    })
+    .strict(),
+  z
+    .object({
+      resourceId: z.string().min(1),
+      expiresAt: expiresAtSchema,
+    })
+    .strict(),
+  z
+    .object({
+      gitRef: z.string().regex(/^refs\/(?:heads|remotes|tags)\//u, "pin Git ref is invalid"),
+      expiresAt: expiresAtSchema,
+    })
+    .strict(),
+]);
+
 function isInside(root: string, candidate: string): boolean {
   const result = relative(resolve(root), resolve(candidate));
   return result === "" || (!result.startsWith("..") && !isAbsolute(result));
@@ -65,6 +88,7 @@ export const agentRinseConfigSchema = z
         minBytes: 64 * 1024 * 1024,
         processCheck: "required" as const,
       })),
+    pins: z.array(pinSchema).default([]),
     plan: z
       .object({
         ttlMinutes: z
@@ -118,4 +142,5 @@ export type AdapterId = z.infer<typeof adapterIdSchema>;
 export { artifactNameSchema };
 export type { ArtifactName };
 export type ArtifactProject = z.infer<typeof artifactProjectSchema>;
+export type Pin = z.infer<typeof pinSchema>;
 export type AgentRinseConfig = z.infer<typeof agentRinseConfigSchema>;

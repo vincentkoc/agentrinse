@@ -87,6 +87,11 @@ describe("GitWorktreeAuditAdapter", () => {
       source: "codex",
       detail: "Codex metadata references this workspace.",
     });
+    reachability.addGitRef("refs/heads/task", {
+      code: "user-pin",
+      source: "config",
+      detail: "User configuration pins this resource.",
+    });
     const adapter = new GitWorktreeAuditAdapter(
       main,
       runner,
@@ -114,6 +119,7 @@ describe("GitWorktreeAuditAdapter", () => {
         "live-process-worktree",
         "recent-session",
         "unpushed-commit",
+        "user-pin",
       ]),
     );
     expect(collection.resources[1]?.facts).toMatchObject({
