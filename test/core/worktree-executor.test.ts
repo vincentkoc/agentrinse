@@ -585,6 +585,39 @@ describe("executeWorktreeQuarantine", () => {
     expect(await readFile(join(fixture.linked, "README.md"), "utf8")).toBe("changed fixture!\n");
   });
 
+  it("rolls back when the post-repair fingerprint differs from the plan", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    let measurements = 0;
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-post-repair-fingerprint",
+        entryId: "entry-post-repair-fingerprint",
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          measure: async (path, options) => {
+            const measurement = await measurePath(path, options);
+            measurements += 1;
+            return measurements === 3
+              ? { ...measurement, fingerprint: "f".repeat(64) }
+              : measurement;
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: WorktreeExecutionError.name,
+      outcome: "rolled-back",
+    });
+
+    expect(measurements).toBe(3);
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(
+      await missing(worktreeQuarantinePath(fixture.action, "entry-post-repair-fingerprint")),
+    ).toBe(true);
+  });
+
   it("stops when a process acquires the worktree at the mutation boundary", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");

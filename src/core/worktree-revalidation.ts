@@ -1,3 +1,7 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+import { listGitRefsForCommit } from "../adapters/git/refs.js";
 import { createAuditAdapters } from "../adapters/registry.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import type { AgentRinseConfig } from "../config/schema.js";
@@ -9,6 +13,17 @@ import type { AuditReport } from "../contracts/report.js";
 import type { ResourceRef } from "../contracts/resource.js";
 import { ReachabilityIndex } from "./reachability.js";
 import { runAudit } from "./audit.js";
+
+const execFileAsync = promisify(execFile);
+
+async function defaultGitRunner(args: string[]): Promise<string> {
+  const result = await execFileAsync("git", args, {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    timeout: 15_000,
+  });
+  return result.stdout;
+}
 
 export type WorktreeRevalidationResult =
   | {
@@ -33,6 +48,7 @@ export async function currentWorktreeProtectionRoots(
   home: string,
   config: AgentRinseConfig,
   now: Date,
+  runGit: (args: string[]) => Promise<string> = defaultGitRunner,
 ): Promise<RootEvidence[]> {
   const reachability = new ReachabilityIndex();
   const adapters = createAuditAdapters(config, process.platform, {
@@ -58,10 +74,19 @@ export async function currentWorktreeProtectionRoots(
     path: action.target.path,
   };
   const observedAt = now.toISOString();
-  const facts =
-    action.target.branch === undefined
-      ? {}
-      : { branch: action.target.branch, gitRefs: [action.target.branch] };
+  const currentRefs = config.pins.some((pin) => "gitRef" in pin)
+    ? await listGitRefsForCommit(
+        (args) => runGit(["--git-dir", action.target.repositoryCommonDir, ...args]),
+        action.target.head,
+      )
+    : { gitRefs: [] };
+  const facts = {
+    ...(action.target.branch === undefined ? {} : { branch: action.target.branch }),
+    gitRefs: [
+      ...(action.target.branch === undefined ? [] : [action.target.branch]),
+      ...currentRefs.gitRefs,
+    ],
+  };
   const roots = [
     ...reachability.rootsForResource(resource, facts, observedAt),
     ...reachability.rootsFor(action.target.path, observedAt),

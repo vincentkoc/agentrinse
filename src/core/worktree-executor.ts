@@ -742,7 +742,9 @@ export async function executeWorktreeQuarantine(
       quarantineMeasurement.truncated ||
       quarantineMeasurement.specialEntries > 0 ||
       quarantineMeasurement.mountBoundaries > 0 ||
-      quarantineMeasurement.bytes !== action.target.measuredBytes
+      quarantineMeasurement.bytes !== action.target.measuredBytes ||
+      quarantineMeasurement.newestMtimeMs !== action.target.newestMtimeMs ||
+      quarantineMeasurement.fingerprint !== action.target.fingerprint
     ) {
       throw new WorktreeExecutionError(
         "post-repair quarantine identity could not be proven",

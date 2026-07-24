@@ -145,6 +145,7 @@ describe("revalidateWorktreeQuarantine", () => {
     config.adapters.codex = { enabled: true, root: codexRoot };
     config.adapters.git = { enabled: true, root: main };
     config.worktrees = { ...config.worktrees, minAgeMinutes: 0 };
+    config.pins = [{ gitRef: "refs/tags/keep" }];
     const platform = process.platform === "linux" ? "linux" : "darwin";
     const initial = await runAudit({
       home,
@@ -159,6 +160,7 @@ describe("revalidateWorktreeQuarantine", () => {
       );
     expect(action).toBeDefined();
 
+    await execFileAsync("git", ["-C", linked, "tag", "--no-sign", "keep"]);
     await writeFile(
       metadataPath,
       JSON.stringify({
@@ -178,7 +180,10 @@ describe("revalidateWorktreeQuarantine", () => {
       },
     });
     expect(roots).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "active-session" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ code: "active-session" }),
+        expect.objectContaining({ code: "user-pin" }),
+      ]),
     );
   });
 
