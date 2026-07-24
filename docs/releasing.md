@@ -48,6 +48,17 @@ provenance and avoids a long-lived publish secret.
 
 The workflow refuses tags that do not exactly match `package.json`.
 
+The release workflow builds the package once in an unprivileged job. That
+exact tarball is:
+
+- checksummed with SHA-256
+- passed to the OIDC-only npm publish job
+- attached to the GitHub release with its `.sha256` file
+
+The npm job has no repository write permission. The release-asset job has no
+OIDC token or npm environment. Verify the published registry integrity and the
+GitHub checksum against the downloaded tarball after every release.
+
 If a release-triggered run contains obsolete verification automation, run the
 current workflow manually with `release_tag` set to the existing tag. Manual
 dispatches run in a separate validation job without the `npm` environment or
