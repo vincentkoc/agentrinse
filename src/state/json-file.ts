@@ -19,7 +19,7 @@ export type JsonWriteOptions = {
   privateDirectories?: string[];
 };
 
-async function ensurePrivateDirectory(directory: string): Promise<void> {
+export async function ensurePrivateDirectory(directory: string): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const stats = await lstat(directory);
   if (!stats.isDirectory() || stats.isSymbolicLink()) {
