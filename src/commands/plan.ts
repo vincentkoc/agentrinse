@@ -24,11 +24,11 @@ export async function executePlanCommand(options: PlanCommandOptions): Promise<P
   const audit = auditReportSchema.parse(await readJsonFile(resolve(options.audit)));
   const { config } = await loadConfigForHome(audit.home, options.config);
   const plan = cleanupPlanSchema.parse(createCleanupPlan(audit, config));
-  const statePath = resolve(
-    stateLayout(resolveStateRoot(audit.home, options.stateDir)).plans,
-    `${plan.planId}.json`,
-  );
-  await writeJsonAtomic(statePath, plan);
+  const layout = stateLayout(resolveStateRoot(audit.home, options.stateDir));
+  const statePath = resolve(layout.plans, `${plan.planId}.json`);
+  await writeJsonAtomic(statePath, plan, {
+    privateDirectories: [layout.root, layout.plans],
+  });
 
   if (options.output !== undefined) {
     await writeJsonAtomic(resolve(options.output), plan);

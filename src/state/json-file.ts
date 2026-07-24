@@ -1,4 +1,4 @@
-import { chmod, mkdir, open, readFile, rename, rm } from "node:fs/promises";
+import { chmod, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -15,8 +15,32 @@ export async function syncDirectory(path: string): Promise<void> {
   }
 }
 
-export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
+export type JsonWriteOptions = {
+  privateDirectories?: string[];
+};
+
+async function ensurePrivateDirectory(directory: string): Promise<void> {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const stats = await lstat(directory);
+  if (!stats.isDirectory() || stats.isSymbolicLink()) {
+    throw new Error(`private state path is not a real directory: ${directory}`);
+  }
+  const uid = process.getuid?.();
+  if (uid !== undefined && stats.uid !== uid) {
+    throw new Error(`private state directory is not owned by the current user: ${directory}`);
+  }
+  await chmod(directory, 0o700);
+}
+
+export async function writeJsonAtomic(
+  path: string,
+  value: unknown,
+  options: JsonWriteOptions = {},
+): Promise<void> {
   const directory = dirname(path);
+  for (const privateDirectory of new Set(options.privateDirectories ?? [])) {
+    await ensurePrivateDirectory(privateDirectory);
+  }
   await mkdir(directory, { recursive: true, mode: 0o700 });
 
   const temporary = join(directory, `.${randomUUID()}.tmp`);

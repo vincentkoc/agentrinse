@@ -27,4 +27,21 @@ describe("atomic JSON files", () => {
     expect((await stat(root)).mode & 0o777).toBe(0o755);
     expect((await stat(join(root, "config.json"))).mode & 0o777).toBe(0o600);
   });
+
+  it("repairs and verifies AgentRinse-owned state directories", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-private-state-"));
+    const plans = join(root, "plans");
+    await chmod(root, 0o777);
+
+    await writeJsonAtomic(
+      join(plans, "plan.json"),
+      { planId: "plan-1" },
+      {
+        privateDirectories: [root, plans],
+      },
+    );
+
+    expect((await stat(root)).mode & 0o777).toBe(0o700);
+    expect((await stat(plans)).mode & 0o777).toBe(0o700);
+  });
 });

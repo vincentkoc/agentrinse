@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import type { CleanupPlan } from "../contracts/plan.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
@@ -35,11 +35,12 @@ export async function createRunJournal(
     diagnostics: [],
   });
   const path = join(runsDirectory, `${run.runId}.json`);
-  await writeJsonAtomic(path, run);
+  const privateDirectories = [dirname(runsDirectory), runsDirectory];
+  await writeJsonAtomic(path, run, { privateDirectories });
 
   const persist = async (): Promise<CleanupRun> => {
     run = cleanupRunSchema.parse(run);
-    await writeJsonAtomic(path, run);
+    await writeJsonAtomic(path, run, { privateDirectories });
     return structuredClone(run);
   };
 

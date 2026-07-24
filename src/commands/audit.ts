@@ -90,11 +90,11 @@ export async function executeAuditCommand(
           }
         : {}),
     });
-    const statePath = resolve(
-      stateLayout(resolveStateRoot(home, options.stateDir)).audits,
-      `${report.auditId}.json`,
-    );
-    await writeJsonAtomic(statePath, report);
+    const layout = stateLayout(resolveStateRoot(home, options.stateDir));
+    const statePath = resolve(layout.audits, `${report.auditId}.json`);
+    await writeJsonAtomic(statePath, report, {
+      privateDirectories: [layout.root, layout.audits],
+    });
 
     if (options.output !== undefined) {
       await writeJsonAtomic(resolve(options.output), report);
