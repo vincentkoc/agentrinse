@@ -1,5 +1,5 @@
 import { readdir } from "node:fs/promises";
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 import type { ZodType } from "zod";
 
@@ -34,7 +34,15 @@ export async function readJsonRecord<T>(
   idOrPath: string,
   schema: ZodType<T>,
 ): Promise<T> {
-  const explicitPath = isAbsolute(idOrPath) || idOrPath.includes(sep);
-  const path = explicitPath ? resolve(idOrPath) : resolve(directory, `${idOrPath}.json`);
+  const path = resolveJsonRecordPath(directory, idOrPath);
   return schema.parse(await readJsonFile(path));
+}
+
+export function resolveJsonRecordPath(directory: string, idOrPath: string): string {
+  const explicitPath =
+    isAbsolute(idOrPath) ||
+    idOrPath.endsWith(".json") ||
+    idOrPath.includes("/") ||
+    idOrPath.includes("\\");
+  return explicitPath ? resolve(idOrPath) : resolve(directory, `${idOrPath}.json`);
 }
