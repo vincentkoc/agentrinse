@@ -50,6 +50,7 @@ export type ApplyResult = {
 export type ApplyDependencies = {
   clock?: () => Date;
   createJournal?: typeof createRunJournal;
+  loadCurrentConfig?: () => Promise<AgentRinseConfig>;
   revalidate?: (
     action: ArtifactRemoveAction,
     home: string,
@@ -261,9 +262,22 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
                 now: clock,
               },
               revalidateProtection: async () => {
-                const roots = await (
-                  options.dependencies?.worktreeProtectionRoots ?? currentWorktreeProtectionRoots
-                )(action, plan.home, config, clock());
+                const currentConfig =
+                  options.dependencies?.loadCurrentConfig === undefined
+                    ? undefined
+                    : agentRinseConfigSchema.parse(await options.dependencies.loadCurrentConfig());
+                const protectionConfigs =
+                  currentConfig === undefined ? [config] : [config, currentConfig];
+                const roots = (
+                  await Promise.all(
+                    protectionConfigs.map((protectionConfig) =>
+                      (
+                        options.dependencies?.worktreeProtectionRoots ??
+                        currentWorktreeProtectionRoots
+                      )(action, plan.home, protectionConfig, clock()),
+                    ),
+                  )
+                ).flat();
                 if (roots.length > 0) {
                   const codes = [...new Set(roots.map((root) => root.code))].sort();
                   throw new ApplySafetyError(

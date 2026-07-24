@@ -113,6 +113,9 @@ export async function executeApplyCommand(
     config,
     stateRoot: resolveStateRoot(plan.home, options.stateDir),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    dependencies: {
+      loadCurrentConfig: async () => (await loadConfigForHome(plan.home, options.config)).config,
+    },
   });
   return {
     run: result.run,

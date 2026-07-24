@@ -269,7 +269,10 @@ export async function executeCleanCommand(
       config: scoped,
       stateRoot: layout.root,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
-      dependencies: { clock },
+      dependencies: {
+        clock,
+        loadCurrentConfig: async () => (await loadConfigForHome(home, options.config)).config,
+      },
     });
     run = result.run;
     journalPath = result.journalPath;

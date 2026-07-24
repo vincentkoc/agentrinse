@@ -262,6 +262,81 @@ describe("applyCleanupPlan", () => {
     });
   });
 
+  it("reloads and unions protection config at the quarantine boundary", async () => {
+    const value = await worktreeFixture();
+    const currentConfig = structuredClone(value.config);
+    currentConfig.pins = [{ path: value.action.target.path }];
+    const loadCurrentConfig = vi.fn(async () => currentConfig);
+    const worktreeProtectionRoots = vi.fn(
+      async (_action: WorktreeQuarantineAction, _home: string, config: AgentRinseConfig) =>
+        config.pins.some((pin) => "path" in pin && pin.path === value.action.target.path)
+          ? [
+              {
+                code: "user-pin",
+                source: "config",
+                observedAt: "2026-07-23T00:15:00.000Z",
+                detail: "The worktree was pinned after apply started.",
+              },
+            ]
+          : [],
+    );
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        loadCurrentConfig,
+        revalidateWorktree: async () => ({
+          status: "valid",
+          report: {
+            schemaVersion: 1,
+            auditId: "fresh-audit",
+            startedAt: "2026-07-23T00:14:00.000Z",
+            completedAt: "2026-07-23T00:14:01.000Z",
+            home: value.plan.home,
+            probes: [],
+            findings: [],
+            diagnostics: [],
+          },
+          action: value.action,
+        }),
+        worktreeProtectionRoots,
+        executeWorktree: async (_action, options) => {
+          try {
+            await options.dependencies?.revalidateProtection?.();
+          } catch (error) {
+            throw new WorktreeExecutionError(
+              "worktree became protected before quarantine",
+              "skipped-stale",
+              undefined,
+              {
+                cause: error,
+                diagnosticCode: "WORKTREE_PROTECTION_CHANGED",
+              },
+            );
+          }
+          throw new Error("unreachable");
+        },
+      },
+    });
+
+    expect(loadCurrentConfig).toHaveBeenCalledOnce();
+    expect(worktreeProtectionRoots).toHaveBeenCalledTimes(2);
+    expect(worktreeProtectionRoots.mock.calls.map((call) => call[2])).toEqual([
+      value.config,
+      currentConfig,
+    ]);
+    expect(result.run.status).toBe("completed");
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: {
+        code: "WORKTREE_PROTECTION_CHANGED",
+      },
+    });
+  });
+
   it("accounts for bytes left in partial worktree quarantine", async () => {
     const value = await worktreeFixture();
     const partialEntry = {
