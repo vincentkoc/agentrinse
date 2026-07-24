@@ -4,6 +4,12 @@ on:
   release:
     types:
       - published
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to validate or publish
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,10 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: npm
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -40,13 +50,11 @@ jobs:
           pnpm pack:check
 
       - name: Verify release version
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
 
       - name: Verify bootstrap package
-        if: github.event.release.tag_name == 'v0.0.0'
+        if: env.RELEASE_TAG == 'v0.0.0'
         run: |
           bootstrap_root="$RUNNER_TEMP/agentrinse-bootstrap"
           mkdir -p \
@@ -73,5 +81,5 @@ jobs:
           rm -rf "$bootstrap_root"
 
       - name: Publish to npm
-        if: github.event.release.tag_name != 'v0.0.0'
+        if: env.RELEASE_TAG != 'v0.0.0'
         run: npm publish --access public
