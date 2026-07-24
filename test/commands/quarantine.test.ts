@@ -133,6 +133,31 @@ describe("undo command", () => {
     expect(result.entries[0]?.status).toBe("restored");
   });
 
+  it("selects an interrupted initial quarantine entry for recovery", async () => {
+    const interrupted = {
+      ...entry("initial", "run-1", "2026-08-01T00:00:00.000Z"),
+      status: "recovery-ref-created" as const,
+      quarantineIdentity: undefined,
+    };
+    const fixture = await stateFixture([interrupted]);
+    const undo = vi.fn(async (value: QuarantineEntry) => ({
+      ...value,
+      status: "restored" as const,
+      restoredAt: "2026-07-24T00:00:00.000Z",
+    }));
+
+    await executeUndoCommand({
+      runId: "run-1",
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      yes: true,
+      json: false,
+      dependencies: { undo },
+    });
+
+    expect(undo).toHaveBeenCalledWith(interrupted, expect.any(Object));
+  });
+
   it("rejects a manifest whose entry ID does not match its filename", async () => {
     const value = entry("actual", "run-1", "2026-08-01T00:00:00.000Z");
     const fixture = await stateFixture([]);

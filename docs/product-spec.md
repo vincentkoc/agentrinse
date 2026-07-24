@@ -3284,6 +3284,9 @@ The supported npm release remains the first distribution target. A formula in
 - A recovery ref is created before the rename. The moved worktree is repaired
   through `git worktree repair`, retained as a locked registered worktree, and
   recorded in an owner-only quarantine manifest.
+- Undo reconciles durable `preparing`, `recovery-ref-created`, and `moved`
+  manifests by inspecting both paths, repairing the actual registration, and
+  preserving or recreating only the exact namespaced recovery ref.
 - Undo unlocks, atomically renames, repairs, verifies, and only then deletes
   the exact recovery ref. It never overwrites an occupied destination.
 - Purge is a separate destructive command. It unlocks, atomically renames to a

@@ -39,7 +39,9 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
   }
   const entries = records.filter(
     ({ value }) =>
-      ["quarantined", "restoring"].includes(value.status) &&
+      ["preparing", "recovery-ref-created", "moved", "quarantined", "restoring"].includes(
+        value.status,
+      ) &&
       value.runId === options.runId &&
       (options.actionId === undefined || value.actionId === options.actionId),
   );

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -351,6 +351,115 @@ describe("executeWorktreeQuarantine", () => {
 });
 
 describe("worktree quarantine recovery", () => {
+  it("cleans up a recovery ref when quarantine was interrupted before the move", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-initial-before-move";
+    const runId = "run-initial-before-move";
+    const recoveryRef = worktreeRecoveryRef(fixture.action, runId);
+    const manifestPath = join(quarantineDirectory, `${entryId}.json`);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "update-ref",
+      recoveryRef,
+      fixture.action.target.head,
+      "",
+    ]);
+    const manifest = quarantineEntrySchema.parse({
+      schemaVersion: 1,
+      entryId,
+      runId,
+      actionId: fixture.action.actionId,
+      resourceId: fixture.action.resourceId,
+      status: "recovery-ref-created",
+      originalPath: fixture.linked,
+      quarantinePath: worktreeQuarantinePath(fixture.action, entryId),
+      recoveryRef,
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: 10_000,
+      target: fixture.action.target,
+    });
+    await writeJsonAtomic(manifestPath, manifest, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(manifest, {
+      manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+    await expect(
+      fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        recoveryRef,
+      ]),
+    ).rejects.toThrow();
+  });
+
+  it("restores a worktree moved before the quarantine manifest advanced", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-initial-after-move";
+    const runId = "run-initial-after-move";
+    const quarantinePath = worktreeQuarantinePath(fixture.action, entryId);
+    const recoveryRef = worktreeRecoveryRef(fixture.action, runId);
+    const manifestPath = join(quarantineDirectory, `${entryId}.json`);
+    await mkdir(dirname(quarantinePath), { recursive: true });
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "update-ref",
+      recoveryRef,
+      fixture.action.target.head,
+      "",
+    ]);
+    const manifest = quarantineEntrySchema.parse({
+      schemaVersion: 1,
+      entryId,
+      runId,
+      actionId: fixture.action.actionId,
+      resourceId: fixture.action.resourceId,
+      status: "recovery-ref-created",
+      originalPath: fixture.linked,
+      quarantinePath,
+      recoveryRef,
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: 10_000,
+      target: fixture.action.target,
+    });
+    await writeJsonAtomic(manifestPath, manifest, {
+      privateDirectories: [quarantineDirectory],
+    });
+    await renameNoReplace(fixture.linked, quarantinePath);
+
+    const restored = await undoWorktreeQuarantine(manifest, {
+      manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(quarantinePath)).toBe(true);
+  });
+
   it("restores the original path and deletes the exact recovery ref", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");

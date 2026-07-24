@@ -55,6 +55,12 @@ Successful undo:
 5. deletes only the recorded recovery ref
 6. persists the manifest as `restored`
 
+Undo also recovers interrupted initial quarantine states. If the original path
+still exists, it verifies that path, removes only the exact recovery ref when
+present, and records `restored`. If the atomic move already happened, it
+repairs and validates the quarantine path, recreates only the exact namespaced
+recovery ref when missing, relocks the worktree, then completes normal undo.
+
 ## Purge Quarantine
 
 Preview is the default:
