@@ -10,6 +10,7 @@ import {
   executeConfigShowCommand,
   executeConfigValidateCommand,
 } from "./commands/config.js";
+import { renderCompletion } from "./commands/completion.js";
 import { executeDoctorCommand } from "./commands/doctor.js";
 import { executeHistoryCommand } from "./commands/history.js";
 import { executeLockRecoverCommand, executeLockStatusCommand } from "./commands/lock.js";
@@ -122,6 +123,13 @@ export function buildProgram(): Command {
         }
       },
     );
+
+  program
+    .command("completion <shell>")
+    .description("Generate shell completion for bash, zsh, or fish.")
+    .action((shell: string) => {
+      process.stdout.write(renderCompletion(shell));
+    });
 
   const config = program.command("config").description("Inspect and initialize configuration.");
 
