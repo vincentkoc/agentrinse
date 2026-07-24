@@ -99,10 +99,15 @@ Execution errors are journaled separately from persistence errors. If deletion
 succeeds but persisting `applied` fails, the durable action remains
 `applying`; AgentRinse never rewrites the completed mutation as a failed one.
 
-One global apply lock prevents concurrent runs. Existing lock files fail
-closed, including stale-looking locks. An operator must inspect the recorded
-host and PID before manually removing a stale lock. Release verifies the lock
-token and inode before unlinking its own lock.
+One global apply lock prevents concurrent runs. The record includes PID,
+process start identity where available, hostname, command, plan ID, and run
+ID. AgentRinse can recover a local lock only after proving the recorded process
+is gone or the PID was reused. Age alone is never evidence. Recovery and
+ordinary release both verify the lock token and inode before unlinking.
+
+SIGINT is cooperative. AgentRinse completes any active isolation/removal
+critical section, persists its exact outcome, and marks the run interrupted at
+the next safe checkpoint.
 
 The state directory is rejected if it is inside a planned cleanup target.
 

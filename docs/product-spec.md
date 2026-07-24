@@ -3331,14 +3331,14 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 ### Repository
 
 - [ ] register `agentrinse.com` and publish documentation
-- [ ] reserve npm package with `0.0.0`
+- [x] reserve npm package with `0.0.0`
 - [x] create public repository
 - [x] add MIT license
 - [x] configure pnpm and Node 22
 - [x] add TypeScript ESM build
 - [x] add Vitest, oxfmt, oxlint, and publint
 - [x] add package artifact smoke
-- [ ] configure and prove npm trusted publishing
+- [x] configure and prove npm trusted publishing
 - [x] add security policy and contribution guide
 - [ ] protect `main` with required CI
 - [ ] protect the GitHub `npm` release environment
@@ -3362,12 +3362,12 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] implement global apply lock
 - [x] implement atomic run journal
 - [x] implement artifact revalidation and isolation
-- [ ] implement command cancellation and interrupted-run reporting
-- [ ] implement redacted export
+- [x] implement command cancellation and interrupted-run reporting
+- [x] implement redacted export
 - [x] keep destructive tests inside synthetic temporary roots
-- [ ] add explicit runtime destructive-test root guard
-- [ ] add stale-lock inspection and owned recovery
-- [ ] add partial-run recovery inspection
+- [x] add explicit runtime destructive-test root guard
+- [x] add stale-lock inspection and owned recovery
+- [x] add partial-run recovery inspection
 
 ### Adapters
 
@@ -3378,7 +3378,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] initial Docker inventory
 - [x] Cursor, Copilot CLI, Zed, OpenCode, and Grok inventory
 - [ ] runtime audit
-- [ ] Mole probe
+- [x] Mole probe
 - [x] exact configured artifact removal
 - [ ] Git dirty, staged, untracked, operation, detached, and push-state proof
 - [ ] Codex and Claude session-to-worktree roots
@@ -3391,10 +3391,10 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 ### Documentation and release
 
 - [x] safety guide
-- [ ] automation guide
-- [ ] recovery guide
+- [x] automation guide
+- [x] recovery guide
 - [x] adapter capability matrix
-- [ ] config reference
+- [x] config reference
 - [ ] website docs
 - [ ] npm provenance proof
 - [ ] Homebrew formula

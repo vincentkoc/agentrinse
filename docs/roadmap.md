@@ -1,6 +1,6 @@
 # Roadmap
 
-## 0.1: Safe Rebuildable Artifacts
+## 0.1: Operational Safe Artifacts
 
 Shipped:
 
@@ -14,16 +14,19 @@ Shipped:
 - atomic same-parent isolation
 - rebuildable artifact removal
 - generated JSON Schemas
-
-## 0.2: Operational Visibility
-
-- run history and journal inspection commands
-- explicit stale-lock inspection and recovery command
-- explicit partial-run recovery guidance
-- richer provider diagnostics
-- NDJSON event output
+- config initialization and doctor diagnostics
+- history, show, partial-run guidance, and stale-lock recovery
+- JSON envelopes, NDJSON events, and redacted audit export
 - shell completion
-- Homebrew distribution
+- npm distribution with macOS and Linux package proof
+
+## 0.2: Agent-Aware Reachability
+
+- Git dirty, staged, untracked, operation, detached, and push-state proof
+- provider session-to-worktree roots
+- provider-managed worktree and pin roots
+- runtime installation inventory
+- report-only cleanup recommendations for protected provider state
 
 ## 0.3: Recoverable Worktrees
 
@@ -32,6 +35,7 @@ Shipped:
 - recovery refs
 - same-filesystem quarantine
 - tested undo and expiry
+- Homebrew distribution
 
 This phase requires a separate mutation-boundary decision.
 
