@@ -22,6 +22,8 @@ describe("state layout", () => {
   it("builds stable state subdirectories", () => {
     expect(stateLayout("/fixture/state")).toEqual({
       root: "/fixture/state",
+      audits: "/fixture/state/audits",
+      plans: "/fixture/state/plans",
       locks: "/fixture/state/locks",
       runs: "/fixture/state/runs",
       tombstones: "/fixture/state/tombstones",

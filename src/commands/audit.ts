@@ -6,16 +6,19 @@ import type { AuditReport } from "../contracts/report.js";
 import { runAudit } from "../core/audit.js";
 import { renderAudit } from "../output.js";
 import { writeJsonAtomic } from "../state/json-file.js";
+import { resolveStateRoot, stateLayout } from "../state/layout.js";
 
 export type AuditCommandOptions = {
   home: string;
   config?: string;
   json: boolean;
   output?: string;
+  stateDir?: string;
 };
 
 export type AuditCommandResult = {
   report: AuditReport;
+  statePath: string;
   output: string;
 };
 
@@ -29,6 +32,11 @@ export async function executeAuditCommand(
     config,
     adapters: createAuditAdapters(config),
   });
+  const statePath = resolve(
+    stateLayout(resolveStateRoot(home, options.stateDir)).audits,
+    `${report.auditId}.json`,
+  );
+  await writeJsonAtomic(statePath, report);
 
   if (options.output !== undefined) {
     await writeJsonAtomic(resolve(options.output), report);
@@ -36,6 +44,7 @@ export async function executeAuditCommand(
 
   return {
     report,
+    statePath,
     output: options.json ? `${JSON.stringify(report, null, 2)}\n` : renderAudit(report),
   };
 }

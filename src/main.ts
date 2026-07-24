@@ -10,7 +10,13 @@ import {
   executeConfigShowCommand,
   executeConfigValidateCommand,
 } from "./commands/config.js";
+import { executeHistoryCommand } from "./commands/history.js";
 import { executePlanCommand } from "./commands/plan.js";
+import {
+  executeShowPlanCommand,
+  executeShowResourceCommand,
+  executeShowRunCommand,
+} from "./commands/show.js";
 import { VERSION } from "./version.js";
 
 export function buildProgram(): Command {
@@ -26,13 +32,22 @@ export function buildProgram(): Command {
     .option("--config <path>", "explicit JSON config")
     .option("--json", "emit the versioned JSON report", false)
     .option("--output <path>", "write the JSON report atomically")
-    .action(async (options: { home?: string; config?: string; json: boolean; output?: string }) => {
-      const result = await executeAuditCommand({
-        ...options,
-        home: options.home ?? homedir(),
-      });
-      process.stdout.write(result.output);
-    });
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .action(
+      async (options: {
+        home?: string;
+        config?: string;
+        json: boolean;
+        output?: string;
+        stateDir?: string;
+      }) => {
+        const result = await executeAuditCommand({
+          ...options,
+          home: options.home ?? homedir(),
+        });
+        process.stdout.write(result.output);
+      },
+    );
 
   program
     .command("plan")
@@ -40,10 +55,13 @@ export function buildProgram(): Command {
     .requiredOption("--audit <path>", "saved audit JSON")
     .option("--config <path>", "explicit JSON config")
     .option("--output <path>", "write the plan atomically")
-    .action(async (options: { audit: string; config?: string; output?: string }) => {
-      const result = await executePlanCommand(options);
-      process.stdout.write(result.output);
-    });
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .action(
+      async (options: { audit: string; config?: string; output?: string; stateDir?: string }) => {
+        const result = await executePlanCommand(options);
+        process.stdout.write(result.output);
+      },
+    );
 
   program
     .command("apply")
@@ -130,6 +148,73 @@ export function buildProgram(): Command {
       });
       process.stdout.write(result.output);
     });
+
+  program
+    .command("history")
+    .description("List persisted cleanup runs.")
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--since <duration>", "include runs newer than a duration such as 30d")
+    .option("--json", "emit JSON", false)
+    .action(
+      async (options: { home?: string; stateDir?: string; since?: string; json: boolean }) => {
+        const result = await executeHistoryCommand({
+          ...options,
+          home: options.home ?? homedir(),
+        });
+        process.stdout.write(result.output);
+      },
+    );
+
+  const show = program.command("show").description("Inspect persisted AgentRinse records.");
+
+  show
+    .command("run <run-id-or-path>")
+    .description("Show one cleanup run.")
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--json", "emit JSON", false)
+    .action(
+      async (idOrPath: string, options: { home?: string; stateDir?: string; json: boolean }) => {
+        const result = await executeShowRunCommand(idOrPath, {
+          ...options,
+          home: options.home ?? homedir(),
+        });
+        process.stdout.write(result.output);
+      },
+    );
+
+  show
+    .command("plan <plan-id-or-path>")
+    .description("Show one cleanup plan.")
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--json", "emit JSON", false)
+    .action(
+      async (idOrPath: string, options: { home?: string; stateDir?: string; json: boolean }) => {
+        const result = await executeShowPlanCommand(idOrPath, {
+          ...options,
+          home: options.home ?? homedir(),
+        });
+        process.stdout.write(result.output);
+      },
+    );
+
+  show
+    .command("resource <resource-id>")
+    .description("Show the latest persisted resource finding.")
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--json", "emit JSON", false)
+    .action(
+      async (resourceId: string, options: { home?: string; stateDir?: string; json: boolean }) => {
+        const result = await executeShowResourceCommand(resourceId, {
+          ...options,
+          home: options.home ?? homedir(),
+        });
+        process.stdout.write(result.output);
+      },
+    );
 
   return program;
 }
