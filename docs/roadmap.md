@@ -22,16 +22,17 @@ Shipped:
 
 ## 0.2: Agent-Aware Reachability
 
+Shipped:
+
 - Git dirty, staged, untracked, operation, detached, and push-state proof
 - provider session-to-worktree roots
 - provider-managed worktree and pin roots
 - runtime installation inventory
 - report-only cleanup recommendations for protected provider state
+- repository-scoped closeout profile and Mole dry-run handoff
 
 ## 0.3: Recoverable Worktrees
 
-- dirty, staged, untracked, stash, detached, and unpushed proof
-- live process and session roots
 - recovery refs
 - same-filesystem quarantine
 - tested undo and expiry

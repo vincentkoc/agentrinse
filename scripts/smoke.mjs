@@ -2,16 +2,18 @@ import { execFile } from "node:child_process";
 import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 const { assertDestructiveFixtureRoot } = await import("../dist/core/safety.js");
 const installedCli = process.env.AGENTRINSE_SMOKE_CLI;
-const runCli = (args) =>
+const sourceCli = fileURLToPath(new URL("../dist/cli.js", import.meta.url));
+const runCli = (args, cwd = process.cwd()) =>
   installedCli
-    ? execFileAsync(installedCli, args, { cwd: process.cwd() })
-    : execFileAsync(process.execPath, ["dist/cli.js", ...args], { cwd: process.cwd() });
+    ? execFileAsync(installedCli, args, { cwd })
+    : execFileAsync(process.execPath, [sourceCli, ...args], { cwd });
 const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-smoke-")));
 await assertDestructiveFixtureRoot(root);
 const home = join(root, "home");
@@ -27,6 +29,14 @@ await mkdir(join(home, ".local", "share", "opencode", "snapshot"), {
   recursive: true,
 });
 await writeFile(join(home, ".codex", "sessions", "thread.jsonl"), "synthetic fixture\n");
+await writeFile(
+  join(home, ".codex", ".codex-global-state.json"),
+  `${JSON.stringify({
+    "active-workspace-roots": [],
+    "electron-saved-workspace-roots": [],
+    "thread-workspace-root-hints": {},
+  })}\n`,
+);
 await writeFile(
   join(home, ".local", "share", "opencode", "snapshot", "object"),
   "synthetic snapshot\n",
@@ -98,6 +108,46 @@ try {
     throw error;
   }
 }
+
+await execFileAsync("git", ["init", "-b", "main"], { cwd: project });
+await execFileAsync("git", ["add", "source.ts"], { cwd: project });
+await execFileAsync(
+  "git",
+  [
+    "-c",
+    "user.name=AgentRinse",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "fixture",
+  ],
+  { cwd: project },
+);
+const closeoutOutput = await runCli(
+  [
+    "clean",
+    "--profile",
+    "closeout",
+    "--home",
+    home,
+    "--config",
+    configPath,
+    "--state-dir",
+    statePath,
+    "--json",
+  ],
+  project,
+);
+const closeout = JSON.parse(closeoutOutput.stdout);
+if (
+  closeout.command !== "clean" ||
+  closeout.data?.profile !== "closeout" ||
+  closeout.data?.worktrees !== 1 ||
+  closeout.data?.eligibleActions !== 0
+) {
+  throw new Error("smoke closeout profile did not produce the expected bounded summary");
+}
 process.stdout.write(
   `${JSON.stringify({
     version: packageJson.version,
@@ -106,6 +156,7 @@ process.stdout.write(
     protected: 2,
     planActions: plan.actions.length,
     applied: 1,
+    closeoutWorktrees: closeout.data.worktrees,
     reclaimedBytes: run.reclaimedBytes,
   })}\n`,
 );

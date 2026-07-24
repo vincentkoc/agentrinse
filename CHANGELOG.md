@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-24
+
 ### Added
 
 - path, resource-id, and Git-ref pins with optional expiry

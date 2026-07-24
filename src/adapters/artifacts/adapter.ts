@@ -19,6 +19,13 @@ import type { ReachabilityIndex } from "../../core/reachability.js";
 import { isPathInside } from "../../core/safety.js";
 
 type ArtifactOptions = AgentRinseConfig["artifacts"] & AgentRinseConfig["audit"];
+const ARTIFACT_PROTECTION_ROOTS = new Set([
+  "active-session",
+  "current-worktree",
+  "provider-managed-worktree",
+  "recent-session",
+  "user-pin",
+]);
 
 export type ProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
 export type MountProbe = (path: string) => Promise<MountBoundaryResult>;
@@ -354,11 +361,9 @@ export class ArtifactAuditAdapter implements AuditAdapter {
       });
     }
 
-    const reachabilityRoots = this.reachability?.rootsForResource(
-      resource.resource,
-      resource.facts,
-      context.now.toISOString(),
-    );
+    const reachabilityRoots = this.reachability
+      ?.rootsForResource(resource.resource, resource.facts, context.now.toISOString())
+      .filter((root) => ARTIFACT_PROTECTION_ROOTS.has(root.code));
     if (reachabilityRoots !== undefined && reachabilityRoots.length > 0) {
       roots.push(...reachabilityRoots);
       if (state === "eligible") {

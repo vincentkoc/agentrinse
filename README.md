@@ -6,9 +6,11 @@ AgentRinse inventories agent state and developer residue, explains why each
 resource is protected or eligible, creates content-addressed cleanup plans,
 and applies only actions that still pass every safety check.
 
-Version `0.1.0` supports one mutating action: removing exact rebuildable
-artifact directories declared under explicit project roots. Provider state,
-Git worktrees, and Docker resources remain report-only.
+Version `0.2.0` adds Git reachability proof, live-process and Codex/Claude
+workspace roots, explicit pins, a repository closeout profile, and opt-in
+runtime inventory. Its only mutating action remains removal of exact
+rebuildable artifact directories declared under explicit project roots.
+Provider state, Git worktrees, runtimes, and Docker resources are report-only.
 
 ## Install
 
@@ -22,7 +24,7 @@ agentrinse --version
 One-off use also works:
 
 ```bash
-npx agentrinse@0.1.0 doctor
+npx agentrinse@0.2.0 doctor
 ```
 
 ## Quickstart
@@ -85,6 +87,30 @@ agentrinse apply --plan plan.json
 
 Interactive apply asks for confirmation. Automation must pass `--yes`.
 
+## Agent Closeout
+
+From a Git worktree, create a repository-scoped audit and plan:
+
+```bash
+agentrinse clean --profile closeout
+```
+
+The current worktree is always protected. The profile inventories its
+repository's linked worktrees, loads Codex and Claude reachability metadata,
+and ignores unrelated configured artifact projects. It does not infer that a
+task is finished.
+
+After reviewing the summary, a fresh closeout can apply only existing `safe`
+artifact actions:
+
+```bash
+agentrinse clean --profile closeout --apply
+agentrinse clean --profile closeout --apply --yes --max-risk safe --json
+```
+
+On macOS, an installed Mole binary adds external `mo purge --dry-run` and
+`mo clean --dry-run` suggestions. AgentRinse never runs those commands.
+
 ## Mutation Boundary
 
 AgentRinse can remove only these configured artifact names:
@@ -109,7 +135,7 @@ to a same-parent tombstone and verified again before deletion.
 AgentRinse never removes provider sessions, transcripts, databases,
 credentials, configuration, plugins, skills, memories, Git branches, stashes,
 worktrees, Docker images, containers, networks, volumes, or build cache in
-`0.1.0`.
+`0.2.0`.
 
 ## Operations
 
@@ -119,6 +145,17 @@ agentrinse show run <run-id>
 agentrinse show plan <plan-id>
 agentrinse show resource <resource-id>
 agentrinse lock status
+```
+
+Opt into report-only selected runtime inventory:
+
+```json
+{
+  "schemaVersion": 1,
+  "adapters": {
+    "runtime": { "enabled": true }
+  }
+}
 ```
 
 A stale lock can be recovered only after AgentRinse proves the recorded local
@@ -158,7 +195,7 @@ exact so they can be used for planning.
 
 ## Platform Support
 
-| Platform       | `0.1.0` support                                     |
+| Platform       | `0.2.0` support                                     |
 | -------------- | --------------------------------------------------- |
 | macOS          | audit and safe artifact apply                       |
 | Linux          | audit and safe artifact apply                       |

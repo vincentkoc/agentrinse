@@ -3356,7 +3356,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] define initial exit codes
 - [x] implement canonical JSON hashing
 - [x] implement initial schema compatibility tests
-- [ ] define `0.2.0` reachability facts and roots
+- [x] define `0.2.0` reachability facts and roots
 - [ ] define `0.3.0` quarantine, recovery, undo, and purge records
 
 ### Core safety
