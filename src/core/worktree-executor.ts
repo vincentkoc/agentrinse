@@ -9,6 +9,7 @@ import type { WorktreeQuarantineAction } from "../contracts/action.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
 import { ensurePrivateDirectory, writeJsonAtomic } from "../state/json-file.js";
 import { sha256 } from "./digest.js";
+import { measurePath, type Measurement } from "./measure.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -46,6 +47,8 @@ export type WorktreeExecutorDependencies = {
   runGit?: (args: string[]) => Promise<string>;
   inspect?: (path: string) => Promise<Stats>;
   move?: (source: string, destination: string) => Promise<void>;
+  measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
+  maxEntries?: number;
   clock?: () => Date;
   authorization?: {
     expiresAtMs: number;
@@ -158,6 +161,7 @@ export async function executeWorktreeQuarantine(
   const runGit = dependencies.runGit ?? defaultGitRunner;
   const inspect = dependencies.inspect ?? lstat;
   const move = dependencies.move ?? rename;
+  const measure = dependencies.measure ?? measurePath;
   const clock = dependencies.clock ?? (() => new Date());
   const quarantinePath = worktreeQuarantinePath(action, options.entryId);
   const quarantineParent = dirname(quarantinePath);
@@ -341,10 +345,42 @@ export async function executeWorktreeQuarantine(
         entry,
       );
     }
+    const [quarantineStats, quarantineMeasurement] = await Promise.all([
+      inspect(quarantinePath),
+      measure(quarantinePath, {
+        maxEntries: dependencies.maxEntries ?? 100_000,
+      }),
+    ]);
+    if (
+      !quarantineStats.isDirectory() ||
+      quarantineStats.isSymbolicLink() ||
+      quarantineStats.dev !== action.target.device ||
+      quarantineStats.ino !== action.target.inode ||
+      quarantineMeasurement.truncated ||
+      quarantineMeasurement.specialEntries > 0 ||
+      quarantineMeasurement.mountBoundaries > 0 ||
+      quarantineMeasurement.bytes !== action.target.measuredBytes
+    ) {
+      throw new WorktreeExecutionError(
+        "post-repair quarantine identity could not be proven",
+        "partially-applied",
+        entry,
+      );
+    }
 
     entry = await writeManifest(manifestPath, options.quarantineDirectory, {
       ...entry,
       status: "quarantined",
+      quarantineIdentity: {
+        ...action.target,
+        path: quarantinePath,
+        device: quarantineStats.dev,
+        inode: quarantineStats.ino,
+        mtimeMs: quarantineStats.mtimeMs,
+        measuredBytes: quarantineMeasurement.bytes,
+        newestMtimeMs: quarantineMeasurement.newestMtimeMs,
+        fingerprint: quarantineMeasurement.fingerprint,
+      },
     });
     return {
       quarantineEntryId: entry.entryId,

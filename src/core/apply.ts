@@ -247,6 +247,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             quarantineDirectory: layout.quarantine,
             dependencies: {
               clock,
+              maxEntries: config.audit.maxEntries,
               authorization: {
                 expiresAtMs: Date.parse(plan.expiresAt),
                 now: clock,

@@ -115,6 +115,63 @@
         "fingerprint"
       ]
     },
+    "quarantineIdentity": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repositoryCommonDir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "head": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{40,64}$"
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "inode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "mtimeMs": {
+          "type": "number"
+        },
+        "measuredBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "newestMtimeMs": {
+          "type": "number"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "repositoryCommonDir",
+        "head",
+        "device",
+        "inode",
+        "mtimeMs",
+        "measuredBytes",
+        "newestMtimeMs",
+        "fingerprint"
+      ]
+    },
     "restoredAt": {
       "type": "string",
       "format": "date-time",

@@ -17,6 +17,10 @@ import {
   worktreeQuarantinePath,
   worktreeRecoveryRef,
 } from "../../src/core/worktree-executor.js";
+import {
+  purgeWorktreeQuarantine,
+  undoWorktreeQuarantine,
+} from "../../src/core/worktree-recovery.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 
 const execFileAsync = promisify(execFile);
@@ -196,5 +200,140 @@ describe("executeWorktreeQuarantine", () => {
         worktreeRecoveryRef(fixture.action, runId),
       ]),
     ).rejects.toThrow();
+  });
+});
+
+describe("worktree quarantine recovery", () => {
+  it("restores the original path and deletes the exact recovery ref", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const runId = "run-undo";
+    const entryId = "entry-undo";
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId,
+      entryId,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        clock: () => new Date("2026-07-01T00:00:00.000Z"),
+      },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+
+    const restored = await undoWorktreeQuarantine(manifest, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      maxEntries: 10_000,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+        clock: () => new Date("2026-07-24T00:00:00.000Z"),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(result.quarantinePath)).toBe(true);
+    await expect(
+      fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        result.recoveryRef,
+      ]),
+    ).rejects.toThrow();
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: fixture.linked,
+          head: fixture.action.target.head,
+          branch: fixture.action.target.branch,
+        }),
+      ]),
+    );
+  });
+
+  it("purges an expired unchanged entry through clean Git removal", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const calls: string[][] = [];
+    const runGit = async (args: string[]) => {
+      calls.push(args);
+      return fixture.runGit(args);
+    };
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-purge",
+      entryId: "entry-purge",
+      quarantineDirectory,
+      dependencies: {
+        runGit,
+        clock: () => new Date("2026-07-01T00:00:00.000Z"),
+      },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+
+    const purged = await purgeWorktreeQuarantine(manifest, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      maxEntries: 10_000,
+      dependencies: {
+        runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+        clock: () => new Date("2026-07-24T00:00:00.000Z"),
+      },
+    });
+
+    expect(purged.entry.status).toBe("purged");
+    expect(purged.reclaimedBytes).toBe(fixture.action.target.measuredBytes);
+    expect(await missing(result.quarantinePath)).toBe(true);
+    const removeCall = calls.find((args) => args.includes("worktree") && args.includes("remove"));
+    expect(removeCall).toBeDefined();
+    expect(removeCall).not.toContain("--force");
+  });
+
+  it("refuses purge after quarantined contents change", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-dirty",
+      entryId: "entry-dirty",
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        clock: () => new Date("2026-07-01T00:00:00.000Z"),
+      },
+    });
+    await writeFile(join(result.quarantinePath, "changed.txt"), "changed\n");
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        maxEntries: 10_000,
+        dependencies: {
+          runGit: fixture.runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+          clock: () => new Date("2026-07-24T00:00:00.000Z"),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_IDENTITY_CHANGED",
+    });
+    expect(await missing(result.quarantinePath)).toBe(false);
   });
 });

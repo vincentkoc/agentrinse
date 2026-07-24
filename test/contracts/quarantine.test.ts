@@ -28,6 +28,18 @@ describe("quarantineEntrySchema", () => {
         newestMtimeMs: 4,
         fingerprint: "b".repeat(64),
       },
+      quarantineIdentity: {
+        path: "/tmp/.agentrinse-quarantine/entry-1",
+        repositoryCommonDir: "/tmp/repo/.git",
+        head: "a".repeat(40),
+        branch: "refs/heads/feature",
+        device: 1,
+        inode: 2,
+        mtimeMs: 5,
+        measuredBytes: 1024,
+        newestMtimeMs: 6,
+        fingerprint: "c".repeat(64),
+      },
     });
 
     expect(entry.status).toBe("quarantined");
