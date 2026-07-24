@@ -371,7 +371,7 @@ describe("worktree quarantine recovery", () => {
     const runGit = async (args: string[]) => {
       if (args.includes("update-ref") && args.includes("-d")) {
         const persisted = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
-        expect(persisted.status).toBe("restored");
+        expect(persisted.status).toBe("restoring");
       }
       return fixture.runGit(args);
     };
@@ -392,7 +392,7 @@ describe("worktree quarantine recovery", () => {
     });
 
     expect(restored.status).toBe("restored");
-    expect(measurementLimits).toEqual([12_345]);
+    expect(measurementLimits).toEqual([12_345, 12_345]);
     expect(await missing(fixture.linked)).toBe(false);
     expect(await missing(result.quarantinePath)).toBe(true);
     await expect(
@@ -473,6 +473,14 @@ describe("worktree quarantine recovery", () => {
       result.quarantinePath,
     ]);
     await renameNoReplace(result.quarantinePath, fixture.linked);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "update-ref",
+      "-d",
+      result.recoveryRef,
+      fixture.action.target.head,
+    ]);
     const restoring = quarantineEntrySchema.parse({ ...manifest, status: "restoring" });
     await writeJsonAtomic(result.manifestPath, restoring, {
       privateDirectories: [quarantineDirectory],
@@ -490,6 +498,42 @@ describe("worktree quarantine recovery", () => {
 
     expect(restored.status).toBe("restored");
     expect(await missing(fixture.linked)).toBe(false);
+  });
+
+  it("rolls back when the restored path becomes busy before commit", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-undo-final-process",
+      entryId: "entry-undo-final-process",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    let probes = 0;
+
+    await expect(
+      undoWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          processProbe: async () =>
+            ++probes === 1
+              ? { status: "idle" as const, matches: [] }
+              : { status: "busy" as const, matches: [] },
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_UNDO_FAILED",
+    });
+
+    expect(await missing(fixture.linked)).toBe(true);
+    expect(await missing(result.quarantinePath)).toBe(false);
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "quarantined",
+    );
   });
 
   it("does not overwrite a destination that appears in the final undo window", async () => {
@@ -541,7 +585,7 @@ describe("worktree quarantine recovery", () => {
       calls.push(args);
       if (args.includes("update-ref") && args.includes("-d") && manifestPath !== undefined) {
         const persisted = quarantineEntrySchema.parse(await readJsonFile(manifestPath));
-        expect(persisted.status).toBe("purged");
+        expect(persisted.status).toBe("purging");
       }
       return fixture.runGit(args);
     };
@@ -641,6 +685,14 @@ describe("worktree quarantine recovery", () => {
       "worktree",
       "remove",
       result.quarantinePath,
+    ]);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "update-ref",
+      "-d",
+      result.recoveryRef,
+      fixture.action.target.head,
     ]);
     const purging = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
     await writeJsonAtomic(result.manifestPath, purging, {

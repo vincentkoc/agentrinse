@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { quarantineEntrySchema } from "../../src/contracts/quarantine.js";
+import { quarantineEntrySchema, quarantineRecoveryRef } from "../../src/contracts/quarantine.js";
 
 describe("quarantineEntrySchema", () => {
   it("accepts a recoverable worktree quarantine manifest", () => {
@@ -13,7 +13,7 @@ describe("quarantineEntrySchema", () => {
       status: "quarantined",
       originalPath: "/tmp/repo-worktree",
       quarantinePath: "/tmp/.agentrinse-quarantine/entry-1",
-      recoveryRef: "refs/agentrinse/quarantine/run-1/fixture",
+      recoveryRef: quarantineRecoveryRef("run-1", "git:git-worktree:fixture"),
       createdAt: "2026-07-24T00:00:00.000Z",
       expiresAt: "2026-07-31T00:00:00.000Z",
       measurementMaxEntries: 10_000,
@@ -45,6 +45,12 @@ describe("quarantineEntrySchema", () => {
 
     expect(entry.status).toBe("quarantined");
     expect(entry.target.measuredBytes).toBe(1024);
+    expect(() =>
+      quarantineEntrySchema.parse({
+        ...entry,
+        recoveryRef: "refs/heads/feature",
+      }),
+    ).toThrow("recovery ref");
   });
 
   it("rejects entry IDs that can escape the manifest directory", () => {
@@ -58,7 +64,7 @@ describe("quarantineEntrySchema", () => {
         status: "preparing",
         originalPath: "/tmp/worktree",
         quarantinePath: "/tmp/.agentrinse-quarantine/entry-1",
-        recoveryRef: "refs/agentrinse/quarantine/run-1/fixture",
+        recoveryRef: quarantineRecoveryRef("run-1", "resource-1"),
         createdAt: "2026-07-01T00:00:00.000Z",
         expiresAt: "2026-08-01T00:00:00.000Z",
         measurementMaxEntries: 10_000,

@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { executePurgeCommand } from "../../src/commands/purge.js";
 import { executeUndoCommand } from "../../src/commands/undo.js";
-import type { QuarantineEntry } from "../../src/contracts/quarantine.js";
+import { quarantineRecoveryRef, type QuarantineEntry } from "../../src/contracts/quarantine.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 import { stateLayout } from "../../src/state/layout.js";
 
@@ -16,16 +16,17 @@ function entry(
   expiresAt: string,
   actionId = `action-${entryId}`,
 ): QuarantineEntry {
+  const resourceId = `resource-${entryId}`;
   return {
     schemaVersion: 1,
     entryId,
     runId,
     actionId,
-    resourceId: `resource-${entryId}`,
+    resourceId,
     status: "quarantined",
     originalPath: `/tmp/${entryId}`,
     quarantinePath: `/tmp/.agentrinse-quarantine/${entryId}`,
-    recoveryRef: `refs/agentrinse/quarantine/${runId}/${entryId}`,
+    recoveryRef: quarantineRecoveryRef(runId, resourceId),
     createdAt: "2026-07-01T00:00:00.000Z",
     expiresAt,
     measurementMaxEntries: 10_000,

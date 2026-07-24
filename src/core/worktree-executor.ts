@@ -10,10 +10,10 @@ import type { WorktreeQuarantineAction } from "../contracts/action.js";
 import {
   quarantineEntryIdSchema,
   quarantineEntrySchema,
+  quarantineRecoveryRef,
   type QuarantineEntry,
 } from "../contracts/quarantine.js";
 import { ensurePrivateDirectory, writeJsonAtomic } from "../state/json-file.js";
-import { sha256 } from "./digest.js";
 import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
@@ -151,7 +151,7 @@ export function worktreeQuarantinePath(action: WorktreeQuarantineAction, entryId
 }
 
 export function worktreeRecoveryRef(action: WorktreeQuarantineAction, runId: string): string {
-  return `refs/agentrinse/quarantine/${runId}/${sha256(action.resourceId).slice(0, 16)}`;
+  return quarantineRecoveryRef(runId, action.resourceId);
 }
 
 function registeredWorktree(

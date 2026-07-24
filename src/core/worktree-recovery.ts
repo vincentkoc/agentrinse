@@ -67,6 +67,13 @@ function isMissing(error: unknown): boolean {
   );
 }
 
+function isMissingGitRef(error: unknown): boolean {
+  if (!(error instanceof Error) || !("code" in error)) {
+    return false;
+  }
+  return (error as { code?: string | number }).code === 1;
+}
+
 async function pathExists(
   path: string,
   inspect: (path: string) => Promise<Stats>,
@@ -285,16 +292,8 @@ async function validateQuarantinedEntry(
       "quarantined worktree is no longer registered and locked",
     );
   }
-  const recoveryHead = (
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "rev-parse",
-      "--verify",
-      entry.recoveryRef,
-    ])
-  ).trim();
-  if (recoveryHead !== entry.target.head) {
+  const recoveryHead = await readRecoveryRef(entry, dependencies);
+  if (recoveryHead === undefined || recoveryHead !== entry.target.head) {
     fail("QUARANTINE_RECOVERY_REF_CHANGED", "recovery ref no longer points to the planned HEAD");
   }
 
@@ -305,6 +304,17 @@ async function deleteRecoveryRef(
   entry: QuarantineEntry,
   dependencies: ResolvedRecoveryDependencies,
 ): Promise<void> {
+  const recoveryHead = await readRecoveryRef(entry, dependencies);
+  if (recoveryHead === undefined) {
+    return;
+  }
+  if (recoveryHead !== entry.target.head) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_RECOVERY_REF_CHANGED",
+      "recovery ref no longer points to the planned HEAD",
+      entry,
+    );
+  }
   await dependencies.runGit([
     "--git-dir",
     entry.target.repositoryCommonDir,
@@ -313,6 +323,29 @@ async function deleteRecoveryRef(
     entry.recoveryRef,
     entry.target.head,
   ]);
+}
+
+async function readRecoveryRef(
+  entry: QuarantineEntry,
+  dependencies: ResolvedRecoveryDependencies,
+): Promise<string | undefined> {
+  try {
+    return (
+      await dependencies.runGit([
+        "--git-dir",
+        entry.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        entry.recoveryRef,
+      ])
+    ).trim();
+  } catch (error) {
+    if (isMissingGitRef(error)) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 async function verifyLockedRegistration(
@@ -340,6 +373,7 @@ async function verifyRestoredTransition(
   entry: QuarantineEntry,
   options: WorktreeRecoveryOptions,
   dependencies: ResolvedRecoveryDependencies,
+  allowMissingRecoveryRef: boolean,
 ): Promise<void> {
   assertSupportedPlatform(entry, options);
   assertManifestPath(entry, options);
@@ -451,16 +485,11 @@ async function verifyRestoredTransition(
       entry,
     );
   }
-  const recoveryHead = (
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "rev-parse",
-      "--verify",
-      entry.recoveryRef,
-    ])
-  ).trim();
-  if (recoveryHead !== entry.target.head) {
+  const recoveryHead = await readRecoveryRef(entry, dependencies);
+  if (
+    recoveryHead !== entry.target.head &&
+    !(allowMissingRecoveryRef && recoveryHead === undefined)
+  ) {
     throw new WorktreeRecoveryError(
       "QUARANTINE_RECOVERY_REF_CHANGED",
       "recovery ref no longer points to the planned HEAD",
@@ -495,7 +524,8 @@ async function resumeInterruptedUndo(
     return persist({ ...entry, status: "quarantined" }, options);
   }
   if (originalExists && !quarantineExists) {
-    await verifyRestoredTransition(entry, options, dependencies);
+    await verifyRestoredTransition(entry, options, dependencies, true);
+    await deleteRecoveryRef(entry, dependencies);
     const restored = await persist(
       {
         ...entry,
@@ -504,7 +534,6 @@ async function resumeInterruptedUndo(
       },
       options,
     );
-    await deleteRecoveryRef(restored, dependencies);
     return restored;
   }
   throw new WorktreeRecoveryError(
@@ -561,22 +590,15 @@ async function resumeInterruptedPurge(
         entry,
       );
     }
-    const recoveryHead = (
-      await dependencies.runGit([
-        "--git-dir",
-        entry.target.repositoryCommonDir,
-        "rev-parse",
-        "--verify",
-        entry.recoveryRef,
-      ])
-    ).trim();
-    if (recoveryHead !== entry.target.head) {
+    const recoveryHead = await readRecoveryRef(entry, dependencies);
+    if (recoveryHead !== undefined && recoveryHead !== entry.target.head) {
       throw new WorktreeRecoveryError(
         "QUARANTINE_RECOVERY_REF_CHANGED",
         "recovery ref no longer points to the planned HEAD",
         entry,
       );
     }
+    await deleteRecoveryRef(entry, dependencies);
     const purged = await persist(
       {
         ...entry,
@@ -585,7 +607,6 @@ async function resumeInterruptedPurge(
       },
       options,
     );
-    await deleteRecoveryRef(purged, dependencies);
     return { entry: purged, reclaimedBytes: purged.target.measuredBytes };
   }
   throw new WorktreeRecoveryError(
@@ -610,6 +631,7 @@ export async function undoWorktreeQuarantine(
   entry = await persist({ ...entry, status: "restoring" }, options);
   let unlocked = false;
   let moved = false;
+  let finalizing = false;
 
   try {
     await dependencies.runGit([
@@ -625,42 +647,9 @@ export async function undoWorktreeQuarantine(
     }
     await dependencies.move(entry.quarantinePath, entry.originalPath);
     moved = true;
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "repair",
-      entry.originalPath,
-    ]);
-    const records = await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "list",
-      "--porcelain",
-      "-z",
-    ]);
-    if (!registrationMatches(records, entry.originalPath, entry, false)) {
-      throw new Error("restored worktree registration could not be verified");
-    }
-    const status = parseGitStatusPorcelainV2(
-      await dependencies.runGit([
-        "-C",
-        entry.originalPath,
-        "status",
-        "--porcelain=v2",
-        "--branch",
-        "-z",
-        "--untracked-files=all",
-      ]),
-    );
-    if (
-      status.head !== entry.target.head ||
-      branchRef(status.branch) !== entry.target.branch ||
-      status.staged + status.modified + status.untracked + status.conflicted > 0
-    ) {
-      throw new Error("restored worktree Git state could not be verified");
-    }
+    await verifyRestoredTransition(entry, options, dependencies, false);
+    await deleteRecoveryRef(entry, dependencies);
+    finalizing = true;
     entry = await persist(
       {
         ...entry,
@@ -669,9 +658,16 @@ export async function undoWorktreeQuarantine(
       },
       options,
     );
-    await deleteRecoveryRef(entry, dependencies);
     return entry;
   } catch (error) {
+    if (finalizing) {
+      throw new WorktreeRecoveryError(
+        "QUARANTINE_UNDO_FINALIZE_PENDING",
+        "undo restored the worktree but could not persist terminal state; retry undo",
+        entry,
+        { cause: error },
+      );
+    }
     try {
       if (moved) {
         if (
@@ -775,6 +771,7 @@ export async function purgeWorktreeQuarantine(
   }
   entry = await persist({ ...entry, status: "purging" }, options);
   let unlocked = false;
+  let removed = false;
 
   try {
     await dependencies.runGit([
@@ -806,6 +803,8 @@ export async function purgeWorktreeQuarantine(
     if (parseWorktreePorcelain(records).some((record) => record.path === entry.quarantinePath)) {
       throw new Error("Git reported success but the quarantine registration remains");
     }
+    removed = true;
+    await deleteRecoveryRef(entry, dependencies);
     entry = await persist(
       {
         ...entry,
@@ -814,9 +813,16 @@ export async function purgeWorktreeQuarantine(
       },
       options,
     );
-    await deleteRecoveryRef(entry, dependencies);
     return { entry, reclaimedBytes: entry.target.measuredBytes };
   } catch (error) {
+    if (removed) {
+      throw new WorktreeRecoveryError(
+        "QUARANTINE_PURGE_FINALIZE_PENDING",
+        "purge removed the worktree but could not persist terminal state; retry purge",
+        entry,
+        { cause: error },
+      );
+    }
     try {
       if (await pathExists(entry.quarantinePath, dependencies.inspect)) {
         if (unlocked) {
