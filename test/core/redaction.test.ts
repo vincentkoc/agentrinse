@@ -137,6 +137,23 @@ describe("audit redaction", () => {
     expect(output).toContain("root:$PATH/<path:");
   });
 
+  it("removes complete paths containing quote and angle characters", () => {
+    const redacted = redactAuditValue(
+      {
+        message: `could not inspect /Users/alice/Secret's/"client"<draft>/file`,
+      },
+      HOME,
+      "fixture-salt",
+    );
+    const output = JSON.stringify(redacted);
+
+    expect(output).not.toContain("/Users/alice");
+    expect(output).not.toContain(`Secret's`);
+    expect(output).not.toContain("client");
+    expect(output).not.toContain("draft");
+    expect(output).toContain("$PATH/<path:");
+  });
+
   it("redacts large path collections without scanning every path for every string", () => {
     const entries = Array.from({ length: 5_000 }, (_, index) => ({
       path: `${HOME}/projects/project-${index}/node_modules`,
