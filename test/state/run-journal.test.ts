@@ -127,4 +127,52 @@ describe("run journal", () => {
     expect(interrupted.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
     expect(await readJsonFile(journal.path)).toEqual(interrupted);
   });
+
+  it("tracks quarantined bytes without claiming immediate reclaim", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const plan: CleanupPlan = {
+      ...PLAN,
+      riskCeiling: "recoverable",
+      actions: [
+        {
+          actionId: "action-worktree",
+          type: "worktree.quarantine",
+          adapter: "git",
+          resourceId: "git:git-worktree:fixture",
+          risk: "recoverable",
+          description: "quarantine fixture",
+          expectedReclaimBytes: 0,
+          pendingQuarantineBytes: 20,
+          quarantineTtlMinutes: 60,
+          target: {
+            path: "/tmp/fixture-worktree",
+            repositoryCommonDir: "/tmp/repo/.git",
+            head: "a".repeat(40),
+            branch: "refs/heads/feature",
+            device: 1,
+            inode: 2,
+            mtimeMs: 3,
+            measuredBytes: 20,
+            newestMtimeMs: 4,
+            fingerprint: "b".repeat(64),
+          },
+        },
+      ],
+      expectedReclaimBytes: 0,
+      pendingQuarantineBytes: 20,
+    };
+    const journal = await createRunJournal(root, plan);
+
+    await journal.updateAction("action-worktree", {
+      status: "applied",
+      quarantinedBytes: 20,
+      quarantineEntryId: "entry-1",
+      quarantinePath: "/tmp/.agentrinse-quarantine/entry-1",
+      recoveryRef: "refs/agentrinse/quarantine/run/action",
+    });
+    const completed = await journal.complete();
+
+    expect(completed.reclaimedBytes).toBe(0);
+    expect(completed.quarantinedBytes).toBe(20);
+  });
 });

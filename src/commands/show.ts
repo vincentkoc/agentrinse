@@ -22,8 +22,11 @@ export function renderRunDetails(run: CleanupRun): string {
     if (action.diagnostic !== undefined) {
       lines.push(`  ${action.diagnostic.code}: ${action.diagnostic.message}`);
     }
-    if (action.isolationPath !== undefined) {
+    if (action.type === "artifacts.remove" && action.isolationPath !== undefined) {
       lines.push(`  isolation: ${action.isolationPath}`);
+    }
+    if (action.type === "worktree.quarantine" && action.quarantinePath !== undefined) {
+      lines.push(`  quarantine: ${action.quarantinePath}`);
     }
   }
 

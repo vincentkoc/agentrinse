@@ -117,6 +117,24 @@ export const agentRinseConfigSchema = z
         minBytes: 64 * 1024 * 1024,
         processCheck: "required" as const,
       })),
+    worktrees: z
+      .object({
+        minAgeMinutes: z
+          .number()
+          .int()
+          .nonnegative()
+          .default(14 * 24 * 60),
+        quarantineTtlMinutes: z
+          .number()
+          .int()
+          .positive()
+          .max(30 * 24 * 60)
+          .default(7 * 24 * 60),
+      })
+      .default(() => ({
+        minAgeMinutes: 14 * 24 * 60,
+        quarantineTtlMinutes: 7 * 24 * 60,
+      })),
     pins: z.array(pinSchema).default([]),
     plan: z
       .object({

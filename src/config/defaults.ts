@@ -24,6 +24,10 @@ export const DEFAULT_CONFIG: AgentRinseConfig = {
     minBytes: 64 * 1024 * 1024,
     processCheck: "required",
   },
+  worktrees: {
+    minAgeMinutes: 14 * 24 * 60,
+    quarantineTtlMinutes: 7 * 24 * 60,
+  },
   pins: [],
   plan: {
     ttlMinutes: 30,

@@ -100,6 +100,9 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
     throwIfInterrupted(options.signal);
 
     for (const action of plan.actions) {
+      if (action.type !== "artifacts.remove") {
+        throw new ApplySafetyError(`action type ${action.type} is not executable yet`);
+      }
       throwIfInterrupted(options.signal);
       const startedAt = clock().toISOString();
       await journal.updateAction(action.actionId, {
