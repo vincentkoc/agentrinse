@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { executeAuditCommand } from "./commands/audit.js";
 import { renderAdapters } from "./commands/adapters.js";
 import { executeApplyCommand } from "./commands/apply.js";
+import { executeCleanCommand } from "./commands/clean.js";
 import {
   executeConfigInitCommand,
   executeConfigPathCommand,
@@ -71,6 +72,58 @@ export function buildProgram(): Command {
       async (options: { audit: string; config?: string; output?: string; stateDir?: string }) => {
         const result = await executePlanCommand(options);
         process.stdout.write(result.output);
+      },
+    );
+
+  program
+    .command("clean")
+    .description("Audit and plan repository-scoped agent cleanup.")
+    .option("--profile <name>", "cleanup profile", "closeout")
+    .option("--home <path>", "home directory to audit")
+    .option("--config <path>", "explicit JSON config")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--max-risk <risk>", "safe, recoverable, destructive, or experimental")
+    .option("--apply", "apply the fresh plan after confirmation", false)
+    .option("--yes", "authorize non-interactive apply", false)
+    .option("--json", "emit a compact versioned closeout summary", false)
+    .action(
+      async (options: {
+        profile: string;
+        home?: string;
+        config?: string;
+        stateDir?: string;
+        maxRisk?: "safe" | "recoverable" | "destructive" | "experimental";
+        apply: boolean;
+        yes: boolean;
+        json: boolean;
+      }) => {
+        if (options.profile !== "closeout") {
+          throw new Error(`unsupported clean profile: ${options.profile}`);
+        }
+        const controller = new AbortController();
+        const interrupt = () => {
+          controller.abort(new CommandInterruptedError("interrupted by SIGINT"));
+        };
+        process.on("SIGINT", interrupt);
+        try {
+          const result = await executeCleanCommand({
+            ...options,
+            profile: "closeout",
+            home: options.home ?? homedir(),
+            signal: controller.signal,
+          });
+          process.stdout.write(result.output);
+          if (result.run?.status === "interrupted") {
+            process.exitCode = 130;
+          } else if (
+            result.run !== undefined &&
+            ["failed", "partial"].includes(result.run.status)
+          ) {
+            process.exitCode = 2;
+          }
+        } finally {
+          process.removeListener("SIGINT", interrupt);
+        }
       },
     );
 

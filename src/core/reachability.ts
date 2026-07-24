@@ -9,7 +9,7 @@ type ReachabilityEvidence = Omit<RootEvidence, "observedAt"> & {
 
 export type ReachabilityRoot = ReachabilityEvidence & {
   path: string;
-  scope?: "exact" | "subtree";
+  scope?: "overlap" | "subtree";
 };
 
 function isInside(root: string, candidate: string): boolean {
@@ -25,7 +25,7 @@ export class ReachabilityIndex {
 
   add(root: ReachabilityRoot): void {
     const path = resolve(root.path);
-    const key = `${root.code}\0${root.source}\0${path}\0${root.scope ?? "exact"}\0${root.evidenceRef ?? ""}`;
+    const key = `${root.code}\0${root.source}\0${path}\0${root.scope ?? "overlap"}\0${root.evidenceRef ?? ""}`;
     this.roots.set(key, { ...root, path });
   }
 
@@ -71,7 +71,9 @@ export class ReachabilityIndex {
     const matchingRoots = [...this.roots.values()]
       .filter((root) => this.isCurrent(root, observedAt))
       .filter((root) =>
-        root.scope === "subtree" ? isInside(root.path, target) : isInside(target, root.path),
+        root.scope === "subtree"
+          ? isInside(root.path, target)
+          : isInside(root.path, target) || isInside(target, root.path),
       )
       .map(({ path: _path, scope: _scope, ...root }) => this.evidence(root, observedAt));
     const globalRoots = [...this.globalRoots.values()]

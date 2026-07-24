@@ -15,6 +15,7 @@ import {
   findProcessesUsingPath,
   type ProcessOwnershipResult,
 } from "../../core/process-ownership.js";
+import type { ReachabilityIndex } from "../../core/reachability.js";
 import { isPathInside } from "../../core/safety.js";
 
 type ArtifactOptions = AgentRinseConfig["artifacts"] & AgentRinseConfig["audit"];
@@ -44,6 +45,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     private readonly options: ArtifactOptions,
     private readonly processProbe: ProcessProbe = findProcessesUsingPath,
     private readonly mountProbe: MountProbe = findMountBoundaries,
+    private readonly reachability?: ReachabilityIndex,
   ) {}
 
   private async validProjects(context: AuditContext): Promise<{
@@ -351,6 +353,22 @@ export class ArtifactAuditAdapter implements AuditAdapter {
         resourceId: resource.resource.id,
       });
     }
+
+    const reachabilityRoots = this.reachability?.rootsForResource(
+      resource.resource,
+      resource.facts,
+      context.now.toISOString(),
+    );
+    if (reachabilityRoots !== undefined && reachabilityRoots.length > 0) {
+      roots.push(...reachabilityRoots);
+      if (state === "eligible") {
+        state = "protected";
+      }
+    }
+    roots.sort((left, right) => {
+      const byCode = left.code.localeCompare(right.code);
+      return byCode !== 0 ? byCode : left.source.localeCompare(right.source);
+    });
 
     const candidateActions: ArtifactRemoveAction[] =
       state === "eligible" ? [this.actionFor(resource)] : [];

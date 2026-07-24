@@ -18,6 +18,7 @@ export type ProviderAdapterOptions = {
   measureBytes: boolean;
   maxEntries: number;
   reachability?: ReachabilityIndex;
+  inventoryResources?: boolean;
 };
 
 function isMissing(error: unknown): boolean {
@@ -145,6 +146,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
           this.options.reachability,
         )),
       );
+    }
+    if (this.options.inventoryResources === false) {
+      return { resources: [], diagnostics };
     }
 
     for (const candidate of this.spec.resources) {

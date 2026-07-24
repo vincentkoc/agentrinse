@@ -11,11 +11,15 @@ The project follows semantic versioning after its first supported release.
 - path, resource-id, and Git-ref pins with optional expiry
 - Codex and Claude workspace roots derived from metadata without reading
   transcript bodies
+- repository-scoped `clean --profile closeout` with persisted audit, plan,
+  exact derived config, optional safe apply, compact JSON, and external Mole
+  dry-run suggestions
 
 ### Safety
 
 - malformed or unreadable provider metadata protects all affected Git
   worktrees instead of being treated as empty
+- worktree and session roots suppress nested artifact actions
 
 ## [0.1.0] - 2026-07-24
 

@@ -66,7 +66,7 @@ function addPathRoot(
     source: ProviderAdapterId;
     detail: string;
     field: string;
-    scope?: "exact" | "subtree";
+    scope?: "overlap" | "subtree";
   },
 ): boolean {
   if (!isAbsolute(input.path)) {

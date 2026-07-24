@@ -62,8 +62,13 @@ directory-level size reporting.
 ### Git
 
 The Git adapter is disabled by default and requires an explicit repository
-root. It uses `git worktree list --porcelain -z` and still protects every
-worktree until activity and push-state collectors exist.
+root. It uses `git worktree list --porcelain -z`, porcelain v2 status, local
+ref containment, configured remote-tracking refs, operation markers, and live
+process ownership. Whole-worktree removal remains unavailable in `0.2.0`.
+
+Codex and Claude metadata roots, explicit config pins, and the closeout
+current-worktree root are shared with artifact classification. A nested
+artifact never remains eligible after one of those roots is added.
 
 ### Docker
 

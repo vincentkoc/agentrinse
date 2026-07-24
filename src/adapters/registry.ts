@@ -1,7 +1,7 @@
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter } from "../contracts/adapter.js";
 import { sha256 } from "../core/digest.js";
-import { ReachabilityIndex } from "../core/reachability.js";
+import { ReachabilityIndex, type ReachabilityRoot } from "../core/reachability.js";
 import { ArtifactAuditAdapter } from "./artifacts/adapter.js";
 import { DockerAuditAdapter } from "./docker/adapter.js";
 import { GitWorktreeAuditAdapter } from "./git/adapter.js";
@@ -10,11 +10,20 @@ import { PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
 
 const PROVIDER_IDS = Object.keys(PROVIDER_SPECS) as ProviderAdapterId[];
 
+export type AuditAdapterRegistryOptions = {
+  providerInventory?: boolean;
+  roots?: ReachabilityRoot[];
+};
+
 export function createAuditAdapters(
   config: AgentRinseConfig,
   platform: NodeJS.Platform = process.platform,
+  options: AuditAdapterRegistryOptions = {},
 ): AuditAdapter[] {
   const reachability = new ReachabilityIndex();
+  for (const root of options.roots ?? []) {
+    reachability.add(root);
+  }
   for (const pin of config.pins) {
     const root = {
       code: "user-pin",
@@ -41,15 +50,21 @@ export function createAuditAdapters(
         measureBytes: config.audit.measureBytes,
         maxEntries: config.audit.maxEntries,
         reachability,
+        inventoryResources: options.providerInventory ?? true,
       }),
   );
 
   if (config.artifacts.projects.length > 0) {
     adapters.push(
-      new ArtifactAuditAdapter({
-        ...config.artifacts,
-        ...config.audit,
-      }),
+      new ArtifactAuditAdapter(
+        {
+          ...config.artifacts,
+          ...config.audit,
+        },
+        undefined,
+        undefined,
+        reachability,
+      ),
     );
   }
 
