@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -39,7 +39,7 @@ async function lockFixture() {
     main,
     (await runGit(["-C", main, "rev-parse", "--git-common-dir"])).trim(),
   );
-  return { linked, repositoryCommonDir, runGit };
+  return { linked, repositoryCommonDir, root, runGit };
 }
 
 async function missing(path: string): Promise<boolean> {
@@ -52,6 +52,45 @@ async function missing(path: string): Promise<boolean> {
 }
 
 describe("owned worktree lock handoff", () => {
+  it("rejects a lock path redirected outside the Git common directory", async () => {
+    const fixture = await lockFixture();
+    const expectedReason = "AgentRinse quarantine entry-lock-symlink";
+    await fixture.runGit([
+      "--git-dir",
+      fixture.repositoryCommonDir,
+      "worktree",
+      "lock",
+      "--reason",
+      expectedReason,
+      fixture.linked,
+    ]);
+    const lockPath = (
+      await fixture.runGit(["-C", fixture.linked, "rev-parse", "--git-path", "locked"])
+    ).trim();
+    const adminDirectory = dirname(lockPath);
+    const externalAdminDirectory = join(fixture.root, "external-worktree-admin");
+    await rename(adminDirectory, externalAdminDirectory);
+    await symlink(externalAdminDirectory, adminDirectory);
+    const runGit = async (args: string[]) =>
+      args.includes("--git-path") && args.includes("locked")
+        ? `${lockPath}\n`
+        : fixture.runGit(args);
+
+    await expect(
+      unlockOwnedWorktree({
+        worktreePath: fixture.linked,
+        repositoryCommonDir: fixture.repositoryCommonDir,
+        expectedReason,
+        claimId: "entry-lock-symlink",
+        runGit,
+      }),
+    ).rejects.toThrow("physically escaped");
+
+    expect((await readFile(join(externalAdminDirectory, "locked"), "utf8")).trim()).toBe(
+      expectedReason,
+    );
+  });
+
   it("restores a foreign lock swapped in after path lookup", async () => {
     const fixture = await lockFixture();
     const expectedReason = "AgentRinse quarantine entry-lock-race";

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
-import { basename, isAbsolute, relative, resolve, sep } from "node:path";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 import { renameNoReplace } from "./no-clobber-rename.js";
 
@@ -58,6 +58,21 @@ async function resolveLockPaths(options: OwnedWorktreeLock): Promise<LockPaths> 
     isAbsolute(relativePath)
   ) {
     throw new WorktreeLockOwnershipError("Git worktree lock path escaped the repository");
+  }
+  const [physicalCommonDir, physicalLockParent] = await Promise.all([
+    realpath(commonDir),
+    realpath(dirname(lockPath)),
+  ]);
+  const physicalRelativePath = relative(physicalCommonDir, physicalLockParent);
+  if (
+    physicalRelativePath === "" ||
+    physicalRelativePath === ".." ||
+    physicalRelativePath.startsWith(`..${sep}`) ||
+    isAbsolute(physicalRelativePath)
+  ) {
+    throw new WorktreeLockOwnershipError(
+      "Git worktree lock path physically escaped the repository",
+    );
   }
   const suffix = createHash("sha256").update(options.claimId).digest("hex").slice(0, 16);
   return {
