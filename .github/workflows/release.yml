@@ -164,10 +164,47 @@ jobs:
 
       - name: Upload package and checksum
         run: |
-          gh release upload "$RELEASE_TAG" \
-            release/agentrinse-*.tgz \
-            release/agentrinse-*.tgz.sha256 \
-            --repo "$GITHUB_REPOSITORY"
+          asset_exists() {
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+              --jq '.assets[].name' |
+              grep -Fxq "$1"
+          }
+
+          verify_existing_asset() {
+            local asset="$1"
+            local name
+            local directory
+            name="$(basename "$asset")"
+            directory="$(mktemp -d)"
+            gh release download "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$name" \
+              --dir "$directory"
+            cmp --silent "$asset" "$directory/$name"
+            rm -rf "$directory"
+          }
+
+          upload_asset() {
+            local asset="$1"
+            local name
+            name="$(basename "$asset")"
+
+            if asset_exists "$name"; then
+              verify_existing_asset "$asset"
+              return
+            fi
+
+            if gh release upload "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"; then
+              return
+            fi
+
+            asset_exists "$name"
+            verify_existing_asset "$asset"
+          }
+
+          for asset in release/agentrinse-*.tgz release/agentrinse-*.tgz.sha256; do
+            upload_asset "$asset"
+          done
 
   validate:
     if: github.event_name == 'workflow_dispatch'
