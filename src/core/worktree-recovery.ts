@@ -657,9 +657,28 @@ async function recoverInitialQuarantineForUndo(
       entry.originalPath,
       entry.target,
       true,
-      "unlocked",
+      "owned-or-unlocked",
       expectedRegistrationPaths,
     );
+    const registrations = await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]);
+    if (registrationMatches(registrations, entry.originalPath, entry, "owned")) {
+      await unlockOwnedWorktree({
+        worktreePath: entry.originalPath,
+        repositoryCommonDir: entry.target.repositoryCommonDir,
+        expectedReason: quarantineLockReason(entry),
+        claimId: entry.entryId,
+        runGit: dependencies.runGit,
+        platform: options.dependencies?.platform ?? process.platform,
+      });
+      await assertTargetRegistrationLock(entry, dependencies, "unlocked", [entry.originalPath]);
+    }
     await deleteRecoveryRef(entry, dependencies);
     return persist(
       {

@@ -952,6 +952,82 @@ describe("worktree quarantine recovery", () => {
     ).rejects.toThrow();
   });
 
+  it("releases its owned lock after a pre-move interruption", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-initial-owned-lock";
+    const runId = "run-initial-owned-lock";
+    const recoveryRef = worktreeRecoveryRef(fixture.action, runId);
+    const manifestPath = join(quarantineDirectory, `${entryId}.json`);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "update-ref",
+      recoveryRef,
+      fixture.action.target.head,
+      "",
+    ]);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "lock",
+      "--reason",
+      `AgentRinse quarantine ${entryId}`,
+      fixture.linked,
+    ]);
+    const manifest = quarantineEntrySchema.parse({
+      schemaVersion: 1,
+      entryId,
+      runId,
+      actionId: fixture.action.actionId,
+      resourceId: fixture.action.resourceId,
+      status: "recovery-ref-created",
+      originalPath: fixture.linked,
+      quarantinePath: worktreeQuarantinePath(fixture.action, entryId),
+      recoveryRef,
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: 10_000,
+      target: fixture.action.target,
+    });
+    await writeJsonAtomic(manifestPath, manifest, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(manifest, {
+      manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records.find((record) => record.path === fixture.linked)?.locked).toBeUndefined();
+    await expect(
+      fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        recoveryRef,
+      ]),
+    ).rejects.toThrow();
+  });
+
   it("restores a worktree moved before the quarantine manifest advanced", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
