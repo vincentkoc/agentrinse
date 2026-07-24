@@ -135,7 +135,7 @@ jobs:
 
       - name: Publish to npm
         if: env.RELEASE_TAG != 'v0.0.0'
-        run: npm publish release/agentrinse-*.tgz --access public
+        run: npm publish ./release/agentrinse-*.tgz --access public
 
   release-assets:
     if: github.event_name == 'release'
