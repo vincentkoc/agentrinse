@@ -6,6 +6,12 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Changed
+
+- rewrote the public README around a faster product explanation, scannable
+  agent coverage and command tables, install and closeout examples, and the
+  shipped safety and recovery boundaries
+
 ## [0.3.0] - 2026-07-24
 
 ### Added
