@@ -175,6 +175,7 @@ async function assertTargetRegistrationLock(
   entry: QuarantineEntry,
   dependencies: ResolvedRecoveryDependencies,
   lockExpectation: LockExpectation,
+  expectedPaths: string[],
 ): Promise<void> {
   const records = parseWorktreePorcelain(
     await dependencies.runGit([
@@ -186,13 +187,26 @@ async function assertTargetRegistrationLock(
       "-z",
     ]),
   ).filter((record) => record.head === entry.target.head && record.branch === entry.target.branch);
-  if (records.length !== 1 || !lockMatches(records[0]?.locked, lockExpectation, entry)) {
+  const registration = records[0];
+  if (
+    records.length !== 1 ||
+    registration === undefined ||
+    !expectedPaths.some((path) => resolve(path) === resolve(registration.path)) ||
+    !lockMatches(registration.locked, lockExpectation, entry)
+  ) {
     throw new WorktreeRecoveryError(
       "QUARANTINE_REGISTRATION_CHANGED",
       "target worktree registration or lock ownership changed before repair",
       entry,
     );
   }
+}
+
+function isImmutableRecoveryProtection(error: unknown): boolean {
+  return (
+    error instanceof WorktreeRecoveryError &&
+    ["QUARANTINE_GIT_OPERATION_IN_PROGRESS", "QUARANTINE_REGISTRATION_CHANGED"].includes(error.code)
+  );
 }
 
 function resolveDependencies(options: WorktreeRecoveryOptions): ResolvedRecoveryDependencies {
@@ -476,6 +490,7 @@ async function verifyRecoveryPath(
   identity: QuarantineEntry["target"],
   allowMissingRecoveryRef: boolean,
   lockExpectation: LockExpectation,
+  expectedRegistrationPaths: string[],
 ): Promise<void> {
   assertSupportedPlatform(entry, options);
   assertManifestPath(entry, options);
@@ -535,7 +550,13 @@ async function verifyRecoveryPath(
     );
   }
 
-  await assertTargetRegistrationLock(entry, dependencies, lockExpectation);
+  await assertNoGitOperations(entry, path, dependencies);
+  await assertTargetRegistrationLock(
+    entry,
+    dependencies,
+    lockExpectation,
+    expectedRegistrationPaths,
+  );
   await dependencies.runGit([
     "--git-dir",
     entry.target.repositoryCommonDir,
@@ -617,6 +638,7 @@ async function recoverInitialQuarantineForUndo(
       entry.target,
       true,
       "unlocked",
+      [entry.originalPath],
     );
     await deleteRecoveryRef(entry, dependencies);
     return persist(
@@ -637,6 +659,7 @@ async function recoverInitialQuarantineForUndo(
       entry.target,
       true,
       "owned-or-unlocked",
+      [entry.originalPath, entry.quarantinePath],
     );
     await ensureRecoveryRef(entry, dependencies);
     const records = await dependencies.runGit([
@@ -740,6 +763,7 @@ async function resumeInterruptedUndo(
       identity,
       true,
       "unlocked",
+      [entry.quarantinePath, entry.originalPath],
     );
     await deleteRecoveryRef(entry, dependencies);
     const restored = await persist(
@@ -777,8 +801,13 @@ async function rollbackPurgeIsolation(
     ) {
       throw new Error("worktree paths are not safe for purge isolation rollback");
     }
-    await assertTargetRegistrationLock(entry, dependencies, "unlocked");
+    await assertNoGitOperations(entry, isolationPath, dependencies);
+    await assertTargetRegistrationLock(entry, dependencies, "unlocked", [
+      entry.quarantinePath,
+      isolationPath,
+    ]);
     await dependencies.move(isolationPath, entry.quarantinePath);
+    await assertNoGitOperations(entry, entry.quarantinePath, dependencies);
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,
@@ -886,7 +915,11 @@ async function resumeInterruptedPurge(
   }
   if (isolationExists) {
     try {
-      await assertTargetRegistrationLock(entry, dependencies, "unlocked");
+      await assertNoGitOperations(entry, isolationPath, dependencies);
+      await assertTargetRegistrationLock(entry, dependencies, "unlocked", [
+        entry.quarantinePath,
+        isolationPath,
+      ]);
       await dependencies.runGit([
         "--git-dir",
         entry.target.repositoryCommonDir,
@@ -910,10 +943,7 @@ async function resumeInterruptedPurge(
         );
       }
     } catch (error) {
-      if (
-        error instanceof WorktreeRecoveryError &&
-        error.code === "QUARANTINE_REGISTRATION_CHANGED"
-      ) {
+      if (isImmutableRecoveryProtection(error)) {
         throw error;
       }
       return rollbackPurgeIsolation(entry, isolationPath, options, dependencies, error);
@@ -1020,6 +1050,7 @@ export async function undoWorktreeQuarantine(
       identity,
       false,
       "unlocked",
+      [entry.quarantinePath, entry.originalPath],
     );
     await deleteRecoveryRef(entry, dependencies);
     finalizing = true;
@@ -1041,8 +1072,16 @@ export async function undoWorktreeQuarantine(
         { cause: error },
       );
     }
+    if (moved && isImmutableRecoveryProtection(error)) {
+      throw error;
+    }
     try {
       if (moved) {
+        await assertNoGitOperations(entry, entry.originalPath, dependencies);
+        await assertTargetRegistrationLock(entry, dependencies, "unlocked", [
+          entry.quarantinePath,
+          entry.originalPath,
+        ]);
         if (
           (await pathExists(entry.quarantinePath, dependencies.inspect)) ||
           !(await pathExists(entry.originalPath, dependencies.inspect))
@@ -1163,7 +1202,11 @@ export async function purgeWorktreeQuarantine(
     }
     await dependencies.move(entry.quarantinePath, isolationPath);
     isolated = true;
-    await assertTargetRegistrationLock(entry, dependencies, "unlocked");
+    await assertNoGitOperations(entry, isolationPath, dependencies);
+    await assertTargetRegistrationLock(entry, dependencies, "unlocked", [
+      entry.quarantinePath,
+      isolationPath,
+    ]);
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,
@@ -1213,11 +1256,7 @@ export async function purgeWorktreeQuarantine(
         { cause: error },
       );
     }
-    if (
-      isolated &&
-      error instanceof WorktreeRecoveryError &&
-      error.code === "QUARANTINE_REGISTRATION_CHANGED"
-    ) {
+    if (isolated && isImmutableRecoveryProtection(error)) {
       throw error;
     }
     try {

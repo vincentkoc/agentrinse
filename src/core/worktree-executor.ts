@@ -181,12 +181,17 @@ function registeredWorktree(
 function targetRegistrationLockMatches(
   output: string,
   action: WorktreeQuarantineAction,
+  expectedPath: string,
   expectedLockReason?: string,
 ): boolean {
   const records = parseWorktreePorcelain(output).filter(
     (record) => record.head === action.target.head && record.branch === action.target.branch,
   );
-  return records.length === 1 && records[0]?.locked === expectedLockReason;
+  return (
+    records.length === 1 &&
+    resolve(records[0]!.path) === resolve(expectedPath) &&
+    records[0]?.locked === expectedLockReason
+  );
 }
 
 function pathContains(parent: string, candidate: string): boolean {
@@ -284,6 +289,7 @@ export async function executeWorktreeQuarantine(
   });
   let refCreated = false;
   let moved = false;
+  let repaired = false;
   let locked = false;
 
   await ensurePrivateDirectory(options.quarantineDirectory);
@@ -492,6 +498,7 @@ export async function executeWorktreeQuarantine(
         entry,
       );
     }
+    await assertNoGitOperations(quarantinePath, entry, runGit, inspect);
     const beforeRepair = await runGit([
       "--git-dir",
       action.target.repositoryCommonDir,
@@ -500,7 +507,7 @@ export async function executeWorktreeQuarantine(
       "--porcelain",
       "-z",
     ]);
-    if (!targetRegistrationLockMatches(beforeRepair, action)) {
+    if (!targetRegistrationLockMatches(beforeRepair, action, action.target.path)) {
       throw new WorktreeExecutionError(
         "worktree registration or lock ownership changed before repair",
         "partially-applied",
@@ -515,6 +522,7 @@ export async function executeWorktreeQuarantine(
       "repair",
       quarantinePath,
     ]);
+    repaired = true;
     await runGit([
       "--git-dir",
       action.target.repositoryCommonDir,
@@ -674,6 +682,7 @@ export async function executeWorktreeQuarantine(
         locked = false;
       }
       if (moved) {
+        await assertNoGitOperations(quarantinePath, entry, runGit, inspect);
         const beforeRollbackRepair = await runGit([
           "--git-dir",
           action.target.repositoryCommonDir,
@@ -682,7 +691,13 @@ export async function executeWorktreeQuarantine(
           "--porcelain",
           "-z",
         ]);
-        if (!targetRegistrationLockMatches(beforeRollbackRepair, action)) {
+        if (
+          !targetRegistrationLockMatches(
+            beforeRollbackRepair,
+            action,
+            repaired ? quarantinePath : action.target.path,
+          )
+        ) {
           throw new Error("worktree lock ownership changed before automatic rollback");
         }
         if (

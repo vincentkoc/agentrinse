@@ -211,6 +211,59 @@ describe("executeWorktreeQuarantine", () => {
     );
   });
 
+  it("does not repair a registration moved to a third path during quarantine", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-third-registration";
+    const quarantinePath = worktreeQuarantinePath(fixture.action, entryId);
+    const thirdPath = join(fixture.home, "third-registration");
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-third-registration",
+        entryId,
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          move: async (source, destination) => {
+            await renameNoReplace(source, thirdPath);
+            await fixture.runGit([
+              "--git-dir",
+              fixture.action.target.repositoryCommonDir,
+              "worktree",
+              "repair",
+              thirdPath,
+            ]);
+            await renameNoReplace(thirdPath, destination);
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: WorktreeExecutionError.name,
+      outcome: "partially-applied",
+    });
+
+    expect(await missing(quarantinePath)).toBe(false);
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: thirdPath,
+          head: fixture.action.target.head,
+        }),
+      ]),
+    );
+  });
+
   it("restores the original worktree when Git locking fails", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
@@ -645,6 +698,151 @@ describe("worktree quarantine recovery", () => {
         }),
       ]),
     );
+  });
+
+  it("checks Git operation markers before repairing an interrupted move", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-initial-operation";
+    const runId = "run-initial-operation";
+    const quarantinePath = worktreeQuarantinePath(fixture.action, entryId);
+    const recoveryRef = worktreeRecoveryRef(fixture.action, runId);
+    const manifestPath = join(quarantineDirectory, `${entryId}.json`);
+    await mkdir(dirname(quarantinePath), { recursive: true });
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "update-ref",
+      recoveryRef,
+      fixture.action.target.head,
+      "",
+    ]);
+    await renameNoReplace(fixture.linked, quarantinePath);
+    const markerPath = (
+      await fixture.runGit(["-C", quarantinePath, "rev-parse", "--git-path", "MERGE_HEAD"])
+    ).trim();
+    await writeFile(markerPath, `${fixture.action.target.head}\n`);
+    const manifest = quarantineEntrySchema.parse({
+      schemaVersion: 1,
+      entryId,
+      runId,
+      actionId: fixture.action.actionId,
+      resourceId: fixture.action.resourceId,
+      status: "recovery-ref-created",
+      originalPath: fixture.linked,
+      quarantinePath,
+      recoveryRef,
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: 10_000,
+      target: fixture.action.target,
+    });
+    await writeJsonAtomic(manifestPath, manifest, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    await expect(
+      undoWorktreeQuarantine(manifest, {
+        manifestPath,
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_GIT_OPERATION_IN_PROGRESS",
+    });
+
+    expect(await missing(quarantinePath)).toBe(false);
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: fixture.linked })]),
+    );
+  });
+
+  it("rejects a third-path registration before interrupted-move repair", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-initial-third-path";
+    const runId = "run-initial-third-path";
+    const quarantinePath = worktreeQuarantinePath(fixture.action, entryId);
+    const thirdPath = join(fixture.home, "third-path");
+    const recoveryRef = worktreeRecoveryRef(fixture.action, runId);
+    const manifestPath = join(quarantineDirectory, `${entryId}.json`);
+    await mkdir(dirname(quarantinePath), { recursive: true });
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "update-ref",
+      recoveryRef,
+      fixture.action.target.head,
+      "",
+    ]);
+    await renameNoReplace(fixture.linked, thirdPath);
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "repair",
+      thirdPath,
+    ]);
+    await renameNoReplace(thirdPath, quarantinePath);
+    const manifest = quarantineEntrySchema.parse({
+      schemaVersion: 1,
+      entryId,
+      runId,
+      actionId: fixture.action.actionId,
+      resourceId: fixture.action.resourceId,
+      status: "recovery-ref-created",
+      originalPath: fixture.linked,
+      quarantinePath,
+      recoveryRef,
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: 10_000,
+      target: fixture.action.target,
+    });
+    await writeJsonAtomic(manifestPath, manifest, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    await expect(
+      undoWorktreeQuarantine(manifest, {
+        manifestPath,
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_REGISTRATION_CHANGED",
+    });
+
+    expect(await missing(quarantinePath)).toBe(false);
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records).toEqual(expect.arrayContaining([expect.objectContaining({ path: thirdPath })]));
   });
 
   it("restores the original path and deletes the exact recovery ref", async () => {
@@ -1167,6 +1365,67 @@ describe("worktree quarantine recovery", () => {
 
     expect(purged.entry.status).toBe("purged");
     expect(await missing(isolationPath)).toBe(true);
+  });
+
+  it("checks Git operation markers before repairing isolated purge state", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-purge-isolated-operation",
+      entryId: "entry-purge-isolated-operation",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const isolationPath = `${result.quarantinePath}.purging`;
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await renameNoReplace(result.quarantinePath, isolationPath);
+    const markerPath = (
+      await fixture.runGit(["-C", isolationPath, "rev-parse", "--git-path", "rebase-apply"])
+    ).trim();
+    await mkdir(markerPath, { recursive: true });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const purging = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
+    await writeJsonAtomic(result.manifestPath, purging, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    await expect(
+      purgeWorktreeQuarantine(purging, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_GIT_OPERATION_IN_PROGRESS",
+    });
+
+    expect(await missing(isolationPath)).toBe(false);
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "purging",
+    );
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: result.quarantinePath })]),
+    );
   });
 
   it("rolls an interrupted purge back when isolated validation fails", async () => {
