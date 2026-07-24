@@ -16,10 +16,11 @@ export async function createRunJournal(
   runsDirectory: string,
   plan: CleanupPlan,
   startedAt = new Date(),
+  runId: string = randomUUID(),
 ): Promise<RunJournal> {
   let run = cleanupRunSchema.parse({
     schemaVersion: 1,
-    runId: randomUUID(),
+    runId,
     planId: plan.planId,
     startedAt: startedAt.toISOString(),
     status: "running",

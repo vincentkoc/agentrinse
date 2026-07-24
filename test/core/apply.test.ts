@@ -356,8 +356,8 @@ describe("applyCleanupPlan", () => {
         stateRoot: value.stateRoot,
         dependencies: {
           clock: CLOCK,
-          createJournal: async (runsDirectory, plan, startedAt) => {
-            const journal = await createRunJournal(runsDirectory, plan, startedAt);
+          createJournal: async (runsDirectory, plan, startedAt, runId) => {
+            const journal = await createRunJournal(runsDirectory, plan, startedAt, runId);
             journalPath = journal.path;
             return {
               ...journal,

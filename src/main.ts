@@ -11,6 +11,7 @@ import {
   executeConfigValidateCommand,
 } from "./commands/config.js";
 import { executeHistoryCommand } from "./commands/history.js";
+import { executeLockRecoverCommand, executeLockStatusCommand } from "./commands/lock.js";
 import { executePlanCommand } from "./commands/plan.js";
 import {
   executeShowPlanCommand,
@@ -215,6 +216,37 @@ export function buildProgram(): Command {
         process.stdout.write(result.output);
       },
     );
+
+  const lock = program.command("lock").description("Inspect and recover the apply lock.");
+
+  lock
+    .command("status")
+    .description("Inspect the apply lock and its recorded process identity.")
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--json", "emit JSON", false)
+    .action(async (options: { home?: string; stateDir?: string; json: boolean }) => {
+      const result = await executeLockStatusCommand({
+        ...options,
+        home: options.home ?? homedir(),
+      });
+      process.stdout.write(result.output);
+    });
+
+  lock
+    .command("recover")
+    .description("Remove a local lock only after proving its process identity is gone.")
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--yes", "authorize recovery after inspecting the lock", false)
+    .option("--json", "emit JSON", false)
+    .action(async (options: { home?: string; stateDir?: string; yes: boolean; json: boolean }) => {
+      const result = await executeLockRecoverCommand({
+        ...options,
+        home: options.home ?? homedir(),
+      });
+      process.stdout.write(result.output);
+    });
 
   return program;
 }

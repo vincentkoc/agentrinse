@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { CleanupPlan } from "../contracts/plan.js";
@@ -64,15 +66,20 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
       );
     }
   }
-  const lock = await acquireApplyLock(layout.locks, plan.planId);
+  const runId = randomUUID();
+  const lock = await acquireApplyLock(layout.locks, {
+    planId: plan.planId,
+    runId,
+    command: "agentrinse apply",
+  });
 
   try {
     const journal = await (options.dependencies?.createJournal ?? createRunJournal)(
       layout.runs,
       plan,
       clock(),
+      runId,
     );
-    const runId = journal.snapshot().runId;
 
     for (const action of plan.actions) {
       const startedAt = clock().toISOString();
