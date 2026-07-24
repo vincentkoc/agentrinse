@@ -12,6 +12,8 @@ type RunProcessCommand = (
 
 export type ProcessIdentityDependencies = {
   runProcessCommand?: RunProcessCommand;
+  readProcessStat?: (pid: number) => Promise<string>;
+  probeProcess?: (pid: number) => "alive" | "dead" | "unknown";
 };
 
 export type ProcessIdentityInspection =
@@ -47,9 +49,15 @@ function parseLinuxStartTime(stat: string): string | undefined {
   return fieldsAfterCommand[19];
 }
 
-async function inspectLinuxProcess(pid: number): Promise<ProcessIdentityInspection> {
+async function inspectLinuxProcess(
+  pid: number,
+  dependencies: ProcessIdentityDependencies,
+): Promise<ProcessIdentityInspection> {
   try {
-    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    const stat =
+      dependencies.readProcessStat === undefined
+        ? await readFile(`/proc/${pid}/stat`, "utf8")
+        : await dependencies.readProcessStat(pid);
     const startTime = parseLinuxStartTime(stat);
     return startTime === undefined
       ? { status: "unknown", reason: `could not parse /proc/${pid}/stat` }
@@ -57,7 +65,10 @@ async function inspectLinuxProcess(pid: number): Promise<ProcessIdentityInspecti
   } catch (error) {
     const code = errorCode(error);
     if (code === "ENOENT" || code === "ESRCH") {
-      return { status: "dead" };
+      const status = (dependencies.probeProcess ?? probePid)(pid);
+      if (status === "dead") {
+        return { status: "dead" };
+      }
     }
     return {
       status: "unknown",
@@ -110,7 +121,7 @@ export async function inspectProcessIdentity(
     return { status: "unknown", reason: `invalid process ID ${pid}` };
   }
   if (platform === "linux") {
-    return inspectLinuxProcess(pid);
+    return inspectLinuxProcess(pid, dependencies);
   }
   if (platform === "darwin") {
     return inspectMacProcess(pid, dependencies);
