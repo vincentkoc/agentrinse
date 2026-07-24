@@ -155,20 +155,21 @@ describe("audit redaction", () => {
     expect(output).toContain("$PATH/<path:");
   });
 
-  it("removes UNC paths from JSON and NDJSON output", () => {
-    const redacted = redactAuditValue(
-      {
-        message: String.raw`could not inspect \\server\private-share\project`,
-      },
-      HOME,
-      "fixture-salt",
-    );
+  it("removes Windows network and rooted paths from JSON and NDJSON output", () => {
+    for (const message of [
+      String.raw`could not inspect \\server\private-share\project`,
+      String.raw`could not inspect \Users\alice\secret-project`,
+    ]) {
+      const redacted = redactAuditValue({ message }, HOME, "fixture-salt");
 
-    for (const output of [jsonDocument(redacted), ndjsonRecord(redacted)]) {
-      expect(output).not.toContain("server");
-      expect(output).not.toContain("private-share");
-      expect(output).not.toContain("project");
-      expect(output).toContain("$PATH/<path:");
+      for (const output of [jsonDocument(redacted), ndjsonRecord(redacted)]) {
+        expect(output).not.toContain("server");
+        expect(output).not.toContain("private-share");
+        expect(output).not.toContain("Users");
+        expect(output).not.toContain("alice");
+        expect(output).not.toContain("project");
+        expect(output).toContain("$PATH/<path:");
+      }
     }
   });
 
