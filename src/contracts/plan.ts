@@ -16,11 +16,13 @@ export const cleanupPlanSchema = z
     auditDigest: z.string().min(1),
     actions: z.array(plannedActionSchema),
     expectedReclaimBytes: z.number().int().nonnegative(),
+    pendingQuarantineBytes: z.number().int().nonnegative().optional(),
   })
   .superRefine((plan, context) => {
     const actionIds = new Set<string>();
     const targetPaths = new Set<string>();
     let expectedReclaimBytes = 0;
+    let pendingQuarantineBytes = 0;
 
     for (const [index, action] of plan.actions.entries()) {
       if (actionIds.has(action.actionId)) {
@@ -41,7 +43,16 @@ export const cleanupPlanSchema = z
       }
       targetPaths.add(action.target.path);
 
-      if (action.expectedReclaimBytes !== action.target.measuredBytes) {
+      if (action.type === "worktree.quarantine") {
+        if (action.pendingQuarantineBytes !== action.target.measuredBytes) {
+          context.addIssue({
+            code: "custom",
+            message: "quarantine estimate must match the measured target bytes",
+            path: ["actions", index, "pendingQuarantineBytes"],
+          });
+        }
+        pendingQuarantineBytes += action.pendingQuarantineBytes;
+      } else if (action.expectedReclaimBytes !== action.target.measuredBytes) {
         context.addIssue({
           code: "custom",
           message: "action reclaim estimate must match the measured target bytes",
@@ -56,6 +67,13 @@ export const cleanupPlanSchema = z
         code: "custom",
         message: "plan reclaim estimate must equal the sum of its actions",
         path: ["expectedReclaimBytes"],
+      });
+    }
+    if ((plan.pendingQuarantineBytes ?? 0) !== pendingQuarantineBytes) {
+      context.addIssue({
+        code: "custom",
+        message: "plan pending quarantine bytes must equal the sum of recoverable actions",
+        path: ["pendingQuarantineBytes"],
       });
     }
   });

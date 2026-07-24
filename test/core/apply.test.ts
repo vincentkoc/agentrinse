@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { AgentRinseConfig } from "../../src/config/schema.js";
-import type { ArtifactRemoveAction } from "../../src/contracts/action.js";
+import type { ArtifactRemoveAction, WorktreeQuarantineAction } from "../../src/contracts/action.js";
 import type { CleanupPlan } from "../../src/contracts/plan.js";
 import { ArtifactExecutionError, executeArtifactRemove } from "../../src/core/artifact-executor.js";
 import { ApplySafetyError, applyCleanupPlan } from "../../src/core/apply.js";
@@ -23,6 +23,7 @@ import { sha256Json } from "../../src/core/digest.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
+import { WorktreeExecutionError } from "../../src/core/worktree-executor.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import { createRunJournal } from "../../src/state/run-journal.js";
 
@@ -90,6 +91,79 @@ async function fixture(): Promise<{
   return { action, config, plan, project, stateRoot, target };
 }
 
+async function worktreeFixture(): Promise<{
+  action: WorktreeQuarantineAction;
+  config: AgentRinseConfig;
+  plan: CleanupPlan;
+  stateRoot: string;
+}> {
+  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-worktree-apply-")));
+  await assertDestructiveFixtureRoot(home);
+  const repository = join(home, "repo");
+  const commonDir = join(repository, ".git");
+  const target = join(home, "task");
+  const stateRoot = join(home, "state");
+  await mkdir(commonDir, { recursive: true });
+  await mkdir(target);
+  await writeFile(join(target, "fixture.txt"), "quarantine");
+  const stats = await stat(target);
+  const measurement = await measurePath(target, { maxEntries: 100 });
+  const config: AgentRinseConfig = {
+    ...structuredClone(DEFAULT_CONFIG),
+    adapters: {
+      ...structuredClone(DEFAULT_CONFIG.adapters),
+      git: { enabled: true, root: repository },
+    },
+    plan: {
+      ...structuredClone(DEFAULT_CONFIG.plan),
+      maxRisk: "recoverable",
+    },
+  };
+  const action: WorktreeQuarantineAction = {
+    actionId: "worktree.quarantine:fixture",
+    type: "worktree.quarantine",
+    adapter: "git",
+    resourceId: "git:git-worktree:fixture",
+    risk: "recoverable",
+    description: "quarantine fixture worktree",
+    expectedReclaimBytes: 0,
+    pendingQuarantineBytes: measurement.bytes,
+    quarantineTtlMinutes: 60,
+    target: {
+      path: target,
+      repositoryCommonDir: commonDir,
+      head: "a".repeat(40),
+      branch: "refs/heads/feature",
+      device: stats.dev,
+      inode: stats.ino,
+      mtimeMs: stats.mtimeMs,
+      measuredBytes: measurement.bytes,
+      newestMtimeMs: measurement.newestMtimeMs,
+      fingerprint: measurement.fingerprint,
+    },
+  };
+  const content: Omit<CleanupPlan, "planId"> = {
+    schemaVersion: 1,
+    auditId: "audit-worktree",
+    home,
+    createdAt: "2026-07-23T00:00:00.000Z",
+    expiresAt: "2026-07-23T00:30:00.000Z",
+    policyVersion: 1,
+    riskCeiling: "recoverable",
+    configDigest: sha256Json(config),
+    auditDigest: "audit",
+    actions: [action],
+    expectedReclaimBytes: 0,
+    pendingQuarantineBytes: measurement.bytes,
+  };
+  return {
+    action,
+    config,
+    plan: { ...content, planId: cleanupPlanId(content) },
+    stateRoot,
+  };
+}
+
 const CLOCK = () => new Date("2026-07-23T00:15:00.000Z");
 
 async function exists(path: string): Promise<boolean> {
@@ -136,6 +210,188 @@ describe("applyCleanupPlan", () => {
     expect(await exists(value.target)).toBe(false);
     expect(await readFile(join(value.project, "source.ts"), "utf8")).toBe("keep");
     expect(await readJsonFile(result.journalPath)).toEqual(result.run);
+  });
+
+  it("dispatches and journals recoverable worktree quarantine", async () => {
+    const value = await worktreeFixture();
+    const worktreeProtectionRoots = vi.fn(async () => []);
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidateWorktree: async () => ({
+          status: "valid",
+          report: {
+            schemaVersion: 1,
+            auditId: "fresh-audit",
+            startedAt: "2026-07-23T00:14:00.000Z",
+            completedAt: "2026-07-23T00:14:01.000Z",
+            home: value.plan.home,
+            probes: [],
+            findings: [],
+            diagnostics: [],
+          },
+          action: value.action,
+        }),
+        worktreeProtectionRoots,
+        executeWorktree: async (action, options) => {
+          await options.dependencies?.revalidateProtection?.();
+          return {
+            quarantineEntryId: options.entryId,
+            quarantinePath: join(value.plan.home, ".agentrinse-quarantine", options.entryId),
+            recoveryRef: `refs/agentrinse/quarantine/${options.runId}/fixture`,
+            quarantinedBytes: action.target.measuredBytes,
+            manifestPath: join(options.quarantineDirectory, `${options.entryId}.json`),
+          };
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("completed");
+    expect(result.run.reclaimedBytes).toBe(0);
+    expect(result.run.quarantinedBytes).toBe(value.action.target.measuredBytes);
+    expect(worktreeProtectionRoots).toHaveBeenCalledOnce();
+    expect(result.run.actions[0]).toMatchObject({
+      type: "worktree.quarantine",
+      status: "applied",
+      reclaimedBytes: 0,
+      quarantinedBytes: value.action.target.measuredBytes,
+    });
+  });
+
+  it("reloads and unions protection config at the quarantine boundary", async () => {
+    const value = await worktreeFixture();
+    const currentConfig = structuredClone(value.config);
+    currentConfig.pins = [{ path: value.action.target.path }];
+    const loadCurrentConfig = vi.fn(async () => currentConfig);
+    const worktreeProtectionRoots = vi.fn(
+      async (_action: WorktreeQuarantineAction, _home: string, config: AgentRinseConfig) =>
+        config.pins.some((pin) => "path" in pin && pin.path === value.action.target.path)
+          ? [
+              {
+                code: "user-pin",
+                source: "config",
+                observedAt: "2026-07-23T00:15:00.000Z",
+                detail: "The worktree was pinned after apply started.",
+              },
+            ]
+          : [],
+    );
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        loadCurrentConfig,
+        revalidateWorktree: async () => ({
+          status: "valid",
+          report: {
+            schemaVersion: 1,
+            auditId: "fresh-audit",
+            startedAt: "2026-07-23T00:14:00.000Z",
+            completedAt: "2026-07-23T00:14:01.000Z",
+            home: value.plan.home,
+            probes: [],
+            findings: [],
+            diagnostics: [],
+          },
+          action: value.action,
+        }),
+        worktreeProtectionRoots,
+        executeWorktree: async (_action, options) => {
+          try {
+            await options.dependencies?.revalidateProtection?.();
+          } catch (error) {
+            throw new WorktreeExecutionError(
+              "worktree became protected before quarantine",
+              "skipped-stale",
+              undefined,
+              {
+                cause: error,
+                diagnosticCode: "WORKTREE_PROTECTION_CHANGED",
+              },
+            );
+          }
+          throw new Error("unreachable");
+        },
+      },
+    });
+
+    expect(loadCurrentConfig).toHaveBeenCalledOnce();
+    expect(worktreeProtectionRoots).toHaveBeenCalledTimes(2);
+    expect(worktreeProtectionRoots.mock.calls.map((call) => call[2])).toEqual([
+      value.config,
+      currentConfig,
+    ]);
+    expect(result.run.status).toBe("completed");
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: {
+        code: "WORKTREE_PROTECTION_CHANGED",
+      },
+    });
+  });
+
+  it("accounts for bytes left in partial worktree quarantine", async () => {
+    const value = await worktreeFixture();
+    const partialEntry = {
+      schemaVersion: 1 as const,
+      entryId: "partial-entry",
+      runId: "partial-run",
+      actionId: value.action.actionId,
+      resourceId: value.action.resourceId,
+      status: "partial" as const,
+      originalPath: value.action.target.path,
+      quarantinePath: join(value.plan.home, ".agentrinse-quarantine", "partial-entry"),
+      recoveryRef: "refs/agentrinse/quarantine/partial-run/fixture",
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: value.config.audit.maxEntries,
+      target: value.action.target,
+    };
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidateWorktree: async () => ({
+          status: "valid",
+          report: {
+            schemaVersion: 1,
+            auditId: "fresh-audit",
+            startedAt: "2026-07-23T00:14:00.000Z",
+            completedAt: "2026-07-23T00:14:01.000Z",
+            home: value.plan.home,
+            probes: [],
+            findings: [],
+            diagnostics: [],
+          },
+          action: value.action,
+        }),
+        executeWorktree: async () => {
+          throw new WorktreeExecutionError(
+            "injected partial quarantine",
+            "partially-applied",
+            partialEntry,
+            { quarantinedBytes: value.action.target.measuredBytes },
+          );
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("failed");
+    expect(result.run.quarantinedBytes).toBe(value.action.target.measuredBytes);
+    expect(result.run.actions[0]).toMatchObject({
+      status: "partially-applied",
+      quarantinedBytes: value.action.target.measuredBytes,
+    });
   });
 
   it("records changed resources as skipped without mutation", async () => {

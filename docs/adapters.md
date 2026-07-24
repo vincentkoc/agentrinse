@@ -1,7 +1,8 @@
 # Adapter Matrix
 
-All provider, Git, and Docker adapters are read-only. Artifact cleanup is
-separately scoped to explicitly configured rebuildable directories.
+Provider and Docker adapters are read-only. Artifact cleanup is scoped to
+explicitly configured rebuildable directories. The Git adapter can emit one
+recoverable whole-worktree action when every safety gate is proven.
 
 | Adapter        | Current capability                                         | Protected state |
 | -------------- | ---------------------------------------------------------- | --------------- |
@@ -13,7 +14,7 @@ separately scoped to explicitly configured rebuildable directories.
 | OpenCode       | database, logs, snapshots                                  | all             |
 | Grok Build     | version-gated data root                                    | all             |
 | Runtime        | opt-in selected executable and Claude native versions      | all             |
-| Git            | explicit repository worktree porcelain                     | all             |
+| Git            | worktree audit and recoverable linked-worktree quarantine  | conditional     |
 | Docker         | opt-in structured image/container inventory                | all             |
 | Artifacts      | exact configured rebuildable directories                   | conditional     |
 
@@ -64,8 +65,14 @@ directory-level size reporting.
 
 The Git adapter is disabled by default and requires an explicit repository
 root. It uses `git worktree list --porcelain -z`, porcelain v2 status, local
-ref containment, configured remote-tracking refs, operation markers, and live
-process ownership. Whole-worktree removal remains unavailable in `0.2.0`.
+ref containment, configured remote-tracking refs, operation markers, complete
+filesystem measurement, mount inspection, and live process ownership.
+
+Only clean, unlocked, branch-attached, pushed, old, fully measured linked
+worktrees without submodules or reachability roots can produce
+`worktree.quarantine`. The action is `recoverable`, so the default `safe`
+ceiling excludes it. Quarantine retains a locked Git registration and recovery
+ref until undo or purge.
 
 Codex and Claude metadata roots, explicit config pins, and the closeout
 current-worktree root are shared with artifact classification. A nested

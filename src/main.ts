@@ -16,11 +16,13 @@ import { executeDoctorCommand } from "./commands/doctor.js";
 import { executeHistoryCommand } from "./commands/history.js";
 import { executeLockRecoverCommand, executeLockStatusCommand } from "./commands/lock.js";
 import { executePlanCommand } from "./commands/plan.js";
+import { executePurgeCommand } from "./commands/purge.js";
 import {
   executeShowPlanCommand,
   executeShowResourceCommand,
   executeShowRunCommand,
 } from "./commands/show.js";
+import { executeUndoCommand } from "./commands/undo.js";
 import { CommandInterruptedError } from "./core/interruption.js";
 import { VERSION } from "./version.js";
 
@@ -262,6 +264,76 @@ export function buildProgram(): Command {
         const result = await executeHistoryCommand({
           ...options,
           home: options.home ?? homedir(),
+        });
+        process.stdout.write(result.output);
+      },
+    );
+
+  program
+    .command("undo <run-id>")
+    .description("Restore recoverable actions from a cleanup run.")
+    .option("--action <action-id>", "restore one action from the run")
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--config <path>", "explicit JSON config")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--yes", "authorize non-interactive restore", false)
+    .option("--json", "emit restored quarantine entries", false)
+    .action(
+      async (
+        runId: string,
+        options: {
+          action?: string;
+          home?: string;
+          config?: string;
+          stateDir?: string;
+          yes: boolean;
+          json: boolean;
+        },
+      ) => {
+        const result = await executeUndoCommand({
+          runId,
+          home: options.home ?? homedir(),
+          yes: options.yes,
+          json: options.json,
+          ...(options.action === undefined ? {} : { actionId: options.action }),
+          ...(options.config === undefined ? {} : { config: options.config }),
+          ...(options.stateDir === undefined ? {} : { stateDir: options.stateDir }),
+        });
+        process.stdout.write(result.output);
+      },
+    );
+
+  program
+    .command("purge")
+    .description("Preview or permanently remove quarantined worktrees.")
+    .option("--expired", "select expired live quarantine entries", false)
+    .option("--run <run-id>", "select live quarantine entries from one run")
+    .option("--apply", "perform the destructive purge", false)
+    .option("--home <path>", "home directory used for state resolution")
+    .option("--config <path>", "explicit JSON config")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--yes", "authorize non-interactive purge", false)
+    .option("--json", "emit purge selection or results", false)
+    .action(
+      async (options: {
+        expired: boolean;
+        run?: string;
+        apply: boolean;
+        home?: string;
+        config?: string;
+        stateDir?: string;
+        yes: boolean;
+        json: boolean;
+      }) => {
+        const result = await executePurgeCommand({
+          home: options.home ?? homedir(),
+          expired: options.expired,
+          apply: options.apply,
+          yes: options.yes,
+          json: options.json,
+          ...(options.config === undefined ? {} : { config: options.config }),
+          ...(options.stateDir === undefined ? {} : { stateDir: options.stateDir }),
+          ...(options.run === undefined ? {} : { runId: options.run }),
         });
         process.stdout.write(result.output);
       },

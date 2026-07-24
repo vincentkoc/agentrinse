@@ -247,7 +247,8 @@ AgentRinse succeeds when:
 - a user can tell why a worktree is protected without reading source code
 - repeated audits with unchanged inputs produce equivalent findings
 - stale worktrees with active ownership are never proposed for deletion
-- dirty, untracked, stashed, detached, or unpushed work is protected
+- dirty, untracked, ignored, status-suppressed, stashed, detached, or unpushed
+  work is protected
 - an interrupted run can be inspected and safely resumed or rolled back
 - Docker being stopped does not prevent Git and provider audits
 - `--json` remains stable enough for skills and scripts
@@ -1596,7 +1597,8 @@ Resource facts include:
 - filesystem size
 - modification/activity observations
 - Git operation state
-- dirty tracked, staged, and untracked counts
+- dirty tracked, staged, untracked, and ignored counts
+- assume-unchanged and skip-worktree index flags
 - stash count associated with the repository
 - upstream and ahead/behind counts where configured
 - reachability of HEAD from durable refs
@@ -1660,7 +1662,8 @@ Default eligibility:
 
 - linked worktree, not main
 - unlocked
-- clean including untracked files
+- clean including untracked and ignored files
+- no assume-unchanged or skip-worktree index flags
 - no in-progress Git operation
 - no live process ownership
 - no provider root
@@ -3264,6 +3267,68 @@ safe operator loop.
 The supported npm release remains the first distribution target. A formula in
 `vincentkoc/tap` and install/upgrade proof are required before `0.3.0`.
 
+### 2026-07-24: recoverable worktree mutation boundary
+
+`0.3.0` adds exactly one new mutating action: `worktree.quarantine`.
+
+- Eligibility requires a linked, unlocked, clean, terminal worktree with
+  complete filesystem measurement, no ignored files, no status-suppressed
+  index entries, no submodules, no live ownership, no reachability root, no
+  detached state, no unpushed commit, and at least 14 days since the newest
+  measured worktree entry. A worktree named `.agentrinse-quarantine` is
+  protected because that sibling name is reserved for the quarantine
+  container, and the container itself must not be a registered worktree.
+- The action is `recoverable` and is excluded by the default `safe` risk
+  ceiling. Automation must explicitly select `--max-risk recoverable`.
+- Quarantine uses an atomic rename into an owner-only
+  `.agentrinse-quarantine/<entry-id>` directory beside the original worktree.
+  Cross-device copy-and-delete fallback is forbidden.
+- A recovery ref is created before the rename. The moved worktree is repaired
+  through `git worktree repair`, retained as a locked registered worktree, and
+  recorded in an owner-only quarantine manifest.
+- Undo reconciles durable `preparing`, `recovery-ref-created`, and `moved`
+  manifests by inspecting both paths, repairing the actual registration, and
+  preserving or recreating only the exact namespaced recovery ref.
+- Undo reconciles `partial` quarantine manifests only when exactly one known
+  original, quarantine, or purge-isolation path exists and passes full
+  identity, content, registration, lock, process, mount, and ref validation.
+- Mutation verifies the exact `AgentRinse quarantine <entry-id>` lock reason.
+  A foreign or operator-owned Git worktree lock is immutable protection and
+  is checked before any `git worktree repair`. The registration must also be
+  at an exact old or new path owned by the current transition.
+- Undo, rollback, and purge never call Git's unconditional worktree unlock.
+  AgentRinse atomically captures the administrative lock file, verifies its
+  exact ownership reason after capture, restores a foreign replacement, and
+  retains a released owned lock as a small proof marker. An interrupted claim
+  is restored before later validation.
+- Git operation markers are re-read immediately before every quarantine,
+  undo, and purge mutation; clean status alone is not terminal-state proof.
+- Undo conditionally releases its owned lock, atomically renames, repairs,
+  verifies, and only then deletes the exact recovery ref. It never overwrites
+  an occupied destination.
+- Purge is a separate destructive command. It conditionally releases its owned
+  lock, atomically renames to a deterministic same-filesystem isolation path,
+  repairs and repeats full validation there, then invokes clean
+  `git worktree remove` without
+  `--force`; changed or unclean quarantine state is refused and an interrupted
+  isolation failure is rolled back to locked quarantine. Finalization refuses
+  a matching branch and HEAD registration at any unexpected path.
+- Before each destructive purge, AgentRinse reloads configuration and provider
+  workspace metadata under the mutation lock. It rechecks the recorded resource
+  ID, Git ref, original path, quarantine path, and deterministic purge-isolation
+  path against all current reachability roots. A matching pin, provider-managed
+  root, active/recent session, or unknown provider state refuses permanent
+  removal. The purge state machine repeats this refresh immediately before each
+  normal or resumed `git worktree remove`.
+- Quarantine reports zero immediately reclaimed bytes and records the full
+  byte count as pending expiry. The default undo TTL is seven days.
+- macOS and Linux are supported. Native Windows worktree mutation remains
+  blocked until atomic rename and ownership proof are independently proven.
+
+This owner-command sequence was validated on July 24, 2026 against Git 2.54.0
+using a disposable repository, including quarantine repair, lock, undo repair,
+exact recovery-ref deletion, and clean purge.
+
 ## Specification Maintenance
 
 ### Ownership
@@ -3357,7 +3422,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] implement canonical JSON hashing
 - [x] implement initial schema compatibility tests
 - [x] define `0.2.0` reachability facts and roots
-- [ ] define `0.3.0` quarantine, recovery, undo, and purge records
+- [x] define `0.3.0` quarantine, recovery, undo, and purge records
 
 ### Core safety
 
@@ -3388,8 +3453,8 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] Codex and Claude session-to-worktree roots
 - [x] provider-managed worktree and pin roots
 - [ ] Docker safe cleanup
-- [ ] worktree quarantine
-- [ ] worktree undo
+- [x] worktree quarantine
+- [x] worktree undo
 - [ ] offline database compaction
 
 ### Documentation and release

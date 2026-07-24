@@ -41,6 +41,11 @@ export function createCleanupPlan(
     auditDigest,
     actions,
     expectedReclaimBytes: actions.reduce((total, action) => total + action.expectedReclaimBytes, 0),
+    pendingQuarantineBytes: actions.reduce(
+      (total, action) =>
+        total + (action.type === "worktree.quarantine" ? action.pendingQuarantineBytes : 0),
+      0,
+    ),
   };
 
   return cleanupPlanSchema.parse({

@@ -11,6 +11,7 @@ import {
   cleanupPlanSchema,
   cleanupRunSchema,
   doctorReportSchema,
+  quarantineEntrySchema,
 } from "../dist/index.js";
 
 const outputDirectory = join(process.cwd(), "schemas");
@@ -21,6 +22,7 @@ const schemas = [
   ["command-event.schema.json", "command-event", commandEventSchema],
   ["doctor.schema.json", "doctor", doctorReportSchema],
   ["plan.schema.json", "plan", cleanupPlanSchema],
+  ["quarantine.schema.json", "quarantine", quarantineEntrySchema],
   ["run.schema.json", "run", cleanupRunSchema],
 ];
 

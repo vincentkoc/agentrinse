@@ -63,6 +63,10 @@ describe("loadConfig", () => {
           ],
           minBytes: 1,
         },
+        worktrees: {
+          minAgeMinutes: 60,
+          quarantineTtlMinutes: 120,
+        },
         pins: [
           { path: "/tmp/project" },
           { resourceId: "git:git-worktree:fixture" },
@@ -86,6 +90,10 @@ describe("loadConfig", () => {
     ]);
     expect(config.artifacts.minAgeMinutes).toBe(24 * 60);
     expect(config.artifacts.minBytes).toBe(1);
+    expect(config.worktrees).toEqual({
+      minAgeMinutes: 60,
+      quarantineTtlMinutes: 120,
+    });
     expect(config.pins).toEqual([
       { path: "/tmp/project" },
       { resourceId: "git:git-worktree:fixture" },
@@ -176,6 +184,7 @@ describe("loadConfig", () => {
   });
 
   it.each([
+    "refs/agentrinse/quarantine/run/resource",
     "refs/tags/",
     "refs/heads/foo bar",
     "refs/heads/foo..bar",

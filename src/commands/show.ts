@@ -16,14 +16,26 @@ export type ShowCommandResult<T> = {
 };
 
 export function renderRunDetails(run: CleanupRun): string {
-  const lines = [`run ${run.runId}: ${run.status}`, `plan ${run.planId}`, ""];
+  const lines = [
+    `run ${run.runId}: ${run.status}`,
+    `plan ${run.planId}`,
+    `reclaimed ${run.reclaimedBytes} bytes`,
+    `quarantined ${run.quarantinedBytes ?? 0} bytes pending purge`,
+    "",
+  ];
   for (const action of run.actions) {
     lines.push(`${action.status.padEnd(18)} ${action.actionId} ${action.type}`);
     if (action.diagnostic !== undefined) {
       lines.push(`  ${action.diagnostic.code}: ${action.diagnostic.message}`);
     }
-    if (action.isolationPath !== undefined) {
+    if (action.type === "artifacts.remove" && action.isolationPath !== undefined) {
       lines.push(`  isolation: ${action.isolationPath}`);
+    }
+    if (action.type === "worktree.quarantine" && action.quarantinePath !== undefined) {
+      lines.push(`  quarantine: ${action.quarantinePath}`);
+      if (action.recoveryRef !== undefined) {
+        lines.push(`  recovery ref: ${action.recoveryRef}`);
+      }
     }
   }
 

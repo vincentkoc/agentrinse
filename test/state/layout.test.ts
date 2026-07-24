@@ -26,6 +26,7 @@ describe("state layout", () => {
       plans: "/fixture/state/plans",
       locks: "/fixture/state/locks",
       runs: "/fixture/state/runs",
+      quarantine: "/fixture/state/quarantine",
       tombstones: "/fixture/state/tombstones",
     });
   });

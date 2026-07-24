@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { parseGitStatusPorcelainV2 } from "../../src/adapters/git/status.js";
+import {
+  countStatusSuppressedIndexEntries,
+  parseGitStatusPorcelainV2,
+} from "../../src/adapters/git/status.js";
 
 describe("parseGitStatusPorcelainV2", () => {
   it("collects branch, push, staged, modified, untracked, and conflict facts", () => {
@@ -53,5 +56,13 @@ describe("parseGitStatusPorcelainV2", () => {
     expect(() => parseGitStatusPorcelainV2("future record\0")).toThrow(
       "unknown porcelain v2 record",
     );
+  });
+
+  it("counts assume-unchanged and skip-worktree index flags", () => {
+    expect(
+      countStatusSuppressedIndexEntries(
+        ["H tracked.ts", "h assume-unchanged.ts", "S sparse.ts", ""].join("\0"),
+      ),
+    ).toBe(2);
   });
 });

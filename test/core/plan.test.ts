@@ -88,4 +88,68 @@ describe("createCleanupPlan", () => {
     expect(plan.actions).toHaveLength(1);
     expect(plan.expectedReclaimBytes).toBe(1024);
   });
+
+  it("tracks quarantined bytes separately from immediate reclaim", () => {
+    const audit: AuditReport = {
+      ...AUDIT,
+      findings: [
+        {
+          schemaVersion: 1,
+          findingId: "finding-worktree",
+          auditId: AUDIT.auditId,
+          observedAt: AUDIT.completedAt,
+          resource: {
+            id: "git:git-worktree:fixture",
+            adapter: "git",
+            kind: "git-worktree",
+            canonicalKey: "git:/tmp/repo-worktree",
+            displayName: "repo-worktree",
+            path: "/tmp/repo-worktree",
+          },
+          state: "eligible",
+          confidence: "certain",
+          roots: [],
+          facts: {},
+          candidateActions: [
+            {
+              actionId: "action-worktree",
+              type: "worktree.quarantine",
+              adapter: "git",
+              resourceId: "git:git-worktree:fixture",
+              risk: "recoverable",
+              description: "Quarantine inactive linked worktree",
+              expectedReclaimBytes: 0,
+              pendingQuarantineBytes: 2048,
+              quarantineTtlMinutes: 7 * 24 * 60,
+              target: {
+                path: "/tmp/repo-worktree",
+                repositoryCommonDir: "/tmp/repo/.git",
+                head: "a".repeat(40),
+                branch: "refs/heads/feature",
+                device: 1,
+                inode: 2,
+                mtimeMs: 3,
+                measuredBytes: 2048,
+                newestMtimeMs: 4,
+                fingerprint: "b".repeat(64),
+              },
+            },
+          ],
+          measuredBytes: 2048,
+          estimatedReclaimBytes: 0,
+          warnings: [],
+        },
+      ],
+    };
+    const config = {
+      ...DEFAULT_CONFIG,
+      plan: { ...DEFAULT_CONFIG.plan, maxRisk: "recoverable" as const },
+    };
+
+    const plan = createCleanupPlan(audit, config, new Date("2026-07-24T02:00:00.000Z"));
+
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.expectedReclaimBytes).toBe(0);
+    expect(plan.pendingQuarantineBytes).toBe(2048);
+  });
 });

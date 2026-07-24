@@ -28,6 +28,10 @@ export async function loadConfig(path?: string): Promise<AgentRinseConfig> {
       ...DEFAULT_CONFIG.artifacts,
       ...parsed.artifacts,
     },
+    worktrees: {
+      ...DEFAULT_CONFIG.worktrees,
+      ...parsed.worktrees,
+    },
     plan: {
       ...DEFAULT_CONFIG.plan,
       ...parsed.plan,

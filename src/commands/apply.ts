@@ -88,6 +88,7 @@ function renderRun(run: CleanupRun, journalPath: string): string {
     `run ${run.runId}: ${run.status}`,
     `applied ${applied}, skipped ${skipped}, failed ${failed}`,
     `reclaimed ${run.reclaimedBytes} bytes`,
+    `quarantined ${run.quarantinedBytes ?? 0} bytes pending purge`,
     `journal ${journalPath}`,
     "",
   ].join("\n");
@@ -112,6 +113,9 @@ export async function executeApplyCommand(
     config,
     stateRoot: resolveStateRoot(plan.home, options.stateDir),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
+    dependencies: {
+      loadCurrentConfig: async () => (await loadConfigForHome(plan.home, options.config)).config,
+    },
   });
   return {
     run: result.run,

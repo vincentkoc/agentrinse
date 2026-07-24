@@ -32,6 +32,7 @@ export async function createRunJournal(
       status: "pending",
     })),
     reclaimedBytes: 0,
+    quarantinedBytes: 0,
     diagnostics: [],
   });
   const path = join(runsDirectory, `${run.runId}.json`);
@@ -62,6 +63,11 @@ export async function createRunJournal(
         (total, action) => total + (action.reclaimedBytes ?? 0),
         0,
       );
+      run.quarantinedBytes = run.actions.reduce(
+        (total, action) =>
+          total + (action.type === "worktree.quarantine" ? (action.quarantinedBytes ?? 0) : 0),
+        0,
+      );
       return persist();
     },
     async complete(completedAt = new Date()) {
@@ -86,6 +92,11 @@ export async function createRunJournal(
         status: "interrupted",
         reclaimedBytes: run.actions.reduce(
           (total, action) => total + (action.reclaimedBytes ?? 0),
+          0,
+        ),
+        quarantinedBytes: run.actions.reduce(
+          (total, action) =>
+            total + (action.type === "worktree.quarantine" ? (action.quarantinedBytes ?? 0) : 0),
           0,
         ),
         diagnostics: [...run.diagnostics, diagnostic],

@@ -9,10 +9,14 @@ export {
   artifactRemoveActionSchema,
   pathIdentitySchema,
   plannedActionSchema,
+  worktreeIdentitySchema,
+  worktreeQuarantineActionSchema,
   type ArtifactName,
   type ArtifactRemoveAction,
   type PathIdentity,
   type PlannedAction,
+  type WorktreeIdentity,
+  type WorktreeQuarantineAction,
 } from "./contracts/action.js";
 export {
   doctorCheckSchema,
@@ -29,10 +33,18 @@ export {
   type CommandEvent,
 } from "./contracts/output.js";
 export { cleanupPlanSchema, type CleanupPlan } from "./contracts/plan.js";
+export {
+  quarantineEntrySchema,
+  quarantineStatusSchema,
+  type QuarantineEntry,
+  type QuarantineStatus,
+} from "./contracts/quarantine.js";
 export { auditReportSchema, type AdapterProbe, type AuditReport } from "./contracts/report.js";
 export {
   actionExecutionSchema,
+  artifactActionExecutionSchema,
   cleanupRunSchema,
+  worktreeActionExecutionSchema,
   type ActionExecution,
   type CleanupRun,
 } from "./contracts/run.js";

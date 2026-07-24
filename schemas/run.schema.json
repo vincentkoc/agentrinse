@@ -31,83 +31,181 @@
     "actions": {
       "type": "array",
       "items": {
-        "type": "object",
-        "properties": {
-          "actionId": {
-            "type": "string",
-            "minLength": 1
-          },
-          "type": {
-            "type": "string",
-            "const": "artifacts.remove"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "revalidating",
-              "skipped-stale",
-              "applying",
-              "applied",
-              "failed",
-              "rolled-back",
-              "partially-applied"
-            ]
-          },
-          "startedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          },
-          "completedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          },
-          "reclaimedBytes": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "isolationPath": {
-            "type": "string",
-            "minLength": 1
-          },
-          "diagnostic": {
+        "oneOf": [
+          {
             "type": "object",
             "properties": {
-              "severity": {
-                "type": "string",
-                "enum": ["info", "warning", "error"]
-              },
-              "code": {
+              "actionId": {
                 "type": "string",
                 "minLength": 1
               },
-              "message": {
+              "status": {
                 "type": "string",
-                "minLength": 1
+                "enum": [
+                  "pending",
+                  "revalidating",
+                  "skipped-stale",
+                  "applying",
+                  "applied",
+                  "failed",
+                  "rolled-back",
+                  "partially-applied"
+                ]
               },
-              "adapter": {
+              "startedAt": {
                 "type": "string",
-                "minLength": 1
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
               },
-              "resourceId": {
+              "completedAt": {
                 "type": "string",
-                "minLength": 1
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
               },
-              "remediation": {
+              "reclaimedBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "diagnostic": {
+                "type": "object",
+                "properties": {
+                  "severity": {
+                    "type": "string",
+                    "enum": ["info", "warning", "error"]
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adapter": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resourceId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "remediation": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["severity", "code", "message"]
+              },
+              "type": {
+                "type": "string",
+                "const": "artifacts.remove"
+              },
+              "isolationPath": {
                 "type": "string",
                 "minLength": 1
               }
             },
-            "required": ["severity", "code", "message"]
+            "required": ["actionId", "status", "type"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "actionId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "revalidating",
+                  "skipped-stale",
+                  "applying",
+                  "applied",
+                  "failed",
+                  "rolled-back",
+                  "partially-applied"
+                ]
+              },
+              "startedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "completedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              "reclaimedBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "diagnostic": {
+                "type": "object",
+                "properties": {
+                  "severity": {
+                    "type": "string",
+                    "enum": ["info", "warning", "error"]
+                  },
+                  "code": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "message": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "adapter": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "resourceId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "remediation": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": ["severity", "code", "message"]
+              },
+              "type": {
+                "type": "string",
+                "const": "worktree.quarantine"
+              },
+              "quarantineEntryId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "quarantinePath": {
+                "type": "string",
+                "minLength": 1
+              },
+              "recoveryRef": {
+                "type": "string",
+                "minLength": 1
+              },
+              "quarantinedBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": ["actionId", "status", "type"]
           }
-        },
-        "required": ["actionId", "type", "status"]
+        ]
       }
     },
     "reclaimedBytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "quarantinedBytes": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991

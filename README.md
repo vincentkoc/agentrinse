@@ -6,11 +6,11 @@ AgentRinse inventories agent state and developer residue, explains why each
 resource is protected or eligible, creates content-addressed cleanup plans,
 and applies only actions that still pass every safety check.
 
-Version `0.2.0` adds Git reachability proof, live-process and Codex/Claude
-workspace roots, explicit pins, a repository closeout profile, and opt-in
-runtime inventory. Its only mutating action remains removal of exact
-rebuildable artifact directories declared under explicit project roots.
-Provider state, Git worktrees, runtimes, and Docker resources are report-only.
+Version `0.3.0` adds recoverable quarantine for fully proven inactive linked
+Git worktrees. Quarantine is opt-in at the `recoverable` risk ceiling, keeps a
+tested undo path, and reports zero immediate disk reclaim until a separate
+purge. Exact configured rebuildable artifacts remain the only `safe` action.
+Provider state, runtimes, and Docker resources remain report-only.
 
 ## Install
 
@@ -21,10 +21,16 @@ npm install --global agentrinse
 agentrinse --version
 ```
 
+Homebrew:
+
+```bash
+brew install vincentkoc/tap/agentrinse
+```
+
 One-off use also works:
 
 ```bash
-npx agentrinse@0.2.0 doctor
+npx agentrinse@0.3.0 doctor
 ```
 
 ## Quickstart
@@ -51,6 +57,10 @@ Edit the generated JSON and add explicit artifact roots:
     "minAgeMinutes": 1440,
     "minBytes": 67108864,
     "processCheck": "required"
+  },
+  "worktrees": {
+    "minAgeMinutes": 20160,
+    "quarantineTtlMinutes": 10080
   },
   "plan": {
     "ttlMinutes": 30,
@@ -100,7 +110,7 @@ repository's linked worktrees, loads Codex and Claude reachability metadata,
 and ignores unrelated configured artifact projects. It does not infer that a
 task is finished.
 
-After reviewing the summary, a fresh closeout can apply only existing `safe`
+After reviewing the summary, a fresh closeout can apply existing `safe`
 artifact actions:
 
 ```bash
@@ -108,12 +118,30 @@ agentrinse clean --profile closeout --apply
 agentrinse clean --profile closeout --apply --yes --max-risk safe --json
 ```
 
+Whole-worktree quarantine must be selected explicitly:
+
+```bash
+agentrinse clean --profile closeout --max-risk recoverable
+agentrinse clean --profile closeout --max-risk recoverable --apply --yes
+```
+
+Quarantine moves bytes out of the active path but does not reclaim disk.
+Restore or permanently purge the resulting run:
+
+```bash
+agentrinse undo <run-id>
+agentrinse purge --run <run-id>
+agentrinse purge --run <run-id> --apply --yes
+```
+
 On macOS, an installed Mole binary adds external `mo purge --dry-run` and
 `mo clean --dry-run` suggestions. AgentRinse never runs those commands.
 
 ## Mutation Boundary
 
-AgentRinse can remove only these configured artifact names:
+AgentRinse has two mutation classes.
+
+`safe` artifact removal supports only these configured names:
 
 - `node_modules`
 - `dist`
@@ -132,10 +160,21 @@ descendant age, mount boundaries, current working directory ownership,
 same-user processes, and plan expiration. The exact target is atomically moved
 to a same-parent tombstone and verified again before deletion.
 
+`recoverable` worktree quarantine supports only linked, unlocked, clean,
+pushed, branch-attached worktrees with complete measurement, no submodules,
+no live process, no pin or provider root, and sufficient age. A recovery ref
+is created before atomic same-filesystem rename. Git registration is repaired,
+locked, verified, and recorded in an owner-only manifest.
+
+Permanent purge reloads configuration and provider workspace metadata under
+the mutation lock. A current path, resource-ID, or Git-ref pin, provider-managed
+root, active/recent session, or unknown provider state protects the original,
+quarantine, or purge-isolation location and refuses deletion. The refresh runs
+again immediately before every normal or resumed permanent removal.
+
 AgentRinse never removes provider sessions, transcripts, databases,
 credentials, configuration, plugins, skills, memories, Git branches, stashes,
-worktrees, Docker images, containers, networks, volumes, or build cache in
-`0.2.0`.
+Docker images, containers, networks, volumes, or build cache in `0.3.0`.
 
 ## Operations
 
@@ -144,6 +183,9 @@ agentrinse history
 agentrinse show run <run-id>
 agentrinse show plan <plan-id>
 agentrinse show resource <resource-id>
+agentrinse undo <run-id>
+agentrinse purge
+agentrinse purge --expired --apply --yes
 agentrinse lock status
 ```
 
@@ -195,12 +237,12 @@ exact so they can be used for planning.
 
 ## Platform Support
 
-| Platform       | `0.2.0` support                                     |
-| -------------- | --------------------------------------------------- |
-| macOS          | audit and safe artifact apply                       |
-| Linux          | audit and safe artifact apply                       |
-| WSL            | Linux contract inside the WSL filesystem            |
-| native Windows | audit-only; mutation remains blocked before `1.0.0` |
+| Platform       | `0.3.0` support                                         |
+| -------------- | ------------------------------------------------------- |
+| macOS          | audit, artifact removal, worktree quarantine/undo/purge |
+| Linux          | audit, artifact removal, worktree quarantine/undo/purge |
+| WSL            | Linux contract inside the WSL filesystem                |
+| native Windows | audit-only; mutation remains blocked before `1.0.0`     |
 
 Git and `lsof` are required for the complete diagnostic and process-ownership
 contract. Docker is optional. Doctor can detect the optional external Mole

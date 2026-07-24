@@ -12,6 +12,19 @@ function isMissing(error: unknown): boolean {
 }
 
 export async function listJsonRecords<T>(directory: string, schema: ZodType<T>): Promise<T[]> {
+  return (await listJsonRecordFiles(directory, schema)).map((record) => record.value);
+}
+
+export type JsonRecordFile<T> = {
+  name: string;
+  path: string;
+  value: T;
+};
+
+export async function listJsonRecordFiles<T>(
+  directory: string,
+  schema: ZodType<T>,
+): Promise<JsonRecordFile<T>[]> {
   let names: string[];
   try {
     names = await readdir(directory);
@@ -22,9 +35,14 @@ export async function listJsonRecords<T>(directory: string, schema: ZodType<T>):
     throw error;
   }
 
-  const records: T[] = [];
+  const records: JsonRecordFile<T>[] = [];
   for (const name of names.filter((entry) => entry.endsWith(".json")).sort()) {
-    records.push(schema.parse(await readJsonFile(resolve(directory, name))));
+    const path = resolve(directory, name);
+    records.push({
+      name,
+      path,
+      value: schema.parse(await readJsonFile(path)),
+    });
   }
   return records;
 }

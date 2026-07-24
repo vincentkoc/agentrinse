@@ -15,6 +15,7 @@ export type AuditAdapterRegistryOptions = {
   providerInventory?: boolean;
   roots?: ReachabilityRoot[];
   environment?: NodeJS.ProcessEnv;
+  reachability?: ReachabilityIndex;
 };
 
 export function createAuditAdapters(
@@ -22,7 +23,7 @@ export function createAuditAdapters(
   platform: NodeJS.Platform = process.platform,
   options: AuditAdapterRegistryOptions = {},
 ): AuditAdapter[] {
-  const reachability = new ReachabilityIndex();
+  const reachability = options.reachability ?? new ReachabilityIndex();
   const gitEnabled = config.adapters.git?.enabled === true;
   for (const root of options.roots ?? []) {
     reachability.add(root);
@@ -70,6 +71,11 @@ export function createAuditAdapters(
         undefined,
         undefined,
         reachability,
+        {
+          ...config.audit,
+          ...config.worktrees,
+          platform,
+        },
       ),
     );
   }

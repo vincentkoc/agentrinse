@@ -25,7 +25,7 @@ schemas.
 {
   "schemaVersion": 1,
   "command": "audit",
-  "agentrinseVersion": "0.2.0",
+  "agentrinseVersion": "0.3.0",
   "startedAt": "2026-07-24T00:00:00.000Z",
   "completedAt": "2026-07-24T00:00:01.000Z",
   "status": "ok",
@@ -35,7 +35,8 @@ schemas.
 ```
 
 The public JSON Schemas are shipped under `schemas/`, including command
-envelopes, command events, audits, plans, runs, and doctor reports.
+envelopes, command events, audits, plans, runs, quarantine manifests, and
+doctor reports.
 
 ## Audit NDJSON
 
@@ -94,7 +95,7 @@ resource is skipped rather than substituted.
 
 ## Exit Status
 
-Current `0.2.0` behavior:
+Current `0.3.0` behavior:
 
 | Code  | Meaning                                      |
 | ----- | -------------------------------------------- |
@@ -138,6 +139,24 @@ agentrinse clean --profile closeout --apply --yes --max-risk safe --json
 
 The profile does not infer that work is complete. Call it only after the task
 has landed, been handed off, or otherwise reached a terminal state.
+
+Recoverable worktree selection must be explicit:
+
+```bash
+agentrinse clean --profile closeout --max-risk recoverable
+agentrinse clean --profile closeout --max-risk recoverable --apply --yes --json
+```
+
+Machine output separates `reclaimedBytes` from `quarantinedBytes`. A
+quarantined worktree has zero immediate reclaim until a separate purge.
+
+Undo and purge machine modes also require explicit authorization:
+
+```bash
+agentrinse undo <run-id> --yes --json
+agentrinse purge --expired --apply --yes --json
+agentrinse purge --run <run-id> --apply --yes --json
+```
 
 On macOS, an installed Mole binary adds two external suggestions:
 `mo purge --dry-run` and `mo clean --dry-run`. AgentRinse does not execute or
