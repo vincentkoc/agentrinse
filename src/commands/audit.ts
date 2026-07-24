@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import { createAuditAdapters } from "../adapters/registry.js";
-import { loadConfig } from "../config/load.js";
+import { loadConfigForHome } from "../config/load.js";
 import type { AuditReport } from "../contracts/report.js";
 import { runAudit } from "../core/audit.js";
 import { renderAudit } from "../output.js";
@@ -22,9 +22,10 @@ export type AuditCommandResult = {
 export async function executeAuditCommand(
   options: AuditCommandOptions,
 ): Promise<AuditCommandResult> {
-  const config = await loadConfig(options.config);
+  const home = resolve(options.home);
+  const { config } = await loadConfigForHome(home, options.config);
   const report = await runAudit({
-    home: resolve(options.home),
+    home,
     config,
     adapters: createAuditAdapters(config),
   });

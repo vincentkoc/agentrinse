@@ -36,3 +36,22 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
     throw error;
   }
 }
+
+export async function writeJsonExclusive(path: string, value: unknown): Promise<void> {
+  const directory = dirname(path);
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await chmod(directory, 0o700);
+
+  const handle = await open(path, "wx", 0o600);
+  try {
+    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await handle.sync();
+    await handle.close();
+    await chmod(path, 0o600);
+    await syncDirectory(directory);
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(path, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}

@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 
-import { loadConfig } from "../config/load.js";
+import { loadConfigForHome } from "../config/load.js";
 import { cleanupPlanSchema } from "../contracts/plan.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { applyCleanupPlan } from "../core/apply.js";
@@ -65,7 +65,7 @@ export async function executeApplyCommand(
 
   const input = await readJsonFile(resolve(options.plan));
   const plan = cleanupPlanSchema.parse(input);
-  const config = await loadConfig(options.config);
+  const { config } = await loadConfigForHome(plan.home, options.config);
 
   if (!options.yes && !(await confirmApply(plan.actions.length))) {
     throw new Error("apply cancelled");

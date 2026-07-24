@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { loadConfig } from "../config/load.js";
+import { loadConfigForHome } from "../config/load.js";
 import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import { auditReportSchema } from "../contracts/report.js";
 import { createCleanupPlan } from "../core/plan.js";
@@ -19,7 +19,7 @@ export type PlanCommandResult = {
 
 export async function executePlanCommand(options: PlanCommandOptions): Promise<PlanCommandResult> {
   const audit = auditReportSchema.parse(await readJsonFile(resolve(options.audit)));
-  const config = await loadConfig(options.config);
+  const { config } = await loadConfigForHome(audit.home, options.config);
   const plan = cleanupPlanSchema.parse(createCleanupPlan(audit, config));
 
   if (options.output !== undefined) {

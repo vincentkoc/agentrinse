@@ -1,8 +1,15 @@
 import { Command } from "commander";
+import { homedir } from "node:os";
 
 import { executeAuditCommand } from "./commands/audit.js";
 import { renderAdapters } from "./commands/adapters.js";
 import { executeApplyCommand } from "./commands/apply.js";
+import {
+  executeConfigInitCommand,
+  executeConfigPathCommand,
+  executeConfigShowCommand,
+  executeConfigValidateCommand,
+} from "./commands/config.js";
 import { executePlanCommand } from "./commands/plan.js";
 import { VERSION } from "./version.js";
 
@@ -15,12 +22,15 @@ export function buildProgram(): Command {
   program
     .command("audit")
     .description("Inventory a home without mutating it.")
-    .requiredOption("--home <path>", "home directory to audit")
+    .option("--home <path>", "home directory to audit")
     .option("--config <path>", "explicit JSON config")
     .option("--json", "emit the versioned JSON report", false)
     .option("--output <path>", "write the JSON report atomically")
-    .action(async (options: { home: string; config?: string; json: boolean; output?: string }) => {
-      const result = await executeAuditCommand(options);
+    .action(async (options: { home?: string; config?: string; json: boolean; output?: string }) => {
+      const result = await executeAuditCommand({
+        ...options,
+        home: options.home ?? homedir(),
+      });
       process.stdout.write(result.output);
     });
 
@@ -64,6 +74,61 @@ export function buildProgram(): Command {
     .description("List adapter maturity and ownership.")
     .action(() => {
       process.stdout.write(renderAdapters());
+    });
+
+  const config = program.command("config").description("Inspect and initialize configuration.");
+
+  config
+    .command("path")
+    .description("Print the resolved configuration path.")
+    .option("--home <path>", "home directory used for default resolution")
+    .option("--config <path>", "explicit JSON config")
+    .action((options: { home?: string; config?: string }) => {
+      process.stdout.write(
+        executeConfigPathCommand({
+          home: options.home ?? homedir(),
+          config: options.config,
+        }).output,
+      );
+    });
+
+  config
+    .command("init")
+    .description("Create a default configuration without overwriting.")
+    .option("--home <path>", "home directory used for default resolution")
+    .option("--config <path>", "explicit JSON config")
+    .action(async (options: { home?: string; config?: string }) => {
+      const result = await executeConfigInitCommand({
+        home: options.home ?? homedir(),
+        config: options.config,
+      });
+      process.stdout.write(result.output);
+    });
+
+  config
+    .command("show")
+    .description("Print the effective configuration.")
+    .option("--home <path>", "home directory used for default resolution")
+    .option("--config <path>", "explicit JSON config")
+    .action(async (options: { home?: string; config?: string }) => {
+      const result = await executeConfigShowCommand({
+        home: options.home ?? homedir(),
+        config: options.config,
+      });
+      process.stdout.write(result.output);
+    });
+
+  config
+    .command("validate")
+    .description("Validate an existing configuration file.")
+    .option("--home <path>", "home directory used for default resolution")
+    .option("--config <path>", "explicit JSON config")
+    .action(async (options: { home?: string; config?: string }) => {
+      const result = await executeConfigValidateCommand({
+        home: options.home ?? homedir(),
+        config: options.config,
+      });
+      process.stdout.write(result.output);
     });
 
   return program;
