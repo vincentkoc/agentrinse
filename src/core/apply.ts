@@ -197,6 +197,9 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
     }
 
     const run = await journal.complete(clock());
+    if (run.status === "completed") {
+      throwIfInterrupted(options.signal);
+    }
     return { plan, run, journalPath: journal.path };
   } catch (error) {
     if (error instanceof CommandInterruptedError && journal !== undefined) {
