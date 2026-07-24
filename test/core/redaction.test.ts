@@ -155,6 +155,20 @@ describe("audit redaction", () => {
     expect(output).toContain("$PATH/<path:");
   });
 
+  it("removes complete paths containing line breaks", () => {
+    const redacted = redactAuditValue(
+      { message: "could not inspect /Users/alice/Secret\nProject/file" },
+      HOME,
+      "fixture-salt",
+    );
+    const output = JSON.stringify(redacted);
+
+    expect(output).not.toContain("Secret");
+    expect(output).not.toContain("Project");
+    expect(output).not.toContain("file");
+    expect(output).toContain("$PATH/<path:");
+  });
+
   it("removes Windows network and rooted paths from JSON and NDJSON output", () => {
     for (const message of [
       String.raw`could not inspect \\server\private-share\project`,

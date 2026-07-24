@@ -59,10 +59,14 @@ function replacePathMatch(matched: string, context: RedactionContext): string {
 
 function redactText(value: string, context: RedactionContext): string {
   let output = value;
-  output = output.replace(/\\\\.*/gu, (matched) => replacePathMatch(matched, context));
-  output = output.replace(/(?<!\\)\\(?!\\).*/gu, (matched) => replacePathMatch(matched, context));
-  output = output.replace(/(?<![$\w>])\/.*/gu, (matched) => replacePathMatch(matched, context));
-  return output.replace(/\b[A-Za-z]:\\.*/gu, (matched) => replacePathMatch(matched, context));
+  output = output.replace(/\\\\[\s\S]*/gu, (matched) => replacePathMatch(matched, context));
+  output = output.replace(/(?<!\\)\\(?!\\)[\s\S]*/gu, (matched) =>
+    replacePathMatch(matched, context),
+  );
+  output = output.replace(/(?<![$\w>])\/[\s\S]*/gu, (matched) =>
+    replacePathMatch(matched, context),
+  );
+  return output.replace(/\b[A-Za-z]:\\[\s\S]*/gu, (matched) => replacePathMatch(matched, context));
 }
 
 function redactValue(value: unknown, context: RedactionContext, key?: string): unknown {
