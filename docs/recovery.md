@@ -60,6 +60,9 @@ still exists, it verifies that path, removes only the exact recovery ref when
 present, and records `restored`. If the atomic move already happened, it
 repairs and validates the quarantine path, recreates only the exact namespaced
 recovery ref when missing, relocks the worktree, then completes normal undo.
+Every recovery mutation requires either an unlocked registration at the
+expected transition or the exact `AgentRinse quarantine <entry-id>` lock.
+AgentRinse never unlocks a worktree carrying an operator or third-party lock.
 
 ## Purge Quarantine
 
@@ -84,6 +87,11 @@ unlocks it, atomically renames it to a deterministic same-filesystem isolation
 path, repairs and revalidates the Git registration there, invokes
 `git worktree remove` without `--force`, verifies path and registration
 removal, then deletes the exact recovery ref.
+
+If AgentRinse restarts while the worktree is at the purge isolation path, it
+repeats full validation there. A failed validation moves the worktree back to
+the quarantine path, repairs and relocks it with the exact AgentRinse lock
+reason, and records the entry as retryable instead of leaving it isolated.
 
 The root `.git` control file is excluded from worktree content fingerprints
 because `git worktree repair` owns and rewrites it. Ignored files and every

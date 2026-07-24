@@ -110,18 +110,39 @@ function assertManifestPath(entry: QuarantineEntry, options: WorktreeRecoveryOpt
   }
 }
 
+type LockExpectation = "owned" | "owned-or-unlocked" | "unlocked";
+
+function quarantineLockReason(entry: QuarantineEntry): string {
+  return `AgentRinse quarantine ${entry.entryId}`;
+}
+
+function lockMatches(
+  actual: string | undefined,
+  expectation: LockExpectation,
+  entry: QuarantineEntry,
+): boolean {
+  const owned = actual === quarantineLockReason(entry);
+  if (expectation === "owned") {
+    return owned;
+  }
+  if (expectation === "unlocked") {
+    return actual === undefined;
+  }
+  return actual === undefined || owned;
+}
+
 function registrationMatches(
   output: string,
   path: string,
   entry: QuarantineEntry,
-  requireLocked: boolean,
+  lockExpectation: LockExpectation,
 ): boolean {
   return parseWorktreePorcelain(output).some(
     (record) =>
       record.path === path &&
       record.head === entry.target.head &&
       record.branch === entry.target.branch &&
-      (!requireLocked || record.locked !== undefined),
+      lockMatches(record.locked, lockExpectation, entry),
   );
 }
 
@@ -175,7 +196,7 @@ async function validateQuarantinedEntry(
   options: WorktreeRecoveryOptions,
   requireOriginalVacant: boolean,
   acceptedStatuses: QuarantineStatus[] = ["quarantined"],
-  requireLocked = true,
+  lockExpectation: LockExpectation = "owned",
   worktreePath = entry.quarantinePath,
 ): Promise<{
   dependencies: ResolvedRecoveryDependencies;
@@ -296,18 +317,18 @@ async function validateQuarantinedEntry(
       entry,
     );
   }
-  if (requireLocked && registration.locked === undefined) {
-    fail(
-      "QUARANTINE_REGISTRATION_CHANGED",
-      "quarantined worktree is no longer registered and locked",
-    );
+  if (!lockMatches(registration.locked, lockExpectation, entry)) {
+    fail("QUARANTINE_REGISTRATION_CHANGED", "quarantined worktree lock ownership changed");
   }
   const recoveryHead = await readRecoveryRef(entry, dependencies);
   if (recoveryHead === undefined || recoveryHead !== entry.target.head) {
     fail("QUARANTINE_RECOVERY_REF_CHANGED", "recovery ref no longer points to the planned HEAD");
   }
 
-  return { dependencies, registrationLocked: registration.locked !== undefined };
+  return {
+    dependencies,
+    registrationLocked: registration.locked === quarantineLockReason(entry),
+  };
 }
 
 async function deleteRecoveryRef(
@@ -395,7 +416,7 @@ async function verifyLockedRegistration(
     "--porcelain",
     "-z",
   ]);
-  if (!registrationMatches(records, entry.quarantinePath, entry, true)) {
+  if (!registrationMatches(records, entry.quarantinePath, entry, "owned")) {
     throw new WorktreeRecoveryError(
       "QUARANTINE_REGISTRATION_CHANGED",
       "quarantined worktree could not be relocked during recovery",
@@ -411,6 +432,7 @@ async function verifyRecoveryPath(
   path: string,
   identity: QuarantineEntry["target"],
   allowMissingRecoveryRef: boolean,
+  lockExpectation: LockExpectation,
 ): Promise<void> {
   assertSupportedPlatform(entry, options);
   assertManifestPath(entry, options);
@@ -512,7 +534,7 @@ async function verifyRecoveryPath(
     "--porcelain",
     "-z",
   ]);
-  if (!registrationMatches(records, path, entry, false)) {
+  if (!registrationMatches(records, path, entry, lockExpectation)) {
     throw new WorktreeRecoveryError(
       "QUARANTINE_REGISTRATION_CHANGED",
       "recovery worktree registration could not be repaired",
@@ -542,7 +564,15 @@ async function recoverInitialQuarantineForUndo(
     pathExists(entry.quarantinePath, dependencies.inspect),
   ]);
   if (originalExists && !quarantineExists) {
-    await verifyRecoveryPath(entry, options, dependencies, entry.originalPath, entry.target, true);
+    await verifyRecoveryPath(
+      entry,
+      options,
+      dependencies,
+      entry.originalPath,
+      entry.target,
+      true,
+      "unlocked",
+    );
     await deleteRecoveryRef(entry, dependencies);
     return persist(
       {
@@ -561,6 +591,7 @@ async function recoverInitialQuarantineForUndo(
       entry.quarantinePath,
       entry.target,
       true,
+      "owned-or-unlocked",
     );
     await ensureRecoveryRef(entry, dependencies);
     const records = await dependencies.runGit([
@@ -571,14 +602,14 @@ async function recoverInitialQuarantineForUndo(
       "--porcelain",
       "-z",
     ]);
-    if (!registrationMatches(records, entry.quarantinePath, entry, true)) {
+    if (!registrationMatches(records, entry.quarantinePath, entry, "owned")) {
       await dependencies.runGit([
         "--git-dir",
         entry.target.repositoryCommonDir,
         "worktree",
         "lock",
         "--reason",
-        `AgentRinse quarantine ${entry.entryId}`,
+        quarantineLockReason(entry),
         entry.quarantinePath,
       ]);
       await verifyLockedRegistration(entry, dependencies);
@@ -625,7 +656,13 @@ async function resumeInterruptedUndo(
     pathExists(entry.quarantinePath, dependencies.inspect),
   ]);
   if (quarantineExists && !originalExists) {
-    const validated = await validateQuarantinedEntry(entry, options, false, ["restoring"], false);
+    const validated = await validateQuarantinedEntry(
+      entry,
+      options,
+      false,
+      ["restoring"],
+      "owned-or-unlocked",
+    );
     if (!validated.registrationLocked) {
       await dependencies.runGit([
         "--git-dir",
@@ -633,7 +670,7 @@ async function resumeInterruptedUndo(
         "worktree",
         "lock",
         "--reason",
-        `AgentRinse quarantine ${entry.entryId}`,
+        quarantineLockReason(entry),
         entry.quarantinePath,
       ]);
       await verifyLockedRegistration(entry, dependencies);
@@ -650,7 +687,15 @@ async function resumeInterruptedUndo(
           entry,
         );
       })();
-    await verifyRecoveryPath(entry, options, dependencies, entry.originalPath, identity, true);
+    await verifyRecoveryPath(
+      entry,
+      options,
+      dependencies,
+      entry.originalPath,
+      identity,
+      true,
+      "unlocked",
+    );
     await deleteRecoveryRef(entry, dependencies);
     const restored = await persist(
       {
@@ -673,6 +718,87 @@ function purgeIsolationPath(entry: QuarantineEntry): string {
   return `${entry.quarantinePath}.purging`;
 }
 
+async function rollbackPurgeIsolation(
+  entry: QuarantineEntry,
+  isolationPath: string,
+  options: PurgeWorktreeOptions,
+  dependencies: ResolvedRecoveryDependencies,
+  error: unknown,
+): Promise<never> {
+  try {
+    if (
+      (await pathExists(entry.quarantinePath, dependencies.inspect)) ||
+      !(await pathExists(isolationPath, dependencies.inspect))
+    ) {
+      throw new Error("worktree paths are not safe for purge isolation rollback");
+    }
+    await dependencies.move(isolationPath, entry.quarantinePath);
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "repair",
+      entry.quarantinePath,
+    ]);
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "lock",
+      "--reason",
+      quarantineLockReason(entry),
+      entry.quarantinePath,
+    ]);
+    await verifyLockedRegistration(entry, dependencies);
+    const recovered = await persist(
+      {
+        ...entry,
+        status: "quarantined",
+        diagnostic: {
+          severity: "error",
+          code: "QUARANTINE_PURGE_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          adapter: "git",
+          resourceId: entry.resourceId,
+        },
+      },
+      options,
+    );
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_PURGE_FAILED",
+      "purge failed and the isolated worktree was returned to locked quarantine",
+      recovered,
+      { cause: error },
+    );
+  } catch (recoveryError) {
+    if (recoveryError instanceof WorktreeRecoveryError && recoveryError.cause === error) {
+      throw recoveryError;
+    }
+    const partial = await persist(
+      {
+        ...entry,
+        status: "partial",
+        diagnostic: {
+          severity: "error",
+          code: "QUARANTINE_PURGE_PARTIAL",
+          message: `purge left partial state: ${
+            recoveryError instanceof Error ? recoveryError.message : String(recoveryError)
+          }`,
+          adapter: "git",
+          resourceId: entry.resourceId,
+        },
+      },
+      options,
+    ).catch(() => entry);
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_PURGE_PARTIAL",
+      `purge left partial state; inspect ${options.manifestPath}`,
+      partial,
+      { cause: recoveryError },
+    );
+  }
+}
+
 async function resumeInterruptedPurge(
   entry: QuarantineEntry,
   options: PurgeWorktreeOptions,
@@ -691,7 +817,13 @@ async function resumeInterruptedPurge(
     );
   }
   if (quarantineExists) {
-    const validated = await validateQuarantinedEntry(entry, options, false, ["purging"], false);
+    const validated = await validateQuarantinedEntry(
+      entry,
+      options,
+      false,
+      ["purging"],
+      "owned-or-unlocked",
+    );
     if (!validated.registrationLocked) {
       await dependencies.runGit([
         "--git-dir",
@@ -699,7 +831,7 @@ async function resumeInterruptedPurge(
         "worktree",
         "lock",
         "--reason",
-        `AgentRinse quarantine ${entry.entryId}`,
+        quarantineLockReason(entry),
         entry.quarantinePath,
       ]);
       await verifyLockedRegistration(entry, dependencies);
@@ -707,27 +839,31 @@ async function resumeInterruptedPurge(
     return persist({ ...entry, status: "quarantined" }, options);
   }
   if (isolationExists) {
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "repair",
-      isolationPath,
-    ]);
-    await validateQuarantinedEntry(entry, options, false, ["purging"], false, isolationPath);
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "remove",
-      isolationPath,
-    ]);
-    if (await pathExists(isolationPath, dependencies.inspect)) {
-      throw new WorktreeRecoveryError(
-        "QUARANTINE_PURGE_TRANSITION_AMBIGUOUS",
-        "Git reported success but the purge isolation path remains",
-        entry,
-      );
+    try {
+      await dependencies.runGit([
+        "--git-dir",
+        entry.target.repositoryCommonDir,
+        "worktree",
+        "repair",
+        isolationPath,
+      ]);
+      await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
+      await dependencies.runGit([
+        "--git-dir",
+        entry.target.repositoryCommonDir,
+        "worktree",
+        "remove",
+        isolationPath,
+      ]);
+      if (await pathExists(isolationPath, dependencies.inspect)) {
+        throw new WorktreeRecoveryError(
+          "QUARANTINE_PURGE_TRANSITION_AMBIGUOUS",
+          "Git reported success but the purge isolation path remains",
+          entry,
+        );
+      }
+    } catch (error) {
+      return rollbackPurgeIsolation(entry, isolationPath, options, dependencies, error);
     }
   }
   if (!quarantineExists && !isolationExists) {
@@ -820,7 +956,15 @@ export async function undoWorktreeQuarantine(
           entry,
         );
       })();
-    await verifyRecoveryPath(entry, options, dependencies, entry.originalPath, identity, false);
+    await verifyRecoveryPath(
+      entry,
+      options,
+      dependencies,
+      entry.originalPath,
+      identity,
+      false,
+      "unlocked",
+    );
     await deleteRecoveryRef(entry, dependencies);
     finalizing = true;
     entry = await persist(
@@ -865,7 +1009,7 @@ export async function undoWorktreeQuarantine(
           "worktree",
           "lock",
           "--reason",
-          `AgentRinse quarantine ${entry.entryId}`,
+          quarantineLockReason(entry),
           entry.quarantinePath,
         ]);
       }
@@ -957,7 +1101,7 @@ export async function purgeWorktreeQuarantine(
       entry.quarantinePath,
     ]);
     unlocked = true;
-    await validateQuarantinedEntry(entry, options, false, ["purging"], false);
+    await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked");
     if (await pathExists(isolationPath, dependencies.inspect)) {
       throw new Error(`purge isolation path already exists: ${isolationPath}`);
     }
@@ -970,7 +1114,7 @@ export async function purgeWorktreeQuarantine(
       "repair",
       isolationPath,
     ]);
-    await validateQuarantinedEntry(entry, options, false, ["purging"], false, isolationPath);
+    await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,
@@ -1014,21 +1158,7 @@ export async function purgeWorktreeQuarantine(
     }
     try {
       if (isolated) {
-        if (
-          (await pathExists(entry.quarantinePath, dependencies.inspect)) ||
-          !(await pathExists(isolationPath, dependencies.inspect))
-        ) {
-          throw new Error("worktree paths are not safe for purge isolation rollback");
-        }
-        await dependencies.move(isolationPath, entry.quarantinePath);
-        isolated = false;
-        await dependencies.runGit([
-          "--git-dir",
-          entry.target.repositoryCommonDir,
-          "worktree",
-          "repair",
-          entry.quarantinePath,
-        ]);
+        return rollbackPurgeIsolation(entry, isolationPath, options, dependencies, error);
       }
       if (await pathExists(entry.quarantinePath, dependencies.inspect)) {
         if (unlocked) {
@@ -1038,7 +1168,7 @@ export async function purgeWorktreeQuarantine(
             "worktree",
             "lock",
             "--reason",
-            `AgentRinse quarantine ${entry.entryId}`,
+            quarantineLockReason(entry),
             entry.quarantinePath,
           ]);
         }

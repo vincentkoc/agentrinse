@@ -3287,12 +3287,15 @@ The supported npm release remains the first distribution target. A formula in
 - Undo reconciles durable `preparing`, `recovery-ref-created`, and `moved`
   manifests by inspecting both paths, repairing the actual registration, and
   preserving or recreating only the exact namespaced recovery ref.
+- Mutation verifies the exact `AgentRinse quarantine <entry-id>` lock reason.
+  A foreign or operator-owned Git worktree lock is immutable protection.
 - Undo unlocks, atomically renames, repairs, verifies, and only then deletes
   the exact recovery ref. It never overwrites an occupied destination.
 - Purge is a separate destructive command. It unlocks, atomically renames to a
   deterministic same-filesystem isolation path, repairs and repeats full
   validation there, then invokes clean `git worktree remove` without
-  `--force`; changed or unclean quarantine state is refused.
+  `--force`; changed or unclean quarantine state is refused and an interrupted
+  isolation failure is rolled back to locked quarantine.
 - Quarantine reports zero immediately reclaimed bytes and records the full
   byte count as pending expiry. The default undo TTL is seven days.
 - macOS and Linux are supported. Native Windows worktree mutation remains

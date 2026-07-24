@@ -22,6 +22,8 @@ The project follows semantic versioning after its first supported release.
 - quarantine schema validation in `doctor`
 - recovery for interrupted pre-move, recovery-ref-created, and moved
   quarantine transitions
+- exact AgentRinse lock ownership checks and rollback of interrupted purge
+  isolation failures
 - packaged end-to-end quarantine, undo, and clean purge smoke proof
 - Homebrew distribution through `vincentkoc/tap`
 

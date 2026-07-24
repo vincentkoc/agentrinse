@@ -157,11 +157,15 @@ export function worktreeRecoveryRef(action: WorktreeQuarantineAction, runId: str
   return quarantineRecoveryRef(runId, action.resourceId);
 }
 
+function worktreeLockReason(entryId: string): string {
+  return `AgentRinse quarantine ${entryId}`;
+}
+
 function registeredWorktree(
   output: string,
   path: string,
   action: WorktreeQuarantineAction,
-  requireLocked: boolean,
+  expectedLockReason?: string,
 ): boolean {
   const expectedPath = resolve(path);
   return parseWorktreePorcelain(output).some(
@@ -169,7 +173,7 @@ function registeredWorktree(
       resolve(record.path) === expectedPath &&
       record.head === action.target.head &&
       record.branch === action.target.branch &&
-      (!requireLocked || record.locked !== undefined),
+      record.locked === expectedLockReason,
   );
 }
 
@@ -286,7 +290,7 @@ export async function executeWorktreeQuarantine(
       "--porcelain",
       "-z",
     ]);
-    if (!registeredWorktree(before, action.target.path, action, false)) {
+    if (!registeredWorktree(before, action.target.path, action)) {
       throw new WorktreeExecutionError(
         "Git worktree registration changed before quarantine",
         "skipped-stale",
@@ -451,7 +455,7 @@ export async function executeWorktreeQuarantine(
       "worktree",
       "lock",
       "--reason",
-      `AgentRinse quarantine ${entryId}`,
+      worktreeLockReason(entryId),
       quarantinePath,
     ]);
     locked = true;
@@ -463,7 +467,7 @@ export async function executeWorktreeQuarantine(
       "--porcelain",
       "-z",
     ]);
-    if (!registeredWorktree(after, quarantinePath, action, true)) {
+    if (!registeredWorktree(after, quarantinePath, action, worktreeLockReason(entryId))) {
       throw new WorktreeExecutionError(
         "quarantined worktree registration could not be verified",
         "partially-applied",
@@ -590,6 +594,7 @@ export async function executeWorktreeQuarantine(
       resourceId: action.resourceId,
     };
 
+    let rollbackFinalizing = false;
     try {
       if (locked) {
         await runGit([
@@ -625,16 +630,11 @@ export async function executeWorktreeQuarantine(
           "--porcelain",
           "-z",
         ]);
-        if (!registeredWorktree(restored, action.target.path, action, false)) {
+        if (!registeredWorktree(restored, action.target.path, action)) {
           throw new Error("restored Git worktree registration could not be verified");
         }
       }
-      entry = await writeManifest(manifestPath, options.quarantineDirectory, {
-        ...entry,
-        status: "restored",
-        restoredAt: clock().toISOString(),
-        diagnostic,
-      });
+      rollbackFinalizing = true;
       if (refCreated) {
         await runGit([
           "--git-dir",
@@ -646,6 +646,12 @@ export async function executeWorktreeQuarantine(
         ]);
         refCreated = false;
       }
+      entry = await writeManifest(manifestPath, options.quarantineDirectory, {
+        ...entry,
+        status: "restored",
+        restoredAt: clock().toISOString(),
+        diagnostic,
+      });
       throw new WorktreeExecutionError(
         moved ? `${executionError.message}; worktree rollback completed` : executionError.message,
         executionError.outcome === "skipped-stale"
@@ -668,6 +674,17 @@ export async function executeWorktreeQuarantine(
         rollbackError.cause === executionError
       ) {
         throw rollbackError;
+      }
+      if (rollbackFinalizing) {
+        throw new WorktreeExecutionError(
+          "worktree rollback restored the original path but finalization is pending; retry undo",
+          "partially-applied",
+          entry,
+          {
+            cause: rollbackError,
+            diagnosticCode: "WORKTREE_ROLLBACK_FINALIZE_PENDING",
+          },
+        );
       }
       entry = await writeManifest(manifestPath, options.quarantineDirectory, {
         ...entry,
