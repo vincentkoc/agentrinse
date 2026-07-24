@@ -188,19 +188,17 @@ export class RuntimeAuditAdapter implements AuditAdapter {
 
   private async collectClaudeNative(
     context: AuditContext,
-    activeExecutable: string | undefined,
   ): Promise<{ resources: ResourceSnapshot[]; paths: Set<string>; diagnostics: Diagnostic[] }> {
     const root = join(context.home, ".local", "share", "claude", "versions");
+    const launcher = join(context.home, ".local", "bin", "claude");
     const resources: ResourceSnapshot[] = [];
     const paths = new Set<string>();
     const diagnostics: Diagnostic[] = [];
     let activePath: string | undefined;
-    if (activeExecutable !== undefined) {
-      try {
-        activePath = await realpath(activeExecutable);
-      } catch {
-        activePath = undefined;
-      }
+    try {
+      activePath = await realpath(launcher);
+    } catch {
+      activePath = undefined;
     }
 
     try {
@@ -265,7 +263,7 @@ export class RuntimeAuditAdapter implements AuditAdapter {
       }
     }
 
-    const claudeNative = await this.collectClaudeNative(context, resolved.get("claude"));
+    const claudeNative = await this.collectClaudeNative(context);
     resources.push(...claudeNative.resources);
     diagnostics.push(...claudeNative.diagnostics);
 

@@ -30,7 +30,7 @@ describe("RuntimeAuditAdapter", () => {
     await chmod(activeVersion, 0o700);
     await symlink(activeVersion, join(bin, "claude"));
     const adapter = new RuntimeAuditAdapter({
-      environment: { PATH: bin },
+      environment: { PATH: join(context.home, "missing-bin") },
       platform: "linux",
       runVersion: async () => {
         throw new Error("native Claude versions do not need execution");
