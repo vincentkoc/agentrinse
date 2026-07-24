@@ -83,6 +83,10 @@ describe("GitWorktreeAuditAdapter", () => {
       main,
       runner,
       async (path) => path.startsWith(linked) && path.endsWith("MERGE_HEAD"),
+      async (path) =>
+        path === linked
+          ? { status: "busy", matches: [{ pid: 42, source: "cwd", path: linked }] }
+          : { status: "idle", matches: [] },
     );
 
     const probe = await adapter.probe(context);
@@ -95,7 +99,12 @@ describe("GitWorktreeAuditAdapter", () => {
     expect(findings.map((finding) => finding.state)).toEqual(["protected", "protected"]);
     expect(findings[0]?.roots.map((root) => root.code)).toContain("main-worktree");
     expect(findings[1]?.roots.map((root) => root.code)).toEqual(
-      expect.arrayContaining(["dirty-worktree", "git-operation-in-progress", "unpushed-commit"]),
+      expect.arrayContaining([
+        "dirty-worktree",
+        "git-operation-in-progress",
+        "live-process-worktree",
+        "unpushed-commit",
+      ]),
     );
     expect(collection.resources[1]?.facts).toMatchObject({
       staged: 1,
@@ -105,6 +114,8 @@ describe("GitWorktreeAuditAdapter", () => {
       remoteReachable: false,
       unpushed: true,
       operations: ["merge"],
+      processOwnership: "busy",
+      processMatches: [{ pid: 42, source: "cwd" }],
       inspectionComplete: true,
     });
   });

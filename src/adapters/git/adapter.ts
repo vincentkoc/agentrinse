@@ -9,6 +9,10 @@ import type { Finding, RootEvidence } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
+import {
+  findProcessesUsingPath,
+  type ProcessOwnershipResult,
+} from "../../core/process-ownership.js";
 import { parseWorktreePorcelain } from "./porcelain.js";
 import { parseGitStatusPorcelainV2, type GitStatusFacts } from "./status.js";
 
@@ -24,6 +28,7 @@ const OPERATION_MARKERS = [
 
 export type GitRunner = (args: string[]) => Promise<string>;
 export type GitPathExists = (path: string) => Promise<boolean>;
+export type GitProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
 
 async function defaultGitRunner(args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, {
@@ -66,6 +71,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     private readonly root: string | undefined,
     private readonly runGit: GitRunner = defaultGitRunner,
     private readonly pathExists: GitPathExists = defaultPathExists,
+    private readonly processProbe: GitProcessProbe = (path) => findProcessesUsingPath(path),
   ) {}
 
   async probe(_context: AuditContext): Promise<AdapterProbe> {
@@ -144,6 +150,11 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       let containingRefs: string[] = [];
       let remotes: string[] = [];
       const operations = new Set<string>();
+      let processOwnership: ProcessOwnershipResult = {
+        status: "unknown",
+        matches: [],
+        reason: "worktree does not exist",
+      };
 
       if (exists) {
         try {
@@ -181,6 +192,10 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
             if (markerPath !== "" && (await this.pathExists(markerPath))) {
               operations.add(operation);
             }
+          }
+          processOwnership = await this.processProbe(worktreePath);
+          if (processOwnership.status === "unknown") {
+            inspectionComplete = false;
           }
         } catch (error) {
           inspectionComplete = false;
@@ -229,6 +244,16 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           ahead,
           behind: status?.behind ?? 0,
           operations: [...operations].sort(),
+          processOwnership: processOwnership.status,
+          processMatches:
+            processOwnership.status === "busy"
+              ? processOwnership.matches.map((match) => ({
+                  pid: match.pid,
+                  source: match.source,
+                }))
+              : [],
+          processReason:
+            processOwnership.status === "unknown" ? processOwnership.reason : undefined,
           localReachable,
           remoteReachable,
           remoteConfigured,
@@ -287,6 +312,22 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         source: "git",
         observedAt,
         detail: "The worktree HEAD is ahead of or absent from local remote-tracking refs.",
+      });
+    }
+    if (resource.facts.processOwnership === "busy") {
+      roots.push({
+        code: "live-process-worktree",
+        source: "process",
+        observedAt,
+        detail: "A live process has its CWD or an open file inside this worktree.",
+      });
+    }
+    if (resource.facts.processOwnership === "unknown") {
+      roots.push({
+        code: "process-ownership-incomplete",
+        source: "process",
+        observedAt,
+        detail: "Live process ownership could not be proven completely.",
       });
     }
     if (resource.facts.remoteConfigured !== true) {
