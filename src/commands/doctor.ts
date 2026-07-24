@@ -30,6 +30,7 @@ export type DoctorCommandDependencies = {
   environment?: NodeJS.ProcessEnv;
   runCommand?: (command: string, args: string[]) => Promise<CommandResult>;
   readProcessStat?: () => Promise<string>;
+  currentUid?: () => number | undefined;
   lock?: LockInspectionDependencies;
 };
 
@@ -176,7 +177,7 @@ async function configChecks(
   }
 }
 
-async function stateCheck(root: string): Promise<DoctorCheck> {
+async function stateCheck(root: string, currentUid?: number): Promise<DoctorCheck> {
   try {
     const existing = await nearestExistingPath(root);
     const stats = await lstat(existing);
@@ -186,6 +187,15 @@ async function stateCheck(root: string): Promise<DoctorCheck> {
         status: "error",
         summary: "state path resolves through a non-directory or symlink",
         detail: existing,
+      };
+    }
+    if (existing === resolve(root) && currentUid !== undefined && stats.uid !== currentUid) {
+      return {
+        id: "state",
+        status: "error",
+        summary: "state directory is not owned by the current user",
+        detail: root,
+        remediation: "Choose or create a state directory owned by the current user.",
       };
     }
     await access(existing, constants.R_OK | constants.W_OK | constants.X_OK);
@@ -623,7 +633,7 @@ export async function executeDoctorCommand(
   const checks: DoctorCheck[] = [
     platformCheck(platform),
     ...loaded.checks,
-    await stateCheck(root),
+    await stateCheck(root, dependencies.currentUid?.() ?? process.getuid?.()),
     await processOwnershipCheck(
       platform,
       runCommand,

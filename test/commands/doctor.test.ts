@@ -289,6 +289,30 @@ describe("doctor command", () => {
     );
   });
 
+  it("rejects an existing state root owned by another UID", async () => {
+    const value = await setup();
+    await mkdir(value.stateRoot, { recursive: true });
+    const result = await executeDoctorCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateRoot,
+      json: false,
+      dependencies: {
+        platform: "darwin",
+        runCommand: healthyRunner,
+        currentUid: () => Number.MAX_SAFE_INTEGER,
+      },
+    });
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "state",
+        status: "error",
+        summary: "state directory is not owned by the current user",
+      }),
+    );
+  });
+
   it("proves Git worktree porcelain when the adapter is enabled", async () => {
     const value = await setup();
     await writeJsonAtomic(value.configPath, {
