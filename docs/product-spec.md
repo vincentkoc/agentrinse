@@ -3264,6 +3264,36 @@ safe operator loop.
 The supported npm release remains the first distribution target. A formula in
 `vincentkoc/tap` and install/upgrade proof are required before `0.3.0`.
 
+### 2026-07-24: recoverable worktree mutation boundary
+
+`0.3.0` adds exactly one new mutating action: `worktree.quarantine`.
+
+- Eligibility requires a linked, unlocked, clean, terminal worktree with
+  complete filesystem measurement, no submodules, no live ownership, no
+  reachability root, no detached state, no unpushed commit, and at least 14
+  days since the newest measured worktree entry.
+- The action is `recoverable` and is excluded by the default `safe` risk
+  ceiling. Automation must explicitly select `--max-risk recoverable`.
+- Quarantine uses an atomic rename into an owner-only
+  `.agentrinse-quarantine/<entry-id>` directory beside the original worktree.
+  Cross-device copy-and-delete fallback is forbidden.
+- A recovery ref is created before the rename. The moved worktree is repaired
+  through `git worktree repair`, retained as a locked registered worktree, and
+  recorded in an owner-only quarantine manifest.
+- Undo unlocks, atomically renames, repairs, verifies, and only then deletes
+  the exact recovery ref. It never overwrites an occupied destination.
+- Purge is a separate destructive command. It unlocks and invokes clean
+  `git worktree remove` without `--force`; changed or unclean quarantine state
+  is refused.
+- Quarantine reports zero immediately reclaimed bytes and records the full
+  byte count as pending expiry. The default undo TTL is seven days.
+- macOS and Linux are supported. Native Windows worktree mutation remains
+  blocked until atomic rename and ownership proof are independently proven.
+
+This owner-command sequence was validated on July 24, 2026 against Git 2.54.0
+using a disposable repository, including quarantine repair, lock, undo repair,
+exact recovery-ref deletion, and clean purge.
+
 ## Specification Maintenance
 
 ### Ownership
