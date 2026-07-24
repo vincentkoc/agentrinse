@@ -788,6 +788,7 @@ export async function purgeWorktreeQuarantine(
       entry.quarantinePath,
     ]);
     unlocked = true;
+    await validateQuarantinedEntry(entry, options, false, ["purging"], false);
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,

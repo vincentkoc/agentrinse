@@ -669,6 +669,55 @@ describe("worktree quarantine recovery", () => {
     );
   });
 
+  it("relocks when ignored content appears after purge unlock", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-purge-ignored-race",
+      entryId: "entry-purge-ignored-race",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    let injected = false;
+    const runGit = async (args: string[]) => {
+      const output = await fixture.runGit(args);
+      if (
+        !injected &&
+        args.includes("worktree") &&
+        args.includes("unlock") &&
+        args.includes(result.quarantinePath)
+      ) {
+        injected = true;
+        await writeFile(join(result.quarantinePath, ".env"), "arrived during purge\n");
+      }
+      return output;
+    };
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        allowUnexpired: true,
+        dependencies: {
+          runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_PURGE_FAILED",
+    });
+
+    expect(await missing(result.quarantinePath)).toBe(false);
+    await expect(readFile(join(result.quarantinePath, ".env"), "utf8")).resolves.toBe(
+      "arrived during purge\n",
+    );
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "quarantined",
+    );
+  });
+
   it("finishes an interrupted purge after Git removed the worktree", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
