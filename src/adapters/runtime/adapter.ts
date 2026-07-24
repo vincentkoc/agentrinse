@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { lstat, readdir, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { access, lstat, readdir, realpath } from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
@@ -31,6 +32,14 @@ export type RuntimeAdapterOptions = {
 function isMissing(error: unknown): boolean {
   return (
     error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
+}
+
+function isUnavailableExecutable(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    ["EACCES", "ENOENT", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")
   );
 }
 
@@ -74,6 +83,16 @@ export class RuntimeAuditAdapter implements AuditAdapter {
         try {
           const stats = await lstat(candidate);
           if (stats.isFile() || stats.isSymbolicLink()) {
+            if (this.options.platform !== "win32") {
+              try {
+                await access(candidate, constants.X_OK);
+              } catch (error) {
+                if (isUnavailableExecutable(error)) {
+                  continue;
+                }
+                throw error;
+              }
+            }
             return candidate;
           }
         } catch (error) {

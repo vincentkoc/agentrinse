@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -79,6 +79,34 @@ describe("RuntimeAuditAdapter", () => {
       reportOnly: true,
     });
     expect(collection.diagnostics).toEqual([]);
+  });
+
+  it("skips non-executable Unix PATH entries", async () => {
+    const context = await fixtureContext();
+    const shadowBin = join(context.home, "shadow-bin");
+    const selectedBin = join(context.home, "selected-bin");
+    const shadow = join(shadowBin, "codex");
+    const selected = join(selectedBin, "codex");
+    await mkdir(shadowBin);
+    await mkdir(selectedBin);
+    await writeFile(shadow, "#!/bin/sh\n");
+    await writeFile(selected, "#!/bin/sh\n");
+    await chmod(shadow, 0o600);
+    await chmod(selected, 0o700);
+    const adapter = new RuntimeAuditAdapter({
+      environment: { PATH: `${shadowBin}${delimiter}${selectedBin}` },
+      platform: "linux",
+      runVersion: async (executable) => {
+        expect(executable).toBe(selected);
+        return "codex-cli 0.143.0\n";
+      },
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+
+    expect(collection.resources).toHaveLength(1);
+    expect(collection.resources[0]?.facts.launcherPath).toBe(selected);
   });
 
   it("reports an absent isolated PATH without diagnostics", async () => {
