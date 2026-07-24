@@ -216,6 +216,70 @@ describe("executeWorktreeQuarantine", () => {
     ).rejects.toThrow();
   });
 
+  it("refuses quarantine when remote containment disappears during protection refresh", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-boundary-unpushed";
+    const runId = "run-boundary-unpushed";
+    let moveCalled = false;
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId,
+        entryId,
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          revalidateProtection: async () => {
+            const refs = (
+              await fixture.runGit([
+                "--git-dir",
+                fixture.action.target.repositoryCommonDir,
+                "for-each-ref",
+                "--contains",
+                fixture.action.target.head,
+                "--format=%(refname)",
+                "refs/remotes",
+              ])
+            )
+              .trim()
+              .split("\n")
+              .filter((ref) => ref !== "");
+            for (const ref of refs) {
+              await fixture.runGit([
+                "--git-dir",
+                fixture.action.target.repositoryCommonDir,
+                "update-ref",
+                "-d",
+                ref,
+                fixture.action.target.head,
+              ]);
+            }
+          },
+          move: async () => {
+            moveCalled = true;
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "WORKTREE_UNPUSHED",
+    });
+
+    expect(moveCalled).toBe(false);
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(worktreeQuarantinePath(fixture.action, entryId))).toBe(true);
+    await expect(
+      fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        worktreeRecoveryRef(fixture.action, runId),
+      ]),
+    ).rejects.toThrow();
+  });
+
   it("rejects a worktree that occupies the reserved quarantine container", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
@@ -701,7 +765,6 @@ describe("executeWorktreeQuarantine", () => {
   it("rolls back when a process acquires the quarantined path before commit", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
-    let probeCount = 0;
 
     await expect(
       executeWorktreeQuarantine(fixture.action, {
@@ -710,13 +773,10 @@ describe("executeWorktreeQuarantine", () => {
         quarantineDirectory,
         dependencies: {
           runGit: fixture.runGit,
-          processProbe: async () =>
-            ++probeCount === 1
+          processProbe: async (path) =>
+            path === fixture.linked
               ? { status: "idle", matches: [] }
-              : {
-                  status: "busy",
-                  matches: [{ pid: 456, source: "cwd", path: fixture.linked }],
-                },
+              : { status: "busy", matches: [{ pid: 456, source: "cwd", path }] },
           mountProbe: async () => ({ status: "clear", paths: [] }),
         },
       }),

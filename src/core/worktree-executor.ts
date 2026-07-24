@@ -10,6 +10,7 @@ import {
   countStatusSuppressedIndexEntries,
   parseGitStatusPorcelainV2,
 } from "../adapters/git/status.js";
+import { listGitRefsForCommit } from "../adapters/git/refs.js";
 import type { WorktreeQuarantineAction } from "../contracts/action.js";
 import {
   quarantineEntryIdSchema,
@@ -336,6 +337,56 @@ async function assertNoGitOperations(
   }
 }
 
+async function assertCleanPushedGitState(
+  action: WorktreeQuarantineAction,
+  worktreePath: string,
+  entry: QuarantineEntry,
+  runGit: (args: string[]) => Promise<string>,
+  inspect: (path: string) => Promise<Stats>,
+): Promise<void> {
+  const statusOutput = await runGit([
+    "-C",
+    worktreePath,
+    "status",
+    "--porcelain=v2",
+    "--branch",
+    "-z",
+    "--untracked-files=all",
+    "--ignored=matching",
+  ]);
+  const status = parseGitStatusPorcelainV2(statusOutput);
+  const indexFlags = await runGit(["-C", worktreePath, "ls-files", "-z", "-v"]);
+  if (
+    !cleanStatusMatches(statusOutput, action) ||
+    countStatusSuppressedIndexEntries(indexFlags) > 0
+  ) {
+    throw new WorktreeExecutionError(
+      "worktree Git state changed before quarantine",
+      "skipped-stale",
+      entry,
+      { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+    );
+  }
+  const { containingRefs } = await listGitRefsForCommit(
+    (args) => runGit(["--git-dir", action.target.repositoryCommonDir, ...args]),
+    action.target.head,
+  );
+  if (
+    status.ahead > 0 ||
+    action.target.branch === undefined ||
+    !containingRefs.includes(action.target.branch) ||
+    !containingRefs.some((ref) => ref.startsWith("refs/remotes/"))
+  ) {
+    throw new WorktreeExecutionError(
+      "worktree HEAD is no longer proven pushed before quarantine",
+      "skipped-stale",
+      entry,
+      { diagnosticCode: "WORKTREE_UNPUSHED" },
+    );
+  }
+  await assertNoGitOperations(worktreePath, entry, runGit, inspect);
+}
+
 async function writeManifest(
   manifestPath: string,
   quarantineDirectory: string,
@@ -529,29 +580,7 @@ export async function executeWorktreeQuarantine(
         { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
       );
     }
-    const boundaryStatus = await runGit([
-      "-C",
-      action.target.path,
-      "status",
-      "--porcelain=v2",
-      "--branch",
-      "-z",
-      "--untracked-files=all",
-      "--ignored=matching",
-    ]);
-    const boundaryIndexFlags = await runGit(["-C", action.target.path, "ls-files", "-z", "-v"]);
-    if (
-      !cleanStatusMatches(boundaryStatus, action) ||
-      countStatusSuppressedIndexEntries(boundaryIndexFlags) > 0
-    ) {
-      throw new WorktreeExecutionError(
-        "worktree Git state changed before quarantine",
-        "skipped-stale",
-        entry,
-        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
-      );
-    }
-    await assertNoGitOperations(action.target.path, entry, runGit, inspect);
+    await assertCleanPushedGitState(action, action.target.path, entry, runGit, inspect);
     const boundaryOwnership = await processProbe(action.target.path);
     if (boundaryOwnership.status !== "idle") {
       throw new WorktreeExecutionError(
@@ -614,6 +643,73 @@ export async function executeWorktreeQuarantine(
       );
     }
     assertAuthorized(dependencies.authorization, entry);
+    const finalBoundaryStats = await inspect(action.target.path);
+    if (!matchesFilesystemIdentity(finalBoundaryStats, action)) {
+      throw new WorktreeExecutionError(
+        "worktree filesystem identity changed after the protection refresh",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    const finalBoundaryMounts = await mountProbe(action.target.path);
+    if (finalBoundaryMounts.status !== "clear") {
+      throw new WorktreeExecutionError(
+        finalBoundaryMounts.status === "blocked"
+          ? "worktree gained a mount boundary during the protection refresh"
+          : "mount boundaries could not be proven absent after the protection refresh",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    await assertCleanPushedGitState(action, action.target.path, entry, runGit, inspect);
+    const finalBoundaryOwnership = await processProbe(action.target.path);
+    if (finalBoundaryOwnership.status !== "idle") {
+      throw new WorktreeExecutionError(
+        finalBoundaryOwnership.status === "busy"
+          ? "a live process acquired the worktree during the protection refresh"
+          : "live process ownership could not be proven idle after the protection refresh",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
+    if (await pathExists(quarantinePath, inspect)) {
+      throw new WorktreeExecutionError(
+        `refusing to overwrite existing quarantine path ${quarantinePath}`,
+        "failed",
+        entry,
+      );
+    }
+    await assertQuarantineContainerAvailable(
+      quarantineParent,
+      action.target.repositoryCommonDir,
+      runGit,
+      inspect,
+      entry,
+    );
+    const [moveQuarantineParentStats, moveQuarantineOwnerStats] = await Promise.all([
+      inspect(quarantineParent),
+      inspect(join(quarantineParent, QUARANTINE_OWNER_DIRECTORY)),
+    ]);
+    if (
+      !moveQuarantineParentStats.isDirectory() ||
+      moveQuarantineParentStats.isSymbolicLink() ||
+      moveQuarantineParentStats.dev !== quarantineParentIdentity.container.dev ||
+      moveQuarantineParentStats.ino !== quarantineParentIdentity.container.ino ||
+      !moveQuarantineOwnerStats.isDirectory() ||
+      moveQuarantineOwnerStats.isSymbolicLink() ||
+      moveQuarantineOwnerStats.dev !== quarantineParentIdentity.owner.dev ||
+      moveQuarantineOwnerStats.ino !== quarantineParentIdentity.owner.ino
+    ) {
+      throw new WorktreeExecutionError(
+        "quarantine container identity changed during the protection refresh",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
     try {
       await move(action.target.path, quarantinePath);
     } catch (error) {
