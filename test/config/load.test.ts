@@ -174,4 +174,28 @@ describe("loadConfig", () => {
 
     await expect(loadConfig(path)).rejects.toThrow();
   });
+
+  it.each([
+    "refs/tags/",
+    "refs/heads/foo bar",
+    "refs/heads/foo..bar",
+    "refs/heads/foo.lock",
+    "refs/heads/.hidden",
+    "refs/heads/foo@{bar",
+    "refs/heads/foo.",
+    "refs/heads/foo//bar",
+    "refs/heads/foo~1",
+  ])("rejects invalid Git pin ref %s", async (gitRef) => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        pins: [{ gitRef }],
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow("pin Git ref is invalid");
+  });
 });

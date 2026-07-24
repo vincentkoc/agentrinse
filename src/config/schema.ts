@@ -32,6 +32,34 @@ export const artifactProjectSchema = z.object({
 
 const expiresAtSchema = z.string().datetime().optional();
 
+function isValidGitRef(value: string): boolean {
+  const match = /^refs\/(?:heads|remotes|tags)\/(.+)$/u.exec(value);
+  if (match === null) {
+    return false;
+  }
+  const suffix = match[1]!;
+  if (
+    suffix.endsWith(".") ||
+    suffix.includes("..") ||
+    suffix.includes("@{") ||
+    suffix.includes("//")
+  ) {
+    return false;
+  }
+  for (const component of suffix.split("/")) {
+    if (component === "" || component.startsWith(".") || component.endsWith(".lock")) {
+      return false;
+    }
+  }
+  for (const character of value) {
+    const code = character.codePointAt(0)!;
+    if (code <= 0x20 || code === 0x7f || ["~", "^", ":", "?", "*", "[", "\\"].includes(character)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export const pinSchema = z.union([
   z
     .object({
@@ -47,7 +75,7 @@ export const pinSchema = z.union([
     .strict(),
   z
     .object({
-      gitRef: z.string().regex(/^refs\/(?:heads|remotes|tags)\//u, "pin Git ref is invalid"),
+      gitRef: z.string().refine(isValidGitRef, "pin Git ref is invalid"),
       expiresAt: expiresAtSchema,
     })
     .strict(),
