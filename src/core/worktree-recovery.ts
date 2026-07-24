@@ -1071,6 +1071,7 @@ async function resumeInterruptedPurge(
       ]);
       await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
       await options.revalidateProtection?.(entry);
+      await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
       await dependencies.runGit([
         "--git-dir",
         entry.target.repositoryCommonDir,
@@ -1368,6 +1369,7 @@ export async function purgeWorktreeQuarantine(
     ]);
     await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
     await options.revalidateProtection?.(entry);
+    await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,

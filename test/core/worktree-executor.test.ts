@@ -1647,6 +1647,53 @@ describe("worktree quarantine recovery", () => {
     );
   });
 
+  it("revalidates local state after the final purge protection check", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    let removeCalled = false;
+    const runGit = async (args: string[]) => {
+      if (args.includes("worktree") && args.includes("remove")) {
+        removeCalled = true;
+      }
+      return fixture.runGit(args);
+    };
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-purge-local-race",
+      entryId: "entry-purge-local-race",
+      quarantineDirectory,
+      dependencies: { runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const isolationPath = `${result.quarantinePath}.purging`;
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        allowUnexpired: true,
+        revalidateProtection: async () => {
+          await writeFile(join(isolationPath, ".env"), "arrived during protection scan\n");
+        },
+        dependencies: {
+          runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_PURGE_FAILED",
+    });
+
+    expect(removeCalled).toBe(false);
+    expect(await missing(result.quarantinePath)).toBe(false);
+    await expect(readFile(join(result.quarantinePath, ".env"), "utf8")).resolves.toBe(
+      "arrived during protection scan\n",
+    );
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "quarantined",
+    );
+  });
+
   it("refuses purge when a Git operation marker appears after quarantine", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
@@ -1893,6 +1940,65 @@ describe("worktree quarantine recovery", () => {
 
     expect(purged.entry.status).toBe("purged");
     expect(await missing(isolationPath)).toBe(true);
+  });
+
+  it("revalidates local state after resumed purge protection checks", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-resume-purge-local-race",
+      entryId: "entry-resume-purge-local-race",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const isolationPath = `${result.quarantinePath}.purging`;
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await renameNoReplace(result.quarantinePath, isolationPath);
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const purging = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
+    await writeJsonAtomic(result.manifestPath, purging, {
+      privateDirectories: [quarantineDirectory],
+    });
+    let removeCalled = false;
+    const runGit = async (args: string[]) => {
+      if (args.includes("worktree") && args.includes("remove")) {
+        removeCalled = true;
+      }
+      return fixture.runGit(args);
+    };
+
+    await expect(
+      purgeWorktreeQuarantine(purging, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        revalidateProtection: async () => {
+          await writeFile(join(isolationPath, ".env"), "arrived during resumed protection scan\n");
+        },
+        dependencies: {
+          runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_PURGE_FAILED",
+    });
+
+    expect(removeCalled).toBe(false);
+    expect(await missing(isolationPath)).toBe(true);
+    expect(await missing(result.quarantinePath)).toBe(false);
+    await expect(readFile(join(result.quarantinePath, ".env"), "utf8")).resolves.toBe(
+      "arrived during resumed protection scan\n",
+    );
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "quarantined",
+    );
   });
 
   it("checks Git operation markers before repairing isolated purge state", async () => {
