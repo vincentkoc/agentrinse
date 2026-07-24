@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
-import { lstat } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstat, mkdir, rm } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
@@ -25,6 +26,12 @@ import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-o
 import { unlockOwnedWorktree } from "./worktree-lock.js";
 
 const execFileAsync = promisify(execFile);
+const QUARANTINE_OWNER_DIRECTORY = ".agentrinse-owner";
+
+type QuarantineContainerIdentity = {
+  container: Stats;
+  owner: Stats;
+};
 
 export type WorktreeExecutionOutcome =
   | "skipped-stale"
@@ -205,6 +212,110 @@ function pathContains(parent: string, candidate: string): boolean {
   );
 }
 
+async function assertQuarantineContainerAvailable(
+  quarantineParent: string,
+  repositoryCommonDir: string,
+  runGit: (args: string[]) => Promise<string>,
+  inspect: (path: string) => Promise<Stats>,
+  entry?: QuarantineEntry,
+): Promise<void> {
+  const gitMarker = join(quarantineParent, ".git");
+  if (await pathExists(gitMarker, inspect)) {
+    throw new WorktreeExecutionError(
+      "quarantine container is itself a Git worktree",
+      "failed",
+      entry,
+      { diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE" },
+    );
+  }
+  const registrations = parseWorktreePorcelain(
+    await runGit(["--git-dir", repositoryCommonDir, "worktree", "list", "--porcelain", "-z"]),
+  );
+  if (
+    registrations.some(
+      (registration) => resolve(registration.path) === resolve(quarantineParent),
+    ) ||
+    (await pathExists(gitMarker, inspect))
+  ) {
+    throw new WorktreeExecutionError(
+      "quarantine container is itself a registered Git worktree",
+      "failed",
+      entry,
+      { diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE" },
+    );
+  }
+}
+
+async function reserveQuarantineContainer(
+  quarantineParent: string,
+  repositoryCommonDir: string,
+  runGit: (args: string[]) => Promise<string>,
+  inspect: (path: string) => Promise<Stats>,
+  platform: NodeJS.Platform,
+): Promise<QuarantineContainerIdentity> {
+  await assertQuarantineContainerAvailable(quarantineParent, repositoryCommonDir, runGit, inspect);
+
+  const ownerDirectory = join(quarantineParent, QUARANTINE_OWNER_DIRECTORY);
+  const stagingDirectory = join(
+    dirname(quarantineParent),
+    `.${basename(quarantineParent)}.agentrinse-${randomUUID()}`,
+  );
+  let installedStagingDirectory = false;
+  try {
+    await mkdir(stagingDirectory, { mode: 0o700 });
+    await mkdir(join(stagingDirectory, QUARANTINE_OWNER_DIRECTORY), { mode: 0o700 });
+    try {
+      await renameNoReplace(stagingDirectory, quarantineParent, platform);
+      installedStagingDirectory = true;
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        !["EEXIST", "ENOTEMPTY"].includes(String((error as NodeJS.ErrnoException).code))
+      ) {
+        throw error;
+      }
+    }
+  } finally {
+    if (!installedStagingDirectory) {
+      await rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+    }
+  }
+
+  await assertQuarantineContainerAvailable(quarantineParent, repositoryCommonDir, runGit, inspect);
+  const [containerStats, ownerStats] = await Promise.all([
+    inspect(quarantineParent),
+    inspect(ownerDirectory),
+  ]).catch((error: unknown) => {
+    throw new WorktreeExecutionError(
+      "existing quarantine container is not owned by AgentRinse",
+      "failed",
+      undefined,
+      { cause: error, diagnosticCode: "QUARANTINE_CONTAINER_UNSAFE" },
+    );
+  });
+  if (
+    !containerStats.isDirectory() ||
+    containerStats.isSymbolicLink() ||
+    !ownerStats.isDirectory() ||
+    ownerStats.isSymbolicLink()
+  ) {
+    throw new WorktreeExecutionError(
+      "quarantine container ownership marker is not a real directory",
+      "failed",
+      undefined,
+      { diagnosticCode: "QUARANTINE_CONTAINER_UNSAFE" },
+    );
+  }
+  await ensurePrivateDirectory(quarantineParent);
+  await ensurePrivateDirectory(ownerDirectory);
+  const [container, owner] = await Promise.all([
+    inspect(quarantineParent),
+    inspect(ownerDirectory),
+  ]);
+  return { container, owner };
+}
+
 async function assertNoGitOperations(
   worktreePath: string,
   entry: QuarantineEntry,
@@ -293,30 +404,14 @@ export async function executeWorktreeQuarantine(
   let repaired = false;
   let locked = false;
 
-  const initialRegistrations = parseWorktreePorcelain(
-    await runGit([
-      "--git-dir",
-      action.target.repositoryCommonDir,
-      "worktree",
-      "list",
-      "--porcelain",
-      "-z",
-    ]),
+  const quarantineParentIdentity = await reserveQuarantineContainer(
+    quarantineParent,
+    action.target.repositoryCommonDir,
+    runGit,
+    inspect,
+    platform,
   );
-  if (
-    initialRegistrations.some(
-      (registration) => resolve(registration.path) === resolve(quarantineParent),
-    )
-  ) {
-    throw new WorktreeExecutionError(
-      "quarantine container is itself a registered Git worktree",
-      "failed",
-      undefined,
-      { diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE" },
-    );
-  }
   await ensurePrivateDirectory(options.quarantineDirectory);
-  await ensurePrivateDirectory(quarantineParent);
   entry = await writeManifest(manifestPath, options.quarantineDirectory, entry);
 
   try {
@@ -336,7 +431,9 @@ export async function executeWorktreeQuarantine(
     if (
       !quarantineParentStats.isDirectory() ||
       quarantineParentStats.isSymbolicLink() ||
-      quarantineParentStats.dev !== targetStats.dev
+      quarantineParentStats.dev !== targetStats.dev ||
+      quarantineParentStats.dev !== quarantineParentIdentity.container.dev ||
+      quarantineParentStats.ino !== quarantineParentIdentity.container.ino
     ) {
       throw new WorktreeExecutionError(
         "quarantine directory is not a real directory on the worktree filesystem",
@@ -474,6 +571,34 @@ export async function executeWorktreeQuarantine(
     }
 
     assertAuthorized(dependencies.authorization, entry);
+    await assertQuarantineContainerAvailable(
+      quarantineParent,
+      action.target.repositoryCommonDir,
+      runGit,
+      inspect,
+      entry,
+    );
+    const [finalQuarantineParentStats, finalQuarantineOwnerStats] = await Promise.all([
+      inspect(quarantineParent),
+      inspect(join(quarantineParent, QUARANTINE_OWNER_DIRECTORY)),
+    ]);
+    if (
+      !finalQuarantineParentStats.isDirectory() ||
+      finalQuarantineParentStats.isSymbolicLink() ||
+      finalQuarantineParentStats.dev !== quarantineParentIdentity.container.dev ||
+      finalQuarantineParentStats.ino !== quarantineParentIdentity.container.ino ||
+      !finalQuarantineOwnerStats.isDirectory() ||
+      finalQuarantineOwnerStats.isSymbolicLink() ||
+      finalQuarantineOwnerStats.dev !== quarantineParentIdentity.owner.dev ||
+      finalQuarantineOwnerStats.ino !== quarantineParentIdentity.owner.ino
+    ) {
+      throw new WorktreeExecutionError(
+        "quarantine container identity changed before the atomic move",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
+      );
+    }
     try {
       await move(action.target.path, quarantinePath);
     } catch (error) {

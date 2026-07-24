@@ -1,5 +1,14 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, realpath, rename, writeFile } from "node:fs/promises";
+import {
+  access,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rename,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -206,6 +215,118 @@ describe("executeWorktreeQuarantine", () => {
 
     expect(await missing(join(quarantineParent, "entry-container-worktree"))).toBe(true);
     expect(await missing(join(quarantineDirectory, "entry-container-worktree.json"))).toBe(true);
+  });
+
+  it("rejects a quarantine container registered by another repository", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const quarantineParent = join(fixture.home, ".agentrinse-quarantine");
+    const otherRepository = join(fixture.home, "other-repo");
+    await execFileAsync("git", ["init", "-b", "main", otherRepository]);
+    await execFileAsync("git", [
+      "-C",
+      otherRepository,
+      "config",
+      "user.email",
+      "fixture@example.test",
+    ]);
+    await execFileAsync("git", [
+      "-C",
+      otherRepository,
+      "config",
+      "user.name",
+      "AgentRinse Fixture",
+    ]);
+    await writeFile(join(otherRepository, "README.md"), "other fixture\n");
+    await execFileAsync("git", ["-C", otherRepository, "add", "README.md"]);
+    await execFileAsync("git", ["-C", otherRepository, "commit", "-m", "other fixture"]);
+    await execFileAsync("git", [
+      "-C",
+      otherRepository,
+      "worktree",
+      "add",
+      "-b",
+      "container",
+      quarantineParent,
+    ]);
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-foreign-container-worktree",
+        entryId: "entry-foreign-container-worktree",
+        quarantineDirectory,
+        dependencies: { runGit: fixture.runGit },
+      }),
+    ).rejects.toMatchObject({
+      diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE",
+    });
+
+    expect(await missing(join(quarantineParent, ".agentrinse-owner"))).toBe(true);
+    expect(await missing(join(quarantineDirectory, "entry-foreign-container-worktree.json"))).toBe(
+      true,
+    );
+  });
+
+  it("does not adopt a symlinked quarantine container", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const quarantineParent = join(fixture.home, ".agentrinse-quarantine");
+    const externalDirectory = join(fixture.home, "external-container");
+    await mkdir(externalDirectory);
+    await symlink(externalDirectory, quarantineParent);
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-symlinked-container",
+        entryId: "entry-symlinked-container",
+        quarantineDirectory,
+        dependencies: { runGit: fixture.runGit },
+      }),
+    ).rejects.toMatchObject({
+      diagnosticCode: "QUARANTINE_CONTAINER_UNSAFE",
+    });
+
+    expect(await missing(join(externalDirectory, ".agentrinse-owner"))).toBe(true);
+    expect(await missing(join(quarantineDirectory, "entry-symlinked-container.json"))).toBe(true);
+  });
+
+  it("rechecks the quarantine container immediately before moving the worktree", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const quarantineParent = join(fixture.home, ".agentrinse-quarantine");
+    const entryId = "entry-container-race";
+    let recoveryRefCreated = false;
+    let injectedMarker = false;
+    const runGit = async (args: string[]) => {
+      if (args.includes("update-ref") && !args.includes("-d")) {
+        recoveryRefCreated = true;
+      }
+      if (
+        recoveryRefCreated &&
+        !injectedMarker &&
+        args.includes("worktree") &&
+        args.includes("list")
+      ) {
+        injectedMarker = true;
+        await writeFile(join(quarantineParent, ".git"), "gitdir: /tmp/foreign-admin\n");
+      }
+      return fixture.runGit(args);
+    };
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-container-race",
+        entryId,
+        quarantineDirectory,
+        dependencies: { runGit },
+      }),
+    ).rejects.toMatchObject({
+      diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE",
+    });
+
+    expect(injectedMarker).toBe(true);
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await missing(join(quarantineParent, entryId))).toBe(true);
   });
 
   it("rejects a Git operation that starts after audit", async () => {
