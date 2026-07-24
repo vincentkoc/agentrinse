@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,6 +24,7 @@ function healthyRunner(command: string, args: string[]): Promise<CommandResult> 
     "docker version --format {{.Server.Version}}": "28.3.0",
     "mo --version": "Mole 1.17.0",
     "sh -c command -v lockf": "/usr/bin/lockf",
+    "sh -c command -v flock": "/usr/bin/flock",
   };
   const stdout = output[key];
   return stdout === undefined
@@ -200,6 +201,64 @@ describe("doctor command", () => {
         summary: "apply lock could not be inspected",
         detail: "permission denied",
       }),
+    );
+  });
+
+  it("uses lsof when Linux procfs ownership proof is unavailable", async () => {
+    const value = await setup();
+    const result = await executeDoctorCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateRoot,
+      json: false,
+      dependencies: {
+        platform: "linux",
+        runCommand: healthyRunner,
+        readProcessStat: async () => {
+          throw commandError("procfs unavailable", "EACCES");
+        },
+      },
+    });
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "process-ownership",
+        status: "pass",
+        summary: "lsof fallback ownership proof is available",
+      }),
+    );
+  });
+
+  it("rejects directories without search permission", async () => {
+    const value = await setup();
+    const project = join(value.home, "project");
+    await mkdir(value.stateRoot, { recursive: true });
+    await mkdir(project);
+    await chmod(value.stateRoot, 0o600);
+    await chmod(project, 0o600);
+    await writeJsonAtomic(value.configPath, {
+      ...structuredClone(DEFAULT_CONFIG),
+      artifacts: {
+        projects: [{ root: project, names: ["node_modules"] }],
+      },
+    });
+
+    const result = await executeDoctorCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateRoot,
+      json: false,
+      dependencies: {
+        platform: "darwin",
+        runCommand: healthyRunner,
+      },
+    });
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({ id: "state", status: "error" }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({ id: "artifact-root:0", status: "error" }),
     );
   });
 

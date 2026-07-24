@@ -29,6 +29,7 @@ export type DoctorCommandDependencies = {
   platform?: NodeJS.Platform;
   environment?: NodeJS.ProcessEnv;
   runCommand?: (command: string, args: string[]) => Promise<CommandResult>;
+  readProcessStat?: () => Promise<string>;
   lock?: LockInspectionDependencies;
 };
 
@@ -187,7 +188,7 @@ async function stateCheck(root: string): Promise<DoctorCheck> {
         detail: existing,
       };
     }
-    await access(existing, constants.R_OK | constants.W_OK);
+    await access(existing, constants.R_OK | constants.W_OK | constants.X_OK);
     return {
       id: "state",
       status: "pass",
@@ -211,6 +212,7 @@ async function stateCheck(root: string): Promise<DoctorCheck> {
 async function processOwnershipCheck(
   platform: NodeJS.Platform,
   runCommand: (command: string, args: string[]) => Promise<CommandResult>,
+  readProcessStat: () => Promise<string>,
 ): Promise<DoctorCheck> {
   if (platform === "win32") {
     return {
@@ -219,16 +221,12 @@ async function processOwnershipCheck(
       summary: "native Windows process ownership proof is unavailable",
     };
   }
+  let procfsError: unknown;
   if (platform === "linux") {
     try {
-      await readFile("/proc/self/stat", "utf8");
+      await readProcessStat();
     } catch (error) {
-      return {
-        id: "process-ownership",
-        status: "error",
-        summary: "Linux procfs process ownership proof is unavailable",
-        detail: errorMessage(error),
-      };
+      procfsError = error;
     }
   }
   try {
@@ -237,19 +235,29 @@ async function processOwnershipCheck(
       id: "process-ownership",
       status: "pass",
       summary:
-        platform === "linux"
+        platform === "linux" && procfsError === undefined
           ? "procfs ownership proof and lsof fallback are available"
-          : "lsof process ownership proof is available",
+          : platform === "linux"
+            ? "lsof fallback ownership proof is available"
+            : "lsof process ownership proof is available",
+      ...(procfsError === undefined
+        ? {}
+        : { detail: `procfs ownership proof is unavailable: ${errorMessage(procfsError)}` }),
     };
   } catch (error) {
     return {
       id: "process-ownership",
       status: "error",
       summary:
-        platform === "linux"
-          ? "lsof fallback is unavailable"
-          : "lsof process ownership proof is unavailable",
-      detail: errorMessage(error),
+        platform === "linux" && procfsError !== undefined
+          ? "Linux process ownership proof is unavailable"
+          : platform === "linux"
+            ? "lsof fallback is unavailable"
+            : "lsof process ownership proof is unavailable",
+      detail:
+        procfsError === undefined
+          ? errorMessage(error)
+          : `procfs: ${errorMessage(procfsError)}; lsof: ${errorMessage(error)}`,
       remediation: "Install lsof before applying cleanup plans.",
     };
   }
@@ -454,7 +462,7 @@ async function providerChecks(
         });
         continue;
       }
-      await access(root, constants.R_OK);
+      await access(root, constants.R_OK | constants.X_OK);
       checks.push({
         id: `provider:${spec.id}`,
         status: "pass",
@@ -488,7 +496,7 @@ async function artifactChecks(config: AgentRinseConfig): Promise<DoctorCheck[]> 
       if (!stats.isDirectory() || stats.isSymbolicLink()) {
         throw new Error("configured artifact root must be a real directory");
       }
-      await access(root, constants.R_OK | constants.W_OK);
+      await access(root, constants.R_OK | constants.W_OK | constants.X_OK);
       checks.push({
         id: `artifact-root:${index}`,
         status: "pass",
@@ -612,7 +620,11 @@ export async function executeDoctorCommand(
     platformCheck(platform),
     ...loaded.checks,
     await stateCheck(root),
-    await processOwnershipCheck(platform, runCommand),
+    await processOwnershipCheck(
+      platform,
+      runCommand,
+      dependencies.readProcessStat ?? (() => readFile("/proc/self/stat", "utf8")),
+    ),
     await recoveryMutexCheck(platform, runCommand),
     ...(await gitChecks(loaded.config, runCommand)),
     await dockerCheck(loaded.config.adapters.docker?.enabled === true, runCommand),
