@@ -660,25 +660,7 @@ async function recoverInitialQuarantineForUndo(
       "owned-or-unlocked",
       expectedRegistrationPaths,
     );
-    const registrations = await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "list",
-      "--porcelain",
-      "-z",
-    ]);
-    if (registrationMatches(registrations, entry.originalPath, entry, "owned")) {
-      await unlockOwnedWorktree({
-        worktreePath: entry.originalPath,
-        repositoryCommonDir: entry.target.repositoryCommonDir,
-        expectedReason: quarantineLockReason(entry),
-        claimId: entry.entryId,
-        runGit: dependencies.runGit,
-        platform: options.dependencies?.platform ?? process.platform,
-      });
-      await assertTargetRegistrationLock(entry, dependencies, "unlocked", [entry.originalPath]);
-    }
+    await releaseOwnedRegistrationLock(entry, options, dependencies, entry.originalPath);
     await deleteRecoveryRef(entry, dependencies);
     return persist(
       {
@@ -751,6 +733,34 @@ async function recoverInitialQuarantineForUndo(
     "interrupted quarantine has ambiguous source and destination paths",
     entry,
   );
+}
+
+async function releaseOwnedRegistrationLock(
+  entry: QuarantineEntry,
+  options: WorktreeRecoveryOptions,
+  dependencies: ResolvedRecoveryDependencies,
+  worktreePath: string,
+): Promise<void> {
+  const registrations = await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "worktree",
+    "list",
+    "--porcelain",
+    "-z",
+  ]);
+  if (!registrationMatches(registrations, worktreePath, entry, "owned")) {
+    return;
+  }
+  await unlockOwnedWorktree({
+    worktreePath,
+    repositoryCommonDir: entry.target.repositoryCommonDir,
+    expectedReason: quarantineLockReason(entry),
+    claimId: entry.entryId,
+    runGit: dependencies.runGit,
+    platform: options.dependencies?.platform ?? process.platform,
+  });
+  await assertTargetRegistrationLock(entry, dependencies, "unlocked", [worktreePath]);
 }
 
 async function resumeInterruptedUndo(
@@ -853,9 +863,10 @@ async function recoverPartialForUndo(
       entry.originalPath,
       entry.quarantineIdentity ?? entry.target,
       true,
-      "unlocked",
+      "owned-or-unlocked",
       [entry.originalPath, entry.quarantinePath, isolationPath],
     );
+    await releaseOwnedRegistrationLock(entry, options, dependencies, entry.originalPath);
     await deleteRecoveryRef(entry, dependencies);
     return persist(
       {
