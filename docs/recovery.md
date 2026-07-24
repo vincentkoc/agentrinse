@@ -63,6 +63,8 @@ recovery ref when missing, relocks the worktree, then completes normal undo.
 Every recovery mutation requires either an unlocked registration at the
 expected transition or the exact `AgentRinse quarantine <entry-id>` lock.
 AgentRinse never unlocks a worktree carrying an operator or third-party lock.
+Merge, rebase, cherry-pick, revert, and bisect markers are rechecked from the
+worktree's Git administration directory immediately before mutation.
 
 ## Purge Quarantine
 
@@ -92,6 +94,8 @@ If AgentRinse restarts while the worktree is at the purge isolation path, it
 repeats full validation there. A failed validation moves the worktree back to
 the quarantine path, repairs and relocks it with the exact AgentRinse lock
 reason, and records the entry as retryable instead of leaving it isolated.
+If both deterministic paths are absent, purge finalization also refuses any
+registration at another path with the recorded branch and HEAD.
 
 The root `.git` control file is excluded from worktree content fingerprints
 because `git worktree repair` owns and rewrites it. Ignored files and every

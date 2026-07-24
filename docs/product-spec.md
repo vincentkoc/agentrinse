@@ -3275,7 +3275,9 @@ The supported npm release remains the first distribution target. A formula in
   complete filesystem measurement, no ignored files, no status-suppressed
   index entries, no submodules, no live ownership, no reachability root, no
   detached state, no unpushed commit, and at least 14 days since the newest
-  measured worktree entry.
+  measured worktree entry. A worktree named `.agentrinse-quarantine` is
+  protected because that sibling name is reserved for the quarantine
+  container.
 - The action is `recoverable` and is excluded by the default `safe` risk
   ceiling. Automation must explicitly select `--max-risk recoverable`.
 - Quarantine uses an atomic rename into an owner-only
@@ -3289,13 +3291,16 @@ The supported npm release remains the first distribution target. A formula in
   preserving or recreating only the exact namespaced recovery ref.
 - Mutation verifies the exact `AgentRinse quarantine <entry-id>` lock reason.
   A foreign or operator-owned Git worktree lock is immutable protection.
+- Git operation markers are re-read immediately before every quarantine,
+  undo, and purge mutation; clean status alone is not terminal-state proof.
 - Undo unlocks, atomically renames, repairs, verifies, and only then deletes
   the exact recovery ref. It never overwrites an occupied destination.
 - Purge is a separate destructive command. It unlocks, atomically renames to a
   deterministic same-filesystem isolation path, repairs and repeats full
   validation there, then invokes clean `git worktree remove` without
   `--force`; changed or unclean quarantine state is refused and an interrupted
-  isolation failure is rolled back to locked quarantine.
+  isolation failure is rolled back to locked quarantine. Finalization refuses
+  a matching branch and HEAD registration at any unexpected path.
 - Quarantine reports zero immediately reclaimed bytes and records the full
   byte count as pending expiry. The default undo TTL is seven days.
 - macOS and Linux are supported. Native Windows worktree mutation remains

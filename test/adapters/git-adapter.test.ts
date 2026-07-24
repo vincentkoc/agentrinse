@@ -411,6 +411,20 @@ describe("GitWorktreeAuditAdapter", () => {
         branch: "refs/heads/task",
       },
     });
+    const reservedFinding = await adapter.classify(context, {
+      ...linkedResource!,
+      resource: {
+        ...linkedResource!.resource,
+        path: join(home, ".agentrinse-quarantine"),
+      },
+    });
+    expect(reservedFinding).toMatchObject({
+      state: "protected",
+      roots: expect.arrayContaining([
+        expect.objectContaining({ code: "worktree-quarantine-path-reserved" }),
+      ]),
+      candidateActions: [],
+    });
 
     await writeFile(join(linked, ".env"), "local-only\n");
     const ignoredCollection = await adapter.collect(context, await adapter.probe(context));

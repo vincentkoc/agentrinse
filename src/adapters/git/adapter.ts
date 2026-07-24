@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import type { AgentRinseConfig } from "../../config/schema.js";
@@ -11,6 +11,7 @@ import type { Finding, RootEvidence } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
+import { findGitOperations } from "../../core/git-operation-state.js";
 import { measurePath, type Measurement } from "../../core/measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "../../core/mount-boundaries.js";
 import {
@@ -26,15 +27,6 @@ import {
 } from "./status.js";
 
 const execFileAsync = promisify(execFile);
-const OPERATION_MARKERS = [
-  ["merge", "MERGE_HEAD"],
-  ["rebase", "rebase-merge"],
-  ["rebase", "rebase-apply"],
-  ["cherry-pick", "CHERRY_PICK_HEAD"],
-  ["revert", "REVERT_HEAD"],
-  ["bisect", "BISECT_LOG"],
-] as const;
-
 export type GitRunner = (args: string[]) => Promise<string>;
 export type GitPathExists = (path: string) => Promise<boolean>;
 export type GitProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
@@ -291,17 +283,12 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
               .sort();
             gitRefInspectionComplete = true;
           }
-          for (const [operation, marker] of OPERATION_MARKERS) {
-            const reportedMarkerPath = (
-              await this.runGit(["-C", worktreePath, "rev-parse", "--git-path", marker])
-            ).trim();
-            const markerPath =
-              reportedMarkerPath === "" || isAbsolute(reportedMarkerPath)
-                ? reportedMarkerPath
-                : resolve(worktreePath, reportedMarkerPath);
-            if (markerPath !== "" && (await this.pathExists(markerPath))) {
-              operations.add(operation);
-            }
+          for (const operation of await findGitOperations(
+            worktreePath,
+            this.runGit,
+            this.pathExists,
+          )) {
+            operations.add(operation);
           }
           processOwnership = await this.processProbe(worktreePath);
           if (
@@ -518,6 +505,17 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         source: "git",
         observedAt,
         detail: "Detached worktrees are outside the 0.3 quarantine boundary.",
+      });
+    }
+    if (
+      resource.resource.path !== undefined &&
+      basename(resource.resource.path) === ".agentrinse-quarantine"
+    ) {
+      roots.push({
+        code: "worktree-quarantine-path-reserved",
+        source: "git",
+        observedAt,
+        detail: "A worktree cannot use AgentRinse's reserved quarantine container path.",
       });
     }
     if (

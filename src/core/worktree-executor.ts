@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import type { Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
@@ -17,6 +17,7 @@ import {
   type QuarantineEntry,
 } from "../contracts/quarantine.js";
 import { ensurePrivateDirectory, writeJsonAtomic } from "../state/json-file.js";
+import { findGitOperations } from "./git-operation-state.js";
 import { measurePath, type Measurement, type MeasureOptions } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
@@ -177,6 +178,35 @@ function registeredWorktree(
   );
 }
 
+function pathContains(parent: string, candidate: string): boolean {
+  const relativePath = relative(resolve(parent), resolve(candidate));
+  return (
+    relativePath !== "" &&
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${sep}`) &&
+    !isAbsolute(relativePath)
+  );
+}
+
+async function assertNoGitOperations(
+  worktreePath: string,
+  entry: QuarantineEntry,
+  runGit: (args: string[]) => Promise<string>,
+  inspect: (path: string) => Promise<Stats>,
+): Promise<void> {
+  const operations = await findGitOperations(worktreePath, runGit, (path) =>
+    pathExists(path, inspect),
+  );
+  if (operations.length > 0) {
+    throw new WorktreeExecutionError(
+      `Git operation started before quarantine: ${operations.join(", ")}`,
+      "skipped-stale",
+      entry,
+      { diagnosticCode: "GIT_OPERATION_IN_PROGRESS" },
+    );
+  }
+}
+
 async function writeManifest(
   manifestPath: string,
   quarantineDirectory: string,
@@ -213,6 +243,14 @@ export async function executeWorktreeQuarantine(
   }
   const entryId = quarantineEntryIdSchema.parse(options.entryId);
   const quarantinePath = worktreeQuarantinePath(action, entryId);
+  if (pathContains(action.target.path, quarantinePath)) {
+    throw new WorktreeExecutionError(
+      "worktree occupies AgentRinse's reserved quarantine container",
+      "failed",
+      undefined,
+      { diagnosticCode: "QUARANTINE_PATH_CONFLICT" },
+    );
+  }
   const quarantineParent = dirname(quarantinePath);
   const recoveryRef = worktreeRecoveryRef(action, options.runId);
   const manifestPath = join(options.quarantineDirectory, `${entryId}.json`);
@@ -375,6 +413,7 @@ export async function executeWorktreeQuarantine(
         { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
       );
     }
+    await assertNoGitOperations(action.target.path, entry, runGit, inspect);
     const boundaryOwnership = await processProbe(action.target.path);
     if (boundaryOwnership.status !== "idle") {
       throw new WorktreeExecutionError(
@@ -534,6 +573,7 @@ export async function executeWorktreeQuarantine(
         entry,
       );
     }
+    await assertNoGitOperations(quarantinePath, entry, runGit, inspect);
     const finalMounts = await mountProbe(quarantinePath);
     if (finalMounts.status !== "clear") {
       throw new WorktreeExecutionError(

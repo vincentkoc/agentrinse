@@ -24,6 +24,8 @@ The project follows semantic versioning after its first supported release.
   quarantine transitions
 - exact AgentRinse lock ownership checks and rollback of interrupted purge
   isolation failures
+- mutation-time Git operation checks, moved-registration refusal, and reserved
+  quarantine-container protection
 - packaged end-to-end quarantine, undo, and clean purge smoke proof
 - Homebrew distribution through `vincentkoc/tap`
 

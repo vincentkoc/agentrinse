@@ -15,6 +15,7 @@ import {
   type QuarantineStatus,
 } from "../contracts/quarantine.js";
 import { writeJsonAtomic } from "../state/json-file.js";
+import { findGitOperations } from "./git-operation-state.js";
 import { measurePath, type Measurement, type MeasureOptions } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
@@ -152,6 +153,23 @@ type ResolvedRecoveryDependencies = Required<
     "runGit" | "inspect" | "move" | "measure" | "processProbe" | "mountProbe" | "clock"
   >
 >;
+
+async function assertNoGitOperations(
+  entry: QuarantineEntry,
+  worktreePath: string,
+  dependencies: ResolvedRecoveryDependencies,
+): Promise<void> {
+  const operations = await findGitOperations(worktreePath, dependencies.runGit, (path) =>
+    pathExists(path, dependencies.inspect),
+  );
+  if (operations.length > 0) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_GIT_OPERATION_IN_PROGRESS",
+      `Git operation is in progress: ${operations.join(", ")}`,
+      entry,
+    );
+  }
+}
 
 function resolveDependencies(options: WorktreeRecoveryOptions): ResolvedRecoveryDependencies {
   return {
@@ -294,6 +312,7 @@ async function validateQuarantinedEntry(
   ) {
     fail("QUARANTINE_GIT_STATE_CHANGED", "quarantined worktree is no longer clean at planned HEAD");
   }
+  await assertNoGitOperations(entry, worktreePath, dependencies);
   const records = parseWorktreePorcelain(
     await dependencies.runGit([
       "--git-dir",
@@ -526,6 +545,7 @@ async function verifyRecoveryPath(
       entry,
     );
   }
+  await assertNoGitOperations(entry, path, dependencies);
   const records = await dependencies.runGit([
     "--git-dir",
     entry.target.repositoryCommonDir,
@@ -879,12 +899,15 @@ async function resumeInterruptedPurge(
     ]);
     if (
       parseWorktreePorcelain(records).some(
-        (record) => record.path === entry.quarantinePath || record.path === isolationPath,
+        (record) =>
+          record.path === entry.quarantinePath ||
+          record.path === isolationPath ||
+          (record.head === entry.target.head && record.branch === entry.target.branch),
       )
     ) {
       throw new WorktreeRecoveryError(
         "QUARANTINE_REGISTRATION_CHANGED",
-        "interrupted purge left a worktree registration behind",
+        "interrupted purge left or moved the target worktree registration",
         entry,
       );
     }
