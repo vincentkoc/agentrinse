@@ -124,11 +124,17 @@ async function reconcilePaths(
   if (!(await pathExists(paths.claimPath))) {
     return;
   }
-  await assertOwnedClaim(paths.claimPath, expectedReason);
   if (!(await pathExists(paths.lockPath))) {
+    try {
+      await assertOwnedClaim(paths.claimPath, expectedReason);
+    } catch (error) {
+      await restoreClaim(paths, platform);
+      throw error;
+    }
     await renameNoReplace(paths.claimPath, paths.lockPath, platform);
     return;
   }
+  await assertOwnedClaim(paths.claimPath, expectedReason);
   await retainClaim(paths, expectedReason, platform);
 }
 

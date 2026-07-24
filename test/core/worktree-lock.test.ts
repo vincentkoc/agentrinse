@@ -186,4 +186,38 @@ describe("owned worktree lock handoff", () => {
     expect((await readFile(lockPath, "utf8")).trim()).toBe(expectedReason);
     expect(await missing(claimPath)).toBe(true);
   });
+
+  it("restores an interrupted foreign claim before rejecting ownership", async () => {
+    const fixture = await lockFixture();
+    const claimId = "entry-lock-foreign-recovery";
+    const expectedReason = `AgentRinse quarantine ${claimId}`;
+    await fixture.runGit([
+      "--git-dir",
+      fixture.repositoryCommonDir,
+      "worktree",
+      "lock",
+      "--reason",
+      "operator hold",
+      fixture.linked,
+    ]);
+    const lockPath = (
+      await fixture.runGit(["-C", fixture.linked, "rev-parse", "--git-path", "locked"])
+    ).trim();
+    const suffix = createHash("sha256").update(claimId).digest("hex").slice(0, 16);
+    const claimPath = `${lockPath}.agentrinse-${suffix}`;
+    await renameNoReplace(lockPath, claimPath);
+
+    await expect(
+      reconcileOwnedWorktreeLockClaim({
+        worktreePath: fixture.linked,
+        repositoryCommonDir: fixture.repositoryCommonDir,
+        expectedReason,
+        claimId,
+        runGit: fixture.runGit,
+      }),
+    ).rejects.toBeInstanceOf(WorktreeLockOwnershipError);
+
+    expect((await readFile(lockPath, "utf8")).trim()).toBe("operator hold");
+    expect(await missing(claimPath)).toBe(true);
+  });
 });
