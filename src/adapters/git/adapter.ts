@@ -13,6 +13,7 @@ import {
   findProcessesUsingPath,
   type ProcessOwnershipResult,
 } from "../../core/process-ownership.js";
+import type { ReachabilityIndex } from "../../core/reachability.js";
 import { parseWorktreePorcelain } from "./porcelain.js";
 import { parseGitStatusPorcelainV2, type GitStatusFacts } from "./status.js";
 
@@ -72,6 +73,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     private readonly runGit: GitRunner = defaultGitRunner,
     private readonly pathExists: GitPathExists = defaultPathExists,
     private readonly processProbe: GitProcessProbe = (path) => findProcessesUsingPath(path),
+    private readonly reachability?: ReachabilityIndex,
   ) {}
 
   async probe(_context: AuditContext): Promise<AdapterProbe> {
@@ -357,6 +359,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         observedAt,
         detail: "Git state or reachability could not be proven completely.",
       });
+    }
+    if (resource.resource.path !== undefined) {
+      roots.push(...(this.reachability?.rootsFor(resource.resource.path, observedAt) ?? []));
     }
     roots.push({
       code: "worktree-removal-unavailable",

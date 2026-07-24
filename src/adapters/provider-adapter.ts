@@ -8,6 +8,8 @@ import type { AdapterProbe } from "../contracts/report.js";
 import type { ResourceSnapshot } from "../contracts/resource.js";
 import { sha256 } from "../core/digest.js";
 import { measurePath } from "../core/measure.js";
+import type { ReachabilityIndex } from "../core/reachability.js";
+import { collectProviderReachability } from "./provider-reachability.js";
 import type { ProviderSpec } from "./provider-specs.js";
 
 export type ProviderAdapterOptions = {
@@ -15,6 +17,7 @@ export type ProviderAdapterOptions = {
   platform?: NodeJS.Platform;
   measureBytes: boolean;
   maxEntries: number;
+  reachability?: ReachabilityIndex;
 };
 
 function isMissing(error: unknown): boolean {
@@ -116,11 +119,33 @@ export class ProviderAuditAdapter implements AuditAdapter {
 
   async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
+      if (
+        probe.status === "degraded" &&
+        this.options.reachability !== undefined &&
+        (this.spec.id === "codex" || this.spec.id === "claude")
+      ) {
+        this.options.reachability.addGlobal({
+          code: "unknown-provider-state",
+          source: this.spec.id,
+          detail: `${this.spec.displayName} ownership metadata could not be inspected.`,
+        });
+      }
       return { resources: [], diagnostics: [] };
     }
 
     const resources: ResourceSnapshot[] = [];
     const diagnostics: Diagnostic[] = [];
+
+    if (this.options.reachability !== undefined) {
+      diagnostics.push(
+        ...(await collectProviderReachability(
+          this.spec.id,
+          context,
+          probe.root,
+          this.options.reachability,
+        )),
+      );
+    }
 
     for (const candidate of this.spec.resources) {
       context.signal?.throwIfAborted();

@@ -19,6 +19,18 @@ describe("ReachabilityIndex", () => {
       detail: "Codex links a thread to this path.",
       evidenceRef: "codex:thread",
     });
+    index.add({
+      code: "provider-managed-worktree",
+      source: "codex",
+      path: "/tmp/repo",
+      scope: "subtree",
+      detail: "Codex owns this managed worktree.",
+    });
+    index.addGlobal({
+      code: "unknown-provider-state",
+      source: "claude",
+      detail: "Claude metadata could not be proven.",
+    });
 
     expect(index.rootsFor("/tmp/repo/worktree", "2026-07-24T00:00:00.000Z")).toEqual([
       {
@@ -29,14 +41,33 @@ describe("ReachabilityIndex", () => {
         evidenceRef: "codex:thread",
       },
       {
+        code: "provider-managed-worktree",
+        source: "codex",
+        observedAt: "2026-07-24T00:00:00.000Z",
+        detail: "Codex owns this managed worktree.",
+      },
+      {
         code: "recent-session",
         source: "claude",
         observedAt: "2026-07-24T00:00:00.000Z",
         detail: "Claude remembers this project.",
         evidenceRef: "claude:project",
       },
+      {
+        code: "unknown-provider-state",
+        source: "claude",
+        observedAt: "2026-07-24T00:00:00.000Z",
+        detail: "Claude metadata could not be proven.",
+      },
     ]);
-    expect(index.rootsFor("/tmp/repo/other", "2026-07-24T00:00:00.000Z")).toEqual([]);
+    expect(index.rootsFor("/tmp/other", "2026-07-24T00:00:00.000Z")).toEqual([
+      {
+        code: "unknown-provider-state",
+        source: "claude",
+        observedAt: "2026-07-24T00:00:00.000Z",
+        detail: "Claude metadata could not be proven.",
+      },
+    ]);
   });
 
   it("deduplicates identical evidence", () => {

@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { GitWorktreeAuditAdapter } from "../../src/adapters/git/adapter.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
+import { ReachabilityIndex } from "../../src/core/reachability.js";
 
 describe("GitWorktreeAuditAdapter", () => {
   it("requires an explicit repository root", async () => {
@@ -79,6 +80,13 @@ describe("GitWorktreeAuditAdapter", () => {
       }
       throw new Error(`unexpected Git command: ${args.join(" ")}`);
     };
+    const reachability = new ReachabilityIndex();
+    reachability.add({
+      path: linked,
+      code: "recent-session",
+      source: "codex",
+      detail: "Codex metadata references this workspace.",
+    });
     const adapter = new GitWorktreeAuditAdapter(
       main,
       runner,
@@ -87,6 +95,7 @@ describe("GitWorktreeAuditAdapter", () => {
         path === linked
           ? { status: "busy", matches: [{ pid: 42, source: "cwd", path: linked }] }
           : { status: "idle", matches: [] },
+      reachability,
     );
 
     const probe = await adapter.probe(context);
@@ -103,6 +112,7 @@ describe("GitWorktreeAuditAdapter", () => {
         "dirty-worktree",
         "git-operation-in-progress",
         "live-process-worktree",
+        "recent-session",
         "unpushed-commit",
       ]),
     );
