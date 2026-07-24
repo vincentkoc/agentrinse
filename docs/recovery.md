@@ -115,6 +115,11 @@ If both deterministic paths are absent, purge finalization also refuses any
 registration at another path with the recorded branch and HEAD.
 The same relocated-registration check runs after a normal purge removal before
 the recovery ref or manifest can be finalized.
+An entry already persisted as `purging` remains selectable by `--expired` even
+if its recorded expiry no longer compares as expired. Once Git removal has
+completed, resume verifies registration and recovery-ref integrity and
+finalizes the manifest without pretending a newly discovered protection can
+restore the deleted worktree.
 
 The root `.git` control file is excluded from worktree content fingerprints
 because `git worktree repair` owns and rewrites it. Ignored files and every

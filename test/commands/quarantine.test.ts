@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -161,6 +161,30 @@ describe("undo command", () => {
     expect(undo).toHaveBeenCalledWith(partial, expect.any(Object));
   });
 
+  it("resolves a relative home before loading quarantine state", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-relative-home-"));
+    const value = entry("relative-home", "run-1", "2026-08-01T00:00:00.000Z");
+    const layout = stateLayout(join(home, ".local", "state", "agentrinse"));
+    await writeJsonAtomic(join(layout.quarantine, `${value.entryId}.json`), value, {
+      privateDirectories: [layout.quarantine],
+    });
+    const undo = vi.fn(async (candidate: QuarantineEntry) => ({
+      ...candidate,
+      status: "restored" as const,
+      restoredAt: "2026-07-24T00:00:00.000Z",
+    }));
+
+    await executeUndoCommand({
+      runId: "run-1",
+      home: relative(process.cwd(), home),
+      yes: true,
+      json: false,
+      dependencies: { undo },
+    });
+
+    expect(undo).toHaveBeenCalledWith(value, expect.any(Object));
+  });
+
   it("selects an interrupted initial quarantine entry for recovery", async () => {
     const interrupted = {
       ...entry("initial", "run-1", "2026-08-01T00:00:00.000Z"),
@@ -283,6 +307,35 @@ describe("purge command", () => {
 
     expect(purge).toHaveBeenCalledWith(purging, expect.any(Object));
     expect(result.entries[0]?.status).toBe("purged");
+  });
+
+  it("resumes an already-started purge even when it is no longer expired", async () => {
+    const purging = {
+      ...entry("purging-future", "run-2", "2026-08-01T00:00:00.000Z"),
+      status: "purging" as const,
+    };
+    const fixture = await stateFixture([purging]);
+    const purge = vi.fn(async (value: QuarantineEntry) => ({
+      entry: {
+        ...value,
+        status: "purged" as const,
+        purgedAt: "2026-07-24T00:00:00.000Z",
+      },
+      reclaimedBytes: value.target.measuredBytes,
+    }));
+
+    await executePurgeCommand({
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      expired: true,
+      apply: true,
+      yes: true,
+      json: false,
+      now: new Date("2026-07-24T00:00:00.000Z"),
+      dependencies: { purge },
+    });
+
+    expect(purge).toHaveBeenCalledWith(purging, expect.objectContaining({ allowUnexpired: true }));
   });
 
   it.each([

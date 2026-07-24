@@ -1125,7 +1125,6 @@ async function resumeInterruptedPurge(
         entry,
       );
     }
-    await options.revalidateProtection?.(entry);
     await deleteRecoveryRef(entry, dependencies);
     const purged = await persist(
       {

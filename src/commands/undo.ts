@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
 import { undoWorktreeQuarantine, type WorktreeRecoveryOptions } from "../core/worktree-recovery.js";
@@ -30,7 +31,8 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
   if (options.json && !options.yes) {
     throw new Error("undo --json requires --yes");
   }
-  const layout = stateLayout(resolveStateRoot(options.home, options.stateDir));
+  const home = resolve(options.home);
+  const layout = stateLayout(resolveStateRoot(home, options.stateDir));
   const records = await listJsonRecordFiles(layout.quarantine, quarantineEntrySchema);
   for (const record of records) {
     if (record.name !== `${record.value.entryId}.json`) {

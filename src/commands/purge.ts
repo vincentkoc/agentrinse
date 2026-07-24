@@ -159,7 +159,7 @@ export async function executePurgeCommand(
   const live = records.filter(({ value }) => ["quarantined", "purging"].includes(value.status));
   const entries = live.filter(({ value: entry }) =>
     options.expired
-      ? Date.parse(entry.expiresAt) <= now.getTime()
+      ? entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()
       : options.runId === undefined || entry.runId === options.runId,
   );
 
@@ -220,7 +220,7 @@ export async function executePurgeCommand(
       const result = await (options.dependencies?.purge ?? purgeWorktreeQuarantine)(entry, {
         manifestPath: record.path,
         quarantineDirectory: layout.quarantine,
-        allowUnexpired: options.runId !== undefined,
+        allowUnexpired: entry.status === "purging" || options.runId !== undefined,
         revalidateProtection,
       });
       purged.push(result.entry);

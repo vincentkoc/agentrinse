@@ -26,6 +26,8 @@ The project follows semantic versioning after its first supported release.
   transitions
 - exact AgentRinse lock ownership checks and rollback of interrupted purge
   isolation failures
+- unconditional selection and terminal finalization for already-started purge
+  transitions
 - mutation-time Git operation checks, moved-registration refusal, and reserved
   quarantine-container protection
 - registered-worktree container refusal and symmetric relocated-registration

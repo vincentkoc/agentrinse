@@ -653,6 +653,44 @@ describe("executeWorktreeQuarantine", () => {
 });
 
 describe("worktree quarantine recovery", () => {
+  it("treats a missing recovery ref as absent with the production Git runner", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-initial-missing-ref";
+    const runId = "run-initial-missing-ref";
+    const manifestPath = join(quarantineDirectory, `${entryId}.json`);
+    const manifest = quarantineEntrySchema.parse({
+      schemaVersion: 1,
+      entryId,
+      runId,
+      actionId: fixture.action.actionId,
+      resourceId: fixture.action.resourceId,
+      status: "preparing",
+      originalPath: fixture.linked,
+      quarantinePath: worktreeQuarantinePath(fixture.action, entryId),
+      recoveryRef: worktreeRecoveryRef(fixture.action, runId),
+      createdAt: "2026-07-24T00:00:00.000Z",
+      expiresAt: "2026-07-31T00:00:00.000Z",
+      measurementMaxEntries: 10_000,
+      target: fixture.action.target,
+    });
+    await writeJsonAtomic(manifestPath, manifest, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(manifest, {
+      manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    expect(await missing(fixture.linked)).toBe(false);
+  });
+
   it("cleans up a recovery ref when quarantine was interrupted before the move", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
@@ -2092,14 +2130,14 @@ describe("worktree quarantine recovery", () => {
     });
 
     expect(purged.entry.status).toBe("purged");
-    expect(protectionChecked).toBe(true);
+    expect(protectionChecked).toBe(false);
     expect(purged.reclaimedBytes).toBe(fixture.action.target.measuredBytes);
     await expect(readFile(join(fixture.linked, "replacement.txt"), "utf8")).resolves.toBe(
       "unrelated replacement\n",
     );
   });
 
-  it("preserves recovery state when resumed purge finalization becomes protected", async () => {
+  it("finalizes an already-removed purge without repeating pre-removal protection", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
     const result = await executeWorktreeQuarantine(fixture.action, {
@@ -2128,31 +2166,28 @@ describe("worktree quarantine recovery", () => {
       privateDirectories: [quarantineDirectory],
     });
 
-    await expect(
-      purgeWorktreeQuarantine(purging, {
-        manifestPath: result.manifestPath,
-        quarantineDirectory,
-        revalidateProtection: async () => {
-          throw new Error("new protection root");
-        },
-        dependencies: { runGit: fixture.runGit },
-      }),
-    ).rejects.toThrow("new protection root");
+    let protectionChecks = 0;
+    const purged = await purgeWorktreeQuarantine(purging, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      revalidateProtection: async () => {
+        protectionChecks += 1;
+        throw new Error("post-removal protection must not run");
+      },
+      dependencies: { runGit: fixture.runGit },
+    });
 
-    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
-      "purging",
-    );
-    expect(
-      (
-        await fixture.runGit([
-          "--git-dir",
-          fixture.action.target.repositoryCommonDir,
-          "rev-parse",
-          "--verify",
-          result.recoveryRef,
-        ])
-      ).trim(),
-    ).toBe(fixture.action.target.head);
+    expect(purged.entry.status).toBe("purged");
+    expect(protectionChecks).toBe(0);
+    await expect(
+      fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "rev-parse",
+        "--verify",
+        result.recoveryRef,
+      ]),
+    ).rejects.toThrow();
   });
 
   it("refuses purge after quarantined contents change", async () => {
