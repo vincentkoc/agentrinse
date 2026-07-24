@@ -49,11 +49,35 @@ describe("runAudit", () => {
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("git");
   });
 
+  it("resolves Git roots before classifying mutable artifacts", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.git = {
+      enabled: true,
+      root: "/tmp/agentrinse-git-fixture",
+    };
+    config.artifacts.projects = [
+      {
+        root: "/tmp/agentrinse-git-fixture",
+        names: ["node_modules"],
+      },
+    ];
+
+    const adapters = createAuditAdapters(config).map((adapter) => adapter.id);
+    expect(adapters.indexOf("git")).toBeLessThan(adapters.indexOf("artifacts"));
+  });
+
   it("adds Docker only when explicitly enabled", () => {
     const config = structuredClone(DEFAULT_CONFIG);
     config.adapters.docker = { enabled: true };
 
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("docker");
+  });
+
+  it("adds runtime inventory only when explicitly enabled", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.runtime = { enabled: true };
+
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("runtime");
   });
 
   it("adds artifacts only when explicit projects are configured", () => {

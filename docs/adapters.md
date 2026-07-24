@@ -12,6 +12,7 @@ separately scoped to explicitly configured rebuildable directories.
 | Zed            | user-data root                                             | all             |
 | OpenCode       | database, logs, snapshots                                  | all             |
 | Grok Build     | version-gated data root                                    | all             |
+| Runtime        | opt-in selected executable and Claude native versions      | all             |
 | Git            | explicit repository worktree porcelain                     | all             |
 | Docker         | opt-in structured image/container inventory                | all             |
 | Artifacts      | exact configured rebuildable directories                   | conditional     |
@@ -62,8 +63,25 @@ directory-level size reporting.
 ### Git
 
 The Git adapter is disabled by default and requires an explicit repository
-root. It uses `git worktree list --porcelain -z` and still protects every
-worktree until activity and push-state collectors exist.
+root. It uses `git worktree list --porcelain -z`, porcelain v2 status, local
+ref containment, configured remote-tracking refs, operation markers, and live
+process ownership. Whole-worktree removal remains unavailable in `0.2.0`.
+
+Codex and Claude metadata roots, explicit config pins, and the closeout
+current-worktree root are shared with artifact classification. A nested
+artifact never remains eligible after one of those roots is added.
+
+### Runtime
+
+Runtime inventory is opt-in. It reports selected Codex, Claude, Cursor,
+Copilot, OpenCode, and Grok executables found on `PATH`. Unknown installation
+managers remain `unknown`; AgentRinse recommends the owning installer or
+package manager and proposes no action.
+
+For Claude's documented native macOS/Linux layout, AgentRinse inventories
+regular files under `$HOME/.local/share/claude/versions` and marks the version
+selected by `$HOME/.local/bin/claude`. It does not infer staging names or
+remove superseded versions.
 
 ### Docker
 

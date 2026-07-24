@@ -63,6 +63,11 @@ describe("loadConfig", () => {
           ],
           minBytes: 1,
         },
+        pins: [
+          { path: "/tmp/project" },
+          { resourceId: "git:git-worktree:fixture" },
+          { gitRef: "refs/heads/release", expiresAt: "2026-08-01T00:00:00.000Z" },
+        ],
       }),
     );
 
@@ -81,6 +86,11 @@ describe("loadConfig", () => {
     ]);
     expect(config.artifacts.minAgeMinutes).toBe(24 * 60);
     expect(config.artifacts.minBytes).toBe(1);
+    expect(config.pins).toEqual([
+      { path: "/tmp/project" },
+      { resourceId: "git:git-worktree:fixture" },
+      { gitRef: "refs/heads/release", expiresAt: "2026-08-01T00:00:00.000Z" },
+    ]);
   });
 
   it("rejects relative artifact roots", async () => {
@@ -149,5 +159,43 @@ describe("loadConfig", () => {
     await expect(loadConfig(path)).rejects.toThrow(
       /artifact project roots must be unique|artifact cleanup targets must not overlap/,
     );
+  });
+
+  it("rejects ambiguous, relative, and malformed pins", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        pins: [{ path: "./project" }, { path: "/tmp/project", resourceId: "resource" }],
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it.each([
+    "refs/tags/",
+    "refs/heads/foo bar",
+    "refs/heads/foo..bar",
+    "refs/heads/foo.lock",
+    "refs/heads/.hidden",
+    "refs/heads/foo@{bar",
+    "refs/heads/foo.",
+    "refs/heads/foo//bar",
+    "refs/heads/foo~1",
+  ])("rejects invalid Git pin ref %s", async (gitRef) => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        pins: [{ gitRef }],
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow("pin Git ref is invalid");
   });
 });

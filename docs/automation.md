@@ -25,7 +25,7 @@ schemas.
 {
   "schemaVersion": 1,
   "command": "audit",
-  "agentrinseVersion": "0.1.0",
+  "agentrinseVersion": "0.2.0",
   "startedAt": "2026-07-24T00:00:00.000Z",
   "completedAt": "2026-07-24T00:00:01.000Z",
   "status": "ok",
@@ -94,7 +94,7 @@ resource is skipped rather than substituted.
 
 ## Exit Status
 
-Current `0.1.0` behavior:
+Current `0.2.0` behavior:
 
 | Code  | Meaning                                      |
 | ----- | -------------------------------------------- |
@@ -104,3 +104,41 @@ Current `0.1.0` behavior:
 | `130` | apply was interrupted at a safe checkpoint   |
 
 The run journal remains the source of truth for apply outcomes.
+
+A degraded `audit` remains report-only and exits `0`. A degraded `clean`
+closeout exits `1` so automation does not treat incomplete safety evidence as
+a clean closeout.
+
+## Closeout Profile
+
+The closeout profile starts from the current Git worktree, inventories every
+worktree registered to that repository, loads only Codex and Claude
+reachability metadata, and filters configured artifact projects to those
+worktrees:
+
+```bash
+agentrinse clean --profile closeout
+agentrinse clean --profile closeout --json
+```
+
+The current worktree is always a root. A dry run persists the exact audit,
+plan, and derived scoped config. The printed config path can be supplied if
+the persisted plan is applied separately:
+
+```bash
+agentrinse apply --plan <plan-path> --config <config-path> --yes
+```
+
+For a fresh one-command apply of existing `safe` artifact actions:
+
+```bash
+agentrinse clean --profile closeout --apply
+agentrinse clean --profile closeout --apply --yes --max-risk safe --json
+```
+
+The profile does not infer that work is complete. Call it only after the task
+has landed, been handed off, or otherwise reached a terminal state.
+
+On macOS, an installed Mole binary adds two external suggestions:
+`mo purge --dry-run` and `mo clean --dry-run`. AgentRinse does not execute or
+parse either command.

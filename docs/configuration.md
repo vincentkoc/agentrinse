@@ -37,6 +37,7 @@ An explicitly requested missing or invalid file is an error.
     "zed": { "enabled": true },
     "opencode": { "enabled": true },
     "grok": { "enabled": true },
+    "runtime": { "enabled": false },
     "git": { "enabled": false, "root": "/absolute/repository" },
     "docker": { "enabled": false }
   },
@@ -55,6 +56,14 @@ An explicitly requested missing or invalid file is an error.
     "minBytes": 67108864,
     "processCheck": "required"
   },
+  "pins": [
+    { "path": "/absolute/project-worktree" },
+    { "resourceId": "git:git-worktree:..." },
+    {
+      "gitRef": "refs/heads/release",
+      "expiresAt": "2026-08-01T00:00:00.000Z"
+    }
+  ],
   "plan": {
     "ttlMinutes": 30,
     "maxRisk": "safe"
@@ -66,6 +75,20 @@ Unknown keys are discarded by the current schema. Project roots must be
 unique absolute paths. Cleanup targets from different project entries may not
 overlap.
 
+## Pins
+
+Pins are explicit user-owned protection roots. A pin may name one absolute
+path, one exact AgentRinse resource ID, or one full Git ref under
+`refs/heads`, `refs/remotes`, or `refs/tags`.
+
+`expiresAt` is optional and must be an ISO 8601 timestamp. An expired pin is
+ignored. Pin evidence is hashed in findings; AgentRinse does not emit the
+configured path or ref as the evidence reference.
+
+Git ref pins resolve through the Git adapter before artifact classification.
+If Git is disabled or ref inspection is incomplete, AgentRinse conservatively
+protects the unresolved scope instead of allowing an artifact action.
+
 ## Provider Adapters
 
 Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, and Grok Build
@@ -73,9 +96,11 @@ are enabled for read-only inventory by default. Each accepts an optional
 `root`. Missing default roots mean the provider is absent, not broken. A
 missing explicit root is a doctor warning.
 
-Git is disabled by default and requires an explicit repository root. Docker is
-disabled by default and uses the active Docker context when enabled. Both
-adapters remain report-only in `0.1.0`.
+Git is disabled by default and requires an explicit repository root. Runtime
+inventory is disabled by default because it searches `PATH` and may execute
+selected binaries with `--version`. Docker is disabled by default and uses
+the active Docker context when enabled. All three adapters remain report-only
+in `0.2.0`.
 
 ## Artifact Projects
 

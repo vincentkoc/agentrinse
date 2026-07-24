@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { AdapterId } from "../config/schema.js";
 import type { ResourceKind } from "../contracts/resource.js";
 
-export type ProviderAdapterId = Exclude<AdapterId, "git" | "docker">;
+export type ProviderAdapterId = Exclude<AdapterId, "git" | "docker" | "runtime">;
 
 export type ProviderResourceSpec = {
   relativePath: string;

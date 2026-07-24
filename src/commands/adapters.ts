@@ -9,6 +9,7 @@ export function renderAdapters(): string {
       .map((spec) => `${spec.id.padEnd(10)} audit-only  ${spec.displayName}`),
     "",
     "git        audit-only  Git worktrees (explicit root)",
+    "runtime    audit-only  Installed agent runtimes",
     "docker     audit-only  Docker images and containers (opt-in)",
     "artifacts  safe-clean  Explicit rebuildable project directories",
     "",

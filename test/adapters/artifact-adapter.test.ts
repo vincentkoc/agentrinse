@@ -10,6 +10,7 @@ import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";
 import type { ProcessOwnershipResult } from "../../src/core/process-ownership.js";
+import { ReachabilityIndex } from "../../src/core/reachability.js";
 
 const NOW = new Date("2026-07-23T12:00:00.000Z");
 
@@ -78,6 +79,68 @@ describe("ArtifactAuditAdapter", () => {
     expect(finding.state).toBe("protected");
     expect(finding.roots[0]?.code).toBe("live-process");
     expect(finding.candidateActions).toEqual([]);
+  });
+
+  it("suppresses actions inside a rooted worktree", async () => {
+    const { context, projectRoot } = await fixture();
+    const reachability = new ReachabilityIndex();
+    reachability.add({
+      path: projectRoot,
+      code: "active-session",
+      source: "codex",
+      detail: "Codex marks this workspace as active.",
+    });
+    const adapter = new ArtifactAuditAdapter(
+      {
+        projects: [{ root: projectRoot, names: ["node_modules"] }],
+        minAgeMinutes: 60,
+        minBytes: 1,
+        processCheck: "required",
+        measureBytes: true,
+        maxEntries: 100,
+      },
+      async () => ({ status: "idle", matches: [] }),
+      async () => ({ status: "clear", paths: [] }),
+      reachability,
+    );
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("protected");
+    expect(finding.roots.map((root) => root.code)).toContain("active-session");
+    expect(finding.candidateActions).toEqual([]);
+  });
+
+  it("does not treat global unknown provider state as artifact ownership", async () => {
+    const { context, projectRoot } = await fixture();
+    const reachability = new ReachabilityIndex();
+    reachability.addGlobal({
+      code: "unknown-provider-state",
+      source: "codex",
+      detail: "Codex workspace metadata could not be proven.",
+    });
+    const adapter = new ArtifactAuditAdapter(
+      {
+        projects: [{ root: projectRoot, names: ["node_modules"] }],
+        minAgeMinutes: 60,
+        minBytes: 1,
+        processCheck: "required",
+        measureBytes: true,
+        maxEntries: 100,
+      },
+      async () => ({ status: "idle", matches: [] }),
+      async () => ({ status: "clear", paths: [] }),
+      reachability,
+    );
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("eligible");
+    expect(finding.candidateActions).toHaveLength(1);
   });
 
   it("uses the newest descendant for the age threshold", async () => {

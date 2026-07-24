@@ -10,6 +10,7 @@ export const DEFAULT_CONFIG: AgentRinseConfig = {
     zed: { enabled: true },
     opencode: { enabled: true },
     grok: { enabled: true },
+    runtime: { enabled: false },
     git: { enabled: false },
     docker: { enabled: false },
   },
@@ -23,6 +24,7 @@ export const DEFAULT_CONFIG: AgentRinseConfig = {
     minBytes: 64 * 1024 * 1024,
     processCheck: "required",
   },
+  pins: [],
   plan: {
     ttlMinutes: 30,
     maxRisk: "safe",

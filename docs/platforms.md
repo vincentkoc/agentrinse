@@ -25,8 +25,11 @@ macOS is Tier 1 for `0.1.0`.
 - `lsof` process ownership proof
 - safe configured artifact apply
 - optional Mole detection through `mo --version`
+- external `mo purge --dry-run` and `mo clean --dry-run` suggestions from the
+  closeout profile
 
-Mole remains external. AgentRinse does not embed or invoke Mole cleanup.
+Mole remains external. AgentRinse does not embed, invoke, or parse Mole
+cleanup.
 
 ## Linux
 

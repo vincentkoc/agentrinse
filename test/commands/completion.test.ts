@@ -12,6 +12,7 @@ describe("completion command", () => {
 
     expect(output).toContain(marker);
     expect(output).toContain("audit");
+    expect(output).toContain("clean");
     expect(output).toContain("doctor");
     expect(output).toContain("recover");
     expect(output).toContain("resource");
