@@ -93,6 +93,12 @@ same-filesystem isolation path, repairs and revalidates the Git registration
 there, invokes `git worktree remove` without `--force`, verifies path and
 registration removal, then deletes the exact recovery ref.
 
+Immediately before each destructive purge, AgentRinse reloads configuration
+and provider workspace metadata while holding the mutation lock. It checks the
+recorded resource ID and Git ref plus both the original and quarantine paths.
+Current pins, provider-managed roots, active or recent sessions, and unknown
+provider state all refuse permanent removal.
+
 If AgentRinse restarts while the worktree is at the purge isolation path, it
 repeats full validation there. A failed validation moves the worktree back to
 the quarantine path, repairs and relocks it with the exact AgentRinse lock

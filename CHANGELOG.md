@@ -30,6 +30,8 @@ The project follows semantic versioning after its first supported release.
   checks during purge finalization
 - atomic worktree-lock ownership handoff that preserves foreign locks and
   recovers interrupted AgentRinse lock claims
+- mutation-locked purge protection refresh for path, resource, Git-ref,
+  provider-managed, active-session, recent-session, and unknown-provider roots
 - packaged end-to-end quarantine, undo, and clean purge smoke proof
 - Homebrew distribution through `vincentkoc/tap`
 
@@ -44,6 +46,8 @@ The project follows semantic versioning after its first supported release.
   cross-device, mounted, or incompletely inspected worktrees fail closed
 - purge atomically isolates and revalidates the worktree before using
   `git worktree remove` without `--force`
+- purge reloads current pins and provider metadata under the mutation lock;
+  any matching or unknown protection root refuses permanent removal
 - native Windows worktree mutation remains blocked
 
 ## [0.2.0] - 2026-07-24

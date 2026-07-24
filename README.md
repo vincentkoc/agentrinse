@@ -166,6 +166,11 @@ no live process, no pin or provider root, and sufficient age. A recovery ref
 is created before atomic same-filesystem rename. Git registration is repaired,
 locked, verified, and recorded in an owner-only manifest.
 
+Permanent purge reloads configuration and provider workspace metadata under
+the mutation lock. A current path, resource-ID, or Git-ref pin, provider-managed
+root, active/recent session, or unknown provider state protects the quarantined
+worktree and refuses deletion.
+
 AgentRinse never removes provider sessions, transcripts, databases,
 credentials, configuration, plugins, skills, memories, Git branches, stashes,
 Docker images, containers, networks, volumes, or build cache in `0.3.0`.

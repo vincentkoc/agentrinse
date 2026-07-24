@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -255,6 +255,80 @@ describe("purge command", () => {
 
     expect(purge).toHaveBeenCalledWith(purging, expect.any(Object));
     expect(result.entries[0]?.status).toBe("purged");
+  });
+
+  it.each([
+    ["original path", (value: QuarantineEntry) => ({ path: value.originalPath })],
+    ["quarantine path", (value: QuarantineEntry) => ({ path: value.quarantinePath })],
+    ["resource ID", (value: QuarantineEntry) => ({ resourceId: value.resourceId })],
+    ["Git ref", (value: QuarantineEntry) => ({ gitRef: value.target.branch! })],
+  ])("revalidates a current %s pin before destructive purge", async (_label, pinFor) => {
+    const value = entry("protected", "run-2", "2026-08-01T00:00:00.000Z");
+    const fixture = await stateFixture([value]);
+    const configPath = join(fixture.home, "agentrinse.json");
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        adapters: {
+          codex: { enabled: false },
+          claude: { enabled: false },
+          cursor: { enabled: false },
+          copilot: { enabled: false },
+          zed: { enabled: false },
+          opencode: { enabled: false },
+          grok: { enabled: false },
+          git: { enabled: true },
+        },
+        pins: [pinFor(value)],
+      })}\n`,
+    );
+    const purge = vi.fn();
+
+    await expect(
+      executePurgeCommand({
+        home: fixture.home,
+        config: configPath,
+        stateDir: fixture.stateRoot,
+        expired: false,
+        runId: "run-2",
+        apply: true,
+        yes: true,
+        json: false,
+        now: new Date("2026-07-24T00:00:00.000Z"),
+        dependencies: { purge },
+      }),
+    ).rejects.toThrow("purge refused protected quarantine entry protected");
+
+    expect(purge).not.toHaveBeenCalled();
+  });
+
+  it("revalidates current provider workspace metadata before destructive purge", async () => {
+    const value = entry("provider-protected", "run-2", "2026-08-01T00:00:00.000Z");
+    const fixture = await stateFixture([value]);
+    const codexRoot = join(fixture.home, ".codex");
+    await mkdir(codexRoot);
+    await writeFile(
+      join(codexRoot, ".codex-global-state.json"),
+      `${JSON.stringify({ "active-workspace-roots": [value.originalPath] })}\n`,
+    );
+    const purge = vi.fn();
+
+    await expect(
+      executePurgeCommand({
+        home: fixture.home,
+        stateDir: fixture.stateRoot,
+        expired: false,
+        runId: "run-2",
+        apply: true,
+        yes: true,
+        json: false,
+        now: new Date("2026-07-24T00:00:00.000Z"),
+        dependencies: { purge },
+      }),
+    ).rejects.toThrow("active-session");
+
+    expect(purge).not.toHaveBeenCalled();
   });
 
   it("refuses unscoped destructive purge", async () => {

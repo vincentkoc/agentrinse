@@ -3310,6 +3310,11 @@ The supported npm release remains the first distribution target. A formula in
   `--force`; changed or unclean quarantine state is refused and an interrupted
   isolation failure is rolled back to locked quarantine. Finalization refuses
   a matching branch and HEAD registration at any unexpected path.
+- Before each destructive purge, AgentRinse reloads configuration and provider
+  workspace metadata under the mutation lock. It rechecks the recorded resource
+  ID, Git ref, original path, and quarantine path against all current reachability
+  roots. A matching pin, provider-managed root, active/recent session, or
+  unknown provider state refuses permanent removal.
 - Quarantine reports zero immediately reclaimed bytes and records the full
   byte count as pending expiry. The default undo TTL is seven days.
 - macOS and Linux are supported. Native Windows worktree mutation remains
