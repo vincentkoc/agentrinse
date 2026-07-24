@@ -16,6 +16,7 @@ export type Measurement = {
 export type MeasureOptions = {
   maxEntries: number;
   signal?: AbortSignal;
+  excludeRootEntries?: string[];
 };
 
 export async function measurePath(root: string, options: MeasureOptions): Promise<Measurement> {
@@ -93,6 +94,9 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
     const directory = await opendir(path);
     const names: string[] = [];
     for await (const entry of directory) {
+      if (path === root && options.excludeRootEntries?.includes(entry.name) === true) {
+        continue;
+      }
       names.push(entry.name);
     }
     names.sort((left, right) => right.localeCompare(left));

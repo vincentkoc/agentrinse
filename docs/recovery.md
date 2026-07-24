@@ -74,8 +74,14 @@ agentrinse purge --run <run-id> --apply --yes
 
 `--expired` respects the manifest TTL. `--run` is an explicit operator choice
 and can purge before expiry. Purge revalidates the unchanged clean worktree,
-unlocks it, invokes `git worktree remove` without `--force`, verifies path and
-registration removal, then deletes the exact recovery ref.
+unlocks it, atomically renames it to a deterministic same-filesystem isolation
+path, repairs and revalidates the Git registration there, invokes
+`git worktree remove` without `--force`, verifies path and registration
+removal, then deletes the exact recovery ref.
+
+The root `.git` control file is excluded from worktree content fingerprints
+because `git worktree repair` owns and rewrites it. Ignored files and every
+other worktree entry remain inside the fingerprint and refusal boundary.
 
 Atomic quarantine itself does not free disk. Only purge reports those bytes as
 reclaimed.

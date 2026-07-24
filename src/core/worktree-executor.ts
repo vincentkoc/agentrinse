@@ -17,7 +17,7 @@ import {
   type QuarantineEntry,
 } from "../contracts/quarantine.js";
 import { ensurePrivateDirectory, writeJsonAtomic } from "../state/json-file.js";
-import { measurePath, type Measurement } from "./measure.js";
+import { measurePath, type Measurement, type MeasureOptions } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -60,7 +60,7 @@ export type WorktreeExecutorDependencies = {
   runGit?: (args: string[]) => Promise<string>;
   inspect?: (path: string) => Promise<Stats>;
   move?: (source: string, destination: string) => Promise<void>;
-  measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
+  measure?: (path: string, options: MeasureOptions) => Promise<Measurement>;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   maxEntries?: number;
@@ -321,6 +321,7 @@ export async function executeWorktreeQuarantine(
     }
     const boundaryMeasurement = await measure(action.target.path, {
       maxEntries: measurementMaxEntries,
+      excludeRootEntries: [".git"],
     });
     if (
       boundaryMeasurement.truncated ||
@@ -419,6 +420,7 @@ export async function executeWorktreeQuarantine(
       inspect(quarantinePath),
       measure(quarantinePath, {
         maxEntries: measurementMaxEntries,
+        excludeRootEntries: [".git"],
       }),
     ]);
     if (
@@ -488,6 +490,7 @@ export async function executeWorktreeQuarantine(
       inspect(quarantinePath),
       measure(quarantinePath, {
         maxEntries: measurementMaxEntries,
+        excludeRootEntries: [".git"],
       }),
     ]);
     if (

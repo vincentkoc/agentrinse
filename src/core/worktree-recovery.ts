@@ -15,7 +15,7 @@ import {
   type QuarantineStatus,
 } from "../contracts/quarantine.js";
 import { writeJsonAtomic } from "../state/json-file.js";
-import { measurePath, type Measurement } from "./measure.js";
+import { measurePath, type Measurement, type MeasureOptions } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -39,7 +39,7 @@ export type WorktreeRecoveryDependencies = {
   runGit?: (args: string[]) => Promise<string>;
   inspect?: (path: string) => Promise<Stats>;
   move?: (source: string, destination: string) => Promise<void>;
-  measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
+  measure?: (path: string, options: MeasureOptions) => Promise<Measurement>;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   clock?: () => Date;
@@ -176,6 +176,7 @@ async function validateQuarantinedEntry(
   requireOriginalVacant: boolean,
   acceptedStatuses: QuarantineStatus[] = ["quarantined"],
   requireLocked = true,
+  worktreePath = entry.quarantinePath,
 ): Promise<{
   dependencies: ResolvedRecoveryDependencies;
   registrationLocked: boolean;
@@ -198,7 +199,7 @@ async function validateQuarantinedEntry(
   }
 
   const [quarantineStats, commonDirStats] = await Promise.all([
-    dependencies.inspect(entry.quarantinePath),
+    dependencies.inspect(worktreePath),
     dependencies.inspect(entry.target.repositoryCommonDir),
   ]);
   if (
@@ -214,8 +215,9 @@ async function validateQuarantinedEntry(
     fail("QUARANTINE_REPOSITORY_CHANGED", "Git common directory is no longer a real directory");
   }
 
-  const measurement = await dependencies.measure(entry.quarantinePath, {
+  const measurement = await dependencies.measure(worktreePath, {
     maxEntries: entry.measurementMaxEntries,
+    excludeRootEntries: [".git"],
   });
   if (
     measurement.truncated ||
@@ -227,7 +229,7 @@ async function validateQuarantinedEntry(
   ) {
     fail("QUARANTINE_CONTENT_CHANGED", "quarantined worktree contents changed after apply");
   }
-  const ownership = await dependencies.processProbe(entry.quarantinePath);
+  const ownership = await dependencies.processProbe(worktreePath);
   if (ownership.status !== "idle") {
     fail(
       ownership.status === "busy" ? "QUARANTINE_PROCESS_ACTIVE" : "QUARANTINE_PROCESS_UNKNOWN",
@@ -236,7 +238,7 @@ async function validateQuarantinedEntry(
         : "live process ownership could not be proven idle",
     );
   }
-  const mounts = await dependencies.mountProbe(entry.quarantinePath);
+  const mounts = await dependencies.mountProbe(worktreePath);
   if (mounts.status !== "clear") {
     fail(
       mounts.status === "blocked"
@@ -251,7 +253,7 @@ async function validateQuarantinedEntry(
   const status = parseGitStatusPorcelainV2(
     await dependencies.runGit([
       "-C",
-      entry.quarantinePath,
+      worktreePath,
       "status",
       "--porcelain=v2",
       "--branch",
@@ -261,7 +263,7 @@ async function validateQuarantinedEntry(
     ]),
   );
   const statusSuppressedEntries = countStatusSuppressedIndexEntries(
-    await dependencies.runGit(["-C", entry.quarantinePath, "ls-files", "-z", "-v"]),
+    await dependencies.runGit(["-C", worktreePath, "ls-files", "-z", "-v"]),
   );
   if (
     status.head !== entry.target.head ||
@@ -283,7 +285,7 @@ async function validateQuarantinedEntry(
   );
   const registration = records.find(
     (record) =>
-      record.path === entry.quarantinePath &&
+      record.path === worktreePath &&
       record.head === entry.target.head &&
       record.branch === entry.target.branch,
   );
@@ -415,6 +417,7 @@ async function verifyRestoredTransition(
   }
   const measurement = await dependencies.measure(entry.originalPath, {
     maxEntries: entry.measurementMaxEntries,
+    excludeRootEntries: [".git"],
   });
   if (
     measurement.truncated ||
@@ -556,12 +559,27 @@ async function resumeInterruptedUndo(
   );
 }
 
+function purgeIsolationPath(entry: QuarantineEntry): string {
+  return `${entry.quarantinePath}.purging`;
+}
+
 async function resumeInterruptedPurge(
   entry: QuarantineEntry,
   options: PurgeWorktreeOptions,
 ): Promise<{ entry: QuarantineEntry; reclaimedBytes: number } | QuarantineEntry> {
   const dependencies = resolveDependencies(options);
-  const quarantineExists = await pathExists(entry.quarantinePath, dependencies.inspect);
+  const isolationPath = purgeIsolationPath(entry);
+  const [quarantineExists, isolationExists] = await Promise.all([
+    pathExists(entry.quarantinePath, dependencies.inspect),
+    pathExists(isolationPath, dependencies.inspect),
+  ]);
+  if (quarantineExists && isolationExists) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_PURGE_TRANSITION_AMBIGUOUS",
+      "interrupted purge has both source and isolation paths",
+      entry,
+    );
+  }
   if (quarantineExists) {
     const validated = await validateQuarantinedEntry(entry, options, false, ["purging"], false);
     if (!validated.registrationLocked) {
@@ -578,7 +596,31 @@ async function resumeInterruptedPurge(
     }
     return persist({ ...entry, status: "quarantined" }, options);
   }
-  if (!quarantineExists) {
+  if (isolationExists) {
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "repair",
+      isolationPath,
+    ]);
+    await validateQuarantinedEntry(entry, options, false, ["purging"], false, isolationPath);
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "remove",
+      isolationPath,
+    ]);
+    if (await pathExists(isolationPath, dependencies.inspect)) {
+      throw new WorktreeRecoveryError(
+        "QUARANTINE_PURGE_TRANSITION_AMBIGUOUS",
+        "Git reported success but the purge isolation path remains",
+        entry,
+      );
+    }
+  }
+  if (!quarantineExists && !isolationExists) {
     assertSupportedPlatform(entry, options);
     assertManifestPath(entry, options);
     const records = await dependencies.runGit([
@@ -589,7 +631,11 @@ async function resumeInterruptedPurge(
       "--porcelain",
       "-z",
     ]);
-    if (parseWorktreePorcelain(records).some((record) => record.path === entry.quarantinePath)) {
+    if (
+      parseWorktreePorcelain(records).some(
+        (record) => record.path === entry.quarantinePath || record.path === isolationPath,
+      )
+    ) {
       throw new WorktreeRecoveryError(
         "QUARANTINE_REGISTRATION_CHANGED",
         "interrupted purge left a worktree registration behind",
@@ -615,11 +661,7 @@ async function resumeInterruptedPurge(
     );
     return { entry: purged, reclaimedBytes: purged.target.measuredBytes };
   }
-  throw new WorktreeRecoveryError(
-    "QUARANTINE_PURGE_TRANSITION_AMBIGUOUS",
-    "interrupted purge has ambiguous source and destination paths",
-    entry,
-  );
+  return resumeInterruptedPurge(entry, options);
 }
 
 export async function undoWorktreeQuarantine(
@@ -776,7 +818,9 @@ export async function purgeWorktreeQuarantine(
     );
   }
   entry = await persist({ ...entry, status: "purging" }, options);
+  const isolationPath = purgeIsolationPath(entry);
   let unlocked = false;
+  let isolated = false;
   let removed = false;
 
   try {
@@ -789,16 +833,30 @@ export async function purgeWorktreeQuarantine(
     ]);
     unlocked = true;
     await validateQuarantinedEntry(entry, options, false, ["purging"], false);
+    if (await pathExists(isolationPath, dependencies.inspect)) {
+      throw new Error(`purge isolation path already exists: ${isolationPath}`);
+    }
+    await dependencies.move(entry.quarantinePath, isolationPath);
+    isolated = true;
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "repair",
+      isolationPath,
+    ]);
+    await validateQuarantinedEntry(entry, options, false, ["purging"], false, isolationPath);
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,
       "worktree",
       "remove",
-      entry.quarantinePath,
+      isolationPath,
     ]);
-    if (await pathExists(entry.quarantinePath, dependencies.inspect)) {
-      throw new Error("Git reported success but the quarantine path still exists");
+    if (await pathExists(isolationPath, dependencies.inspect)) {
+      throw new Error("Git reported success but the purge isolation path still exists");
     }
+    removed = true;
     const records = await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,
@@ -807,10 +865,9 @@ export async function purgeWorktreeQuarantine(
       "--porcelain",
       "-z",
     ]);
-    if (parseWorktreePorcelain(records).some((record) => record.path === entry.quarantinePath)) {
-      throw new Error("Git reported success but the quarantine registration remains");
+    if (parseWorktreePorcelain(records).some((record) => record.path === isolationPath)) {
+      throw new Error("Git reported success but the purge isolation registration remains");
     }
-    removed = true;
     await deleteRecoveryRef(entry, dependencies);
     entry = await persist(
       {
@@ -831,6 +888,23 @@ export async function purgeWorktreeQuarantine(
       );
     }
     try {
+      if (isolated) {
+        if (
+          (await pathExists(entry.quarantinePath, dependencies.inspect)) ||
+          !(await pathExists(isolationPath, dependencies.inspect))
+        ) {
+          throw new Error("worktree paths are not safe for purge isolation rollback");
+        }
+        await dependencies.move(isolationPath, entry.quarantinePath);
+        isolated = false;
+        await dependencies.runGit([
+          "--git-dir",
+          entry.target.repositoryCommonDir,
+          "worktree",
+          "repair",
+          entry.quarantinePath,
+        ]);
+      }
       if (await pathExists(entry.quarantinePath, dependencies.inspect)) {
         if (unlocked) {
           await dependencies.runGit([

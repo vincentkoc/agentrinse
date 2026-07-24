@@ -669,7 +669,7 @@ describe("worktree quarantine recovery", () => {
     );
   });
 
-  it("relocks when ignored content appears after purge unlock", async () => {
+  it("rolls purge isolation back when ignored content appears before final validation", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
     const result = await executeWorktreeQuarantine(fixture.action, {
@@ -679,17 +679,18 @@ describe("worktree quarantine recovery", () => {
       dependencies: { runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const isolationPath = `${result.quarantinePath}.purging`;
     let injected = false;
     const runGit = async (args: string[]) => {
       const output = await fixture.runGit(args);
       if (
         !injected &&
         args.includes("worktree") &&
-        args.includes("unlock") &&
-        args.includes(result.quarantinePath)
+        args.includes("repair") &&
+        args.includes(isolationPath)
       ) {
         injected = true;
-        await writeFile(join(result.quarantinePath, ".env"), "arrived during purge\n");
+        await writeFile(join(isolationPath, ".env"), "arrived during purge\n");
       }
       return output;
     };
@@ -716,6 +717,48 @@ describe("worktree quarantine recovery", () => {
     expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
       "quarantined",
     );
+  });
+
+  it("resumes purge from an atomically isolated worktree", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-resume-purge-isolated",
+      entryId: "entry-resume-purge-isolated",
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        clock: () => new Date("2026-07-01T00:00:00.000Z"),
+      },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    const isolationPath = `${result.quarantinePath}.purging`;
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await renameNoReplace(result.quarantinePath, isolationPath);
+    const purging = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
+    await writeJsonAtomic(result.manifestPath, purging, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const purged = await purgeWorktreeQuarantine(purging, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+        clock: () => new Date("2026-07-24T00:00:00.000Z"),
+      },
+    });
+
+    expect(purged.entry.status).toBe("purged");
+    expect(await missing(isolationPath)).toBe(true);
   });
 
   it("finishes an interrupted purge after Git removed the worktree", async () => {

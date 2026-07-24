@@ -81,4 +81,21 @@ describe("measurePath", () => {
     expect(after.fingerprint).not.toBe(before.fingerprint);
     expect(after.mountBoundaries).toBe(0);
   });
+
+  it("can exclude a Git-owned root control entry", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    await writeFile(join(root, "data.txt"), "keep");
+    await writeFile(join(root, ".git"), "gitdir: /tmp/one\n");
+    const before = await measurePath(root, {
+      maxEntries: 100,
+      excludeRootEntries: [".git"],
+    });
+    await writeFile(join(root, ".git"), "gitdir: /tmp/two\n");
+    const after = await measurePath(root, {
+      maxEntries: 100,
+      excludeRootEntries: [".git"],
+    });
+
+    expect(after).toEqual(before);
+  });
 });

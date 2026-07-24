@@ -248,6 +248,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           if (this.options.measureBytes) {
             measurement = await (this.dependencies.measure ?? measurePath)(worktreePath, {
               maxEntries: this.options.maxEntries,
+              excludeRootEntries: [".git"],
               ...(context.signal === undefined ? {} : { signal: context.signal }),
             });
           }

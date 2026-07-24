@@ -32,8 +32,8 @@ The project follows semantic versioning after its first supported release.
   configured age
 - detached, locked, dirty, busy, recent, unpushed, unknown-remote, prunable,
   cross-device, mounted, or incompletely inspected worktrees fail closed
-- purge uses `git worktree remove` without `--force` and refuses changed or
-  dirty quarantine state
+- purge atomically isolates and revalidates the worktree before using
+  `git worktree remove` without `--force`
 - native Windows worktree mutation remains blocked
 
 ## [0.2.0] - 2026-07-24
