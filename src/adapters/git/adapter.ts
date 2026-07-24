@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { lstat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
@@ -130,6 +130,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
     const output = await this.runGit(["-C", probe.root, "worktree", "list", "--porcelain", "-z"]);
     const records = parseWorktreePorcelain(output);
+    const mainWorktreePath = records[0] === undefined ? undefined : resolve(records[0].path);
     const resources: ResourceSnapshot[] = [];
     const diagnostics: Diagnostic[] = [];
 
@@ -188,9 +189,13 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
             );
           }
           for (const [operation, marker] of OPERATION_MARKERS) {
-            const markerPath = (
+            const reportedMarkerPath = (
               await this.runGit(["-C", worktreePath, "rev-parse", "--git-path", marker])
             ).trim();
+            const markerPath =
+              reportedMarkerPath === "" || isAbsolute(reportedMarkerPath)
+                ? reportedMarkerPath
+                : resolve(worktreePath, reportedMarkerPath);
             if (markerPath !== "" && (await this.pathExists(markerPath))) {
               operations.add(operation);
             }
@@ -224,13 +229,13 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           adapter: this.id,
           kind: "git-worktree",
           canonicalKey,
-          displayName: record.path === probe.root ? "Main worktree" : "Linked worktree",
+          displayName: worktreePath === mainWorktreePath ? "Main worktree" : "Linked worktree",
           path: worktreePath,
         },
         observedAt: context.now.toISOString(),
         exists,
         facts: {
-          isMain: worktreePath === resolve(probe.root),
+          isMain: worktreePath === mainWorktreePath,
           head: status?.head ?? record.head,
           branch: status?.branch ?? record.branch,
           upstream: status?.upstream,

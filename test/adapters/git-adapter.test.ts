@@ -76,7 +76,7 @@ describe("GitWorktreeAuditAdapter", () => {
           : "refs/heads/main\nrefs/remotes/origin/main\n";
       }
       if (command === "rev-parse" && args.includes("--git-path")) {
-        return join(worktree!, ".git", args.at(-1)!);
+        return `.git/${args.at(-1)!}`;
       }
       throw new Error(`unexpected Git command: ${args.join(" ")}`);
     };
@@ -95,7 +95,7 @@ describe("GitWorktreeAuditAdapter", () => {
     const adapter = new GitWorktreeAuditAdapter(
       main,
       runner,
-      async (path) => path.startsWith(linked) && path.endsWith("MERGE_HEAD"),
+      async (path) => path === join(linked, ".git", "MERGE_HEAD"),
       async (path) =>
         path === linked
           ? { status: "busy", matches: [{ pid: 42, source: "cwd", path: linked }] }
@@ -134,5 +134,66 @@ describe("GitWorktreeAuditAdapter", () => {
       processMatches: [{ pid: 42, source: "cwd" }],
       inspectionComplete: true,
     });
+  });
+
+  it("keeps the primary worktree identity when auditing from a linked worktree", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const main = join(home, "repo");
+    const linked = join(home, "task");
+    await mkdir(main);
+    await mkdir(linked);
+    const context: AuditContext = {
+      home,
+      now: new Date("2026-07-23T00:00:00.000Z"),
+      auditId: "audit-linked-root",
+    };
+    const runner = async (args: string[]) => {
+      if (args.includes("--show-toplevel")) {
+        return `${linked}\n`;
+      }
+      const worktree = args[1];
+      const command = args[2];
+      if (command === "worktree") {
+        return [
+          `worktree ${main}`,
+          "HEAD aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "branch refs/heads/main",
+          "",
+          `worktree ${linked}`,
+          "HEAD bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "branch refs/heads/task",
+          "",
+        ].join("\0");
+      }
+      if (command === "status") {
+        const branch = worktree === main ? "main" : "task";
+        const head =
+          worktree === main
+            ? "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            : "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        return [`# branch.oid ${head}`, `# branch.head ${branch}`, ""].join("\0");
+      }
+      if (command === "remote" || command === "for-each-ref") {
+        return "";
+      }
+      if (command === "rev-parse" && args.includes("--git-path")) {
+        return `.git/${args.at(-1)!}`;
+      }
+      throw new Error(`unexpected Git command: ${args.join(" ")}`);
+    };
+    const adapter = new GitWorktreeAuditAdapter(
+      linked,
+      runner,
+      async () => false,
+      async () => ({ status: "idle", matches: [] }),
+    );
+
+    const collection = await adapter.collect(context, await adapter.probe(context));
+
+    expect(collection.resources.map((resource) => resource.resource.displayName)).toEqual([
+      "Main worktree",
+      "Linked worktree",
+    ]);
+    expect(collection.resources.map((resource) => resource.facts.isMain)).toEqual([true, false]);
   });
 });
