@@ -184,6 +184,7 @@ describe("loadConfig", () => {
   });
 
   it.each([
+    "refs/agentrinse/quarantine/run/resource",
     "refs/tags/",
     "refs/heads/foo bar",
     "refs/heads/foo..bar",
