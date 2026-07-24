@@ -22,6 +22,7 @@ import { ApplySafetyError, applyCleanupPlan } from "../../src/core/apply.js";
 import { sha256Json } from "../../src/core/digest.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
+import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import { createRunJournal } from "../../src/state/run-journal.js";
 
@@ -34,6 +35,7 @@ async function fixture(): Promise<{
   target: string;
 }> {
   const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-apply-")));
+  await assertDestructiveFixtureRoot(home);
   const stateRoot = join(home, "state");
   const project = join(home, "project");
   const target = join(project, "node_modules");

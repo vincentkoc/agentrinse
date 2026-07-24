@@ -6,7 +6,9 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const { assertDestructiveFixtureRoot } = await import("../dist/core/safety.js");
 const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-smoke-")));
+await assertDestructiveFixtureRoot(root);
 const home = join(root, "home");
 const auditPath = join(root, "audit.json");
 const planPath = join(root, "plan.json");

@@ -12,6 +12,7 @@ import {
   executeArtifactRemove,
 } from "../../src/core/artifact-executor.js";
 import { measurePath } from "../../src/core/measure.js";
+import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 
 async function fixture(): Promise<{
   action: ArtifactRemoveAction;
@@ -19,6 +20,7 @@ async function fixture(): Promise<{
   target: string;
 }> {
   const root = await mkdtemp(join(tmpdir(), "agentrinse-execute-"));
+  await assertDestructiveFixtureRoot(root);
   const project = join(root, "project");
   const target = join(project, "node_modules");
   await mkdir(target, { recursive: true });

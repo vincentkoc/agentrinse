@@ -10,6 +10,7 @@ import type { CleanupPlan } from "../../src/contracts/plan.js";
 import { sha256Json } from "../../src/core/digest.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
+import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 
 describe("executeApplyCommand", () => {
@@ -25,6 +26,7 @@ describe("executeApplyCommand", () => {
 
   it("refuses mutation in the reservation release", async () => {
     const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-command-")));
+    await assertDestructiveFixtureRoot(home);
     const project = join(home, "project");
     const target = join(project, "node_modules");
     const stateDir = join(home, "state");
