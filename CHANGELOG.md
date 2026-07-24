@@ -2,9 +2,9 @@
 
 All notable changes to AgentRinse will be documented in this file.
 
-The project follows semantic versioning after its first published release.
+The project follows semantic versioning after its first supported release.
 
-## [0.1.0] - 2026-07-23
+## [Unreleased]
 
 ### Added
 
@@ -35,3 +35,12 @@ The project follows semantic versioning after its first published release.
   expired plans, changed configuration, and concurrent runs fail closed
 - no process killing, `sudo`, generic force flag, wildcard deletion, or
   unfiltered Docker prune
+
+## [0.0.0] - 2026-07-24
+
+### Added
+
+- reserved the public `agentrinse` npm package name
+- linked the package to the public source repository
+- documented that the reservation release is unsupported for operational
+  cleanup

@@ -1,10 +1,12 @@
 # AgentRinse Product and Engineering Specification
 
-Status: proposed
+Status: active implementation
 
-Version: 0.1
+Target version: 0.3.0
 
-Date: 2026-07-23
+Created: 2026-07-23
+
+Updated: 2026-07-24
 
 Owner: Vincent Koc
 
@@ -106,17 +108,19 @@ Brand guidance:
 This section records the evidence used to shape the specification. It is
 non-normative and should be refreshed before implementation begins.
 
-Research date: 2026-07-23.
+Research date: 2026-07-23. Release-state refresh: 2026-07-24.
 
 ### Name availability snapshot
 
-At the time of research:
+At the initial research snapshot:
 
 - the public npm registry returned `E404` for `agentrinse`
 - Verisign RDAP returned HTTP `404` for `agentrinse.com`
 
-This is an availability signal, not a reservation or ownership guarantee.
-Register the domain and reserve/publish the package before public announcement.
+The 2026-07-24 release-state refresh found the name still unclaimed on npm,
+the domain still unregistered, and the public GitHub repository available at
+the target URL. Registry and domain availability are signals, not ownership
+guarantees. Reserve both before announcing the supported `0.1.0` release.
 
 ### Local motivating evidence
 
@@ -2546,7 +2550,7 @@ compression mean sums may not equal actual free-space change.
 
 ### Tier 1: macOS
 
-Required for 0.1 and 1.0:
+Required for 0.1.0 and later:
 
 - APFS and common local filesystems
 - `lsof` ownership proof
@@ -2556,17 +2560,19 @@ Required for 0.1 and 1.0:
 
 ### Tier 2: Linux
 
-Target for 0.4 or 1.0:
+Supported from 0.1.0 with packaged Linux proof:
 
 - `/proc` process ownership
+- `lsof` fallback when hardened procfs prevents a complete scan
 - standard XDG paths
 - Docker Engine
 - Codex and Claude layouts
 - no Mole adapter
+- mutation remains blocked if neither `/proc` nor `lsof` proves ownership
 
 ### Tier 3: Windows
 
-Post-1.0:
+Audit-only before 1.0:
 
 - audit-only first
 - WSL treated as Linux within the WSL filesystem
@@ -2747,15 +2753,25 @@ Recommended:
 
 ### Distribution
 
-Initial:
+Reservation release:
 
-- npm
+- publish `0.0.0` once from an authenticated maintainer machine
+- make no supported-use claim for `0.0.0`
+- use the package only to reserve the unscoped npm name and unlock trusted
+  publisher configuration
+
+Supported `0.1.0` release:
+
+- publish through GitHub Actions trusted publishing
+- `npm install --global agentrinse`
 - `npx agentrinse audit`
+- attach a checksummed source/package archive to the GitHub release
 
-After CLI stability:
+By `0.3.0`:
 
-- Homebrew tap
-- signed/checksummed tarballs
+- Homebrew formula in `vincentkoc/tap`
+- formula installation and upgrade smoke tests
+- signed or provenance-backed checksummed release artifacts
 
 Later:
 
@@ -2770,6 +2786,7 @@ Required:
 - npm provenance
 - no long-lived npm token in CI
 - protected release environment
+- a one-time `0.0.0` bootstrap before trusted publishing is configured
 - public repository metadata matching the publisher
 - generated checksums for release archives
 - dependency review and lockfile
@@ -2785,6 +2802,9 @@ Before 1.0:
 
 - schema and action contracts may evolve, but every release documents changes
 - plans are executable only by declared compatible versions
+- `0.0.0` is a reservation release and is not a supported product version
+- each supported minor release must satisfy its complete milestone exit
+  criteria before its tag is published
 
 At 1.0:
 
@@ -2809,92 +2829,115 @@ marketing-heavy landing page.
 
 ## Milestones
 
-### Phase 0: repository and contract foundation
+### `0.0.0`: package reservation
 
 Deliver:
 
-- package scaffold
-- CLI parser
-- config loader
-- XDG state layout
-- contracts and JSON schemas
-- deterministic canonical JSON
-- plan/run journaling
-- output renderer
-- doctor command
-- CI, trusted publishing dry run, and packed-package smoke
+- public npm package record for `agentrinse`
+- package metadata pointing to the public repository
+- explicit unsupported reservation-release messaging
+- locally authenticated bootstrap publish with 2FA
+- no long-lived npm token committed or stored in GitHub
 
 Exit criteria:
 
-- commands install and run from packed npm artifact
-- audit can return an empty valid report
-- plan digest and journal fault tests pass
+- anonymous `npm view agentrinse@0.0.0` succeeds
+- the package contains only intended files
+- the installed binary reports `0.0.0`
+- npm trusted publishing can be configured for the repository and release
+  workflow
 
-### Phase 1: audit-only release `0.1`
+### `0.1.0`: operational safe-artifact release
 
 Deliver:
 
-- Git worktree discovery
-- process ownership
-- Codex roots and storage diagnostics
-- Claude roots and retention reporting
-- Cursor workspace-storage and database diagnostics
-- GitHub Copilot CLI session/log inventory
-- Zed database/log inventory
-- OpenCode database and snapshot inventory
-- Grok Build version-gated inventory
-- Docker inventory and daemon-unavailable handling
-- runtime inventory
-- Mole detection/handoff suggestions
-- JSON, NDJSON, and redacted reports
-
-No mutation.
+- existing provider, Git, Docker, and artifact inventory
+- exact configured rebuildable-artifact removal
+- content-addressed plans, expiry, locks, revalidation, isolation, and durable
+  run journals
+- `agentrinse config init` and config validation
+- `agentrinse doctor` with platform, dependency, configuration, state, and
+  stale-lock diagnostics
+- `agentrinse history` and `agentrinse show`
+- explicit stale-lock inspection and owned recovery command
+- actionable partial-run recovery guidance
+- JSON, NDJSON, and redacted audit output
+- shell completion generation
+- clear macOS, Linux, WSL, and native Windows support contract
+- checksummed GitHub release artifact
+- trusted npm publish with provenance
+- real read-only workstation dogfood plus one disposable-project canary apply
 
 Exit criteria:
 
-- representative local audit explains all protected worktrees
+- fresh npm and `npx` installs work
+- operator setup does not require hand-authoring the first config file
+- doctor identifies every missing prerequisite without mutating
+- history and show explain completed, skipped, failed, and partial actions
+- representative local audit inventories provider state without transcript
+  content
 - no transcript content appears in outputs
-- unsupported provider versions fail closed
 - Docker unavailability is isolated
+- macOS and Linux packaged proof pass
+- all artifact actions remain `safe`
+- no worktree, provider store, Docker resource, branch, stash, credential,
+  plugin, skill, memory, or volume is removed
 
-### Phase 2: safe cleanup release `0.2`
+### `0.2.0`: agent-aware reachability
 
 Deliver:
 
-- artifact removal
-- Docker dangling image cleanup
-- Docker build-cache cleanup
-- history cleanup
-- plan/apply revalidation
-- locks and interruption-safe journal
+- complete Git worktree state collection: main, clean, dirty, staged,
+  untracked, locked, prunable, detached, and in-progress operations
+- local and configured-remote reachability proof for worktree HEADs
+- explicit unpushed and unknown-remote protection
+- live process cwd and file-descriptor roots
+- Codex and Claude session-to-worktree roots without reading transcript
+  content
+- provider-managed worktree and pin roots
+- deterministic root explanations and candidate suppression
+- agent closeout audit profile that scopes one repository/task without
+  inferring task completion
+- Mole availability probe and external handoff suggestions on macOS
+- no new mutating action types
 
 Exit criteria:
 
-- all actions are `safe`
-- fault-injection matrix passes
-- actual free-space change is reported honestly
-- no whole-worktree removal yet
+- every dirty, active, pinned, locked, unpushed, detached-risk, or
+  insufficiently understood worktree is protected
+- representative Codex and Claude fixtures link sessions to worktrees without
+  emitting transcript content
+- adding a root can never make a resource more cleanable
+- changing provider/session state after audit invalidates affected candidates
+- worktree removal remains unavailable
 
-### Phase 3: recoverable worktrees release `0.3`
+### `0.3.0`: recoverable worktrees
 
 Deliver:
 
-- worktree quarantine
+- explicit `worktree.quarantine` recoverable action
 - Git recovery refs
-- Git prune/repair integration
-- undo
-- quarantine purge
-- agent closeout command profile
+- same-filesystem quarantine with durable recovery manifests
+- `agentrinse undo`
+- `agentrinse purge`
+- interrupted-quarantine inspection and deterministic recovery instructions
+- Git worktree prune/repair integration through Git commands
+- expiry policy that never removes live recovery metadata
+- Homebrew formula in `vincentkoc/tap`
+- Homebrew install, audit, plan, quarantine, undo, and upgrade smoke proof
 
 Exit criteria:
 
 - dirty, active, pinned, locked, unpushed, and detached-risk fixtures are never
   selected
-- quarantine and undo pass across supported macOS filesystems
+- quarantine and undo pass across supported macOS filesystems and packaged
+  Linux proof
 - interrupted cleanup has deterministic recovery instructions
 - recovery is exercised from the packed artifact
+- Homebrew installs the exact released version and passes its formula test
+- no Docker mutation or provider-state deletion is introduced
 
-### Phase 4: maintenance operations release `0.4`
+### `0.4.0`: owner-managed maintenance
 
 Deliver:
 
@@ -2902,15 +2945,15 @@ Deliver:
 - old agent runtime removal
 - a decision and proof for labeled stopped-container cleanup; keep it
   report-only if reliable recreation cannot be demonstrated
-- Linux Tier 2
+- filtered Docker build-cache cleanup only after current owner-contract proof
 
 Exit criteria:
 
 - database compaction retains verified rollback
 - active provider processes block mutation
-- Linux process ownership and path safety pass
+- exact Docker context and object identity are revalidated before mutation
 
-### Phase 5: stable release `1.0`
+### `1.0.0`: stable contracts
 
 Deliver:
 
@@ -2919,7 +2962,7 @@ Deliver:
 - performance budgets
 - security review
 - complete docs
-- Homebrew distribution
+- npm and Homebrew long-term release support
 
 Exit criteria:
 
@@ -3195,7 +3238,27 @@ MVP. A database is not justified yet.
 
 ### 2026-07-23: macOS first
 
-macOS is Tier 1, Linux Tier 2, native Windows later.
+macOS is Tier 1. Linux is Tier 2 from `0.1.0` after packaged proof. Native
+Windows mutation remains blocked before 1.0.
+
+### 2026-07-24: staged public release sequence
+
+Publish `0.0.0` only to reserve the npm name and configure trusted publishing.
+The first supported release is `0.1.0`. Release `0.2.0` adds agent-aware
+reachability without expanding mutation. Release `0.3.0` adds recoverable
+worktree quarantine and undo.
+
+### 2026-07-24: operational UX precedes mutation growth
+
+Configuration generation, doctor diagnostics, run inspection, stale-lock
+handling, partial-run recovery guidance, and real dogfood are required before
+the supported `0.1.0` release. More cleanup targets are not a substitute for a
+safe operator loop.
+
+### 2026-07-24: Homebrew by 0.3.0
+
+The supported npm release remains the first distribution target. A formula in
+`vincentkoc/tap` and install/upgrade proof are required before `0.3.0`.
 
 ## Specification Maintenance
 
@@ -3267,48 +3330,59 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 
 ### Repository
 
-- [ ] register `agentrinse.com`
-- [ ] reserve npm package
-- [ ] create repository
-- [ ] add MIT license
-- [ ] configure pnpm and Node 22
-- [ ] add TypeScript ESM build
-- [ ] add Vitest, oxfmt, oxlint, publint
-- [ ] add package artifact smoke
-- [ ] add npm trusted publishing
-- [ ] add security policy and contribution guide
+- [ ] register `agentrinse.com` and publish documentation
+- [ ] reserve npm package with `0.0.0`
+- [x] create public repository
+- [x] add MIT license
+- [x] configure pnpm and Node 22
+- [x] add TypeScript ESM build
+- [x] add Vitest, oxfmt, oxlint, and publint
+- [x] add package artifact smoke
+- [ ] configure and prove npm trusted publishing
+- [x] add security policy and contribution guide
+- [ ] protect `main` with required CI
+- [ ] protect the GitHub `npm` release environment
 
 ### Contracts
 
-- [ ] define config schema
-- [ ] define resource/finding schema
-- [ ] define plan/run schema
-- [ ] define diagnostic codes
-- [ ] define exit codes
-- [ ] implement canonical JSON
-- [ ] implement schema compatibility tests
+- [x] define config schema
+- [x] define resource/finding schema
+- [x] define plan/run schema
+- [x] define diagnostic codes
+- [x] define initial exit codes
+- [x] implement canonical JSON hashing
+- [x] implement initial schema compatibility tests
+- [ ] define `0.2.0` reachability facts and roots
+- [ ] define `0.3.0` quarantine, recovery, undo, and purge records
 
 ### Core safety
 
-- [ ] implement path guards
-- [ ] implement process identity
-- [ ] implement global/resource locks
-- [ ] implement atomic journal
-- [ ] implement revalidation
-- [ ] implement cancellation
-- [ ] implement redaction
-- [ ] add destructive-test root guard
+- [x] implement path guards
+- [x] implement process ownership proof
+- [x] implement global apply lock
+- [x] implement atomic run journal
+- [x] implement artifact revalidation and isolation
+- [ ] implement command cancellation and interrupted-run reporting
+- [ ] implement redacted export
+- [x] keep destructive tests inside synthetic temporary roots
+- [ ] add explicit runtime destructive-test root guard
+- [ ] add stale-lock inspection and owned recovery
+- [ ] add partial-run recovery inspection
 
 ### Adapters
 
-- [ ] Git audit
-- [ ] process ownership
-- [ ] Codex audit
-- [ ] Claude audit
-- [ ] Docker audit
+- [x] initial report-only Git worktree audit
+- [x] process ownership
+- [x] initial Codex inventory
+- [x] initial Claude inventory
+- [x] initial Docker inventory
+- [x] Cursor, Copilot CLI, Zed, OpenCode, and Grok inventory
 - [ ] runtime audit
 - [ ] Mole probe
-- [ ] artifact removal
+- [x] exact configured artifact removal
+- [ ] Git dirty, staged, untracked, operation, detached, and push-state proof
+- [ ] Codex and Claude session-to-worktree roots
+- [ ] provider-managed worktree and pin roots
 - [ ] Docker safe cleanup
 - [ ] worktree quarantine
 - [ ] worktree undo
@@ -3316,14 +3390,18 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 
 ### Documentation and release
 
-- [ ] safety guide
+- [x] safety guide
 - [ ] automation guide
 - [ ] recovery guide
-- [ ] adapter capability matrix
+- [x] adapter capability matrix
 - [ ] config reference
 - [ ] website docs
 - [ ] npm provenance proof
 - [ ] Homebrew formula
+- [ ] real workstation read-only audit proof
+- [ ] disposable real-project apply canary
+- [ ] npm and `npx` install smoke
+- [ ] Homebrew install and upgrade smoke
 - [ ] 1.0 security review
 
 ## Reference Links

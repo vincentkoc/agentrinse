@@ -23,8 +23,9 @@ High-impact classes include:
 
 ## Current Status
 
-Version 0.1 can remove only exact configured rebuildable artifact directories
-through a content-addressed, locked, revalidated, and journaled apply path.
+The implemented cleanup boundary can remove only exact configured rebuildable
+artifact directories through a content-addressed, locked, revalidated, and
+journaled apply path.
 Provider state, Git worktrees, and Docker resources remain report-only.
 
 Reports involving unintended removal, path or symlink escape, plan bypass,

@@ -3,7 +3,7 @@
 AgentRinse is designed around refusal. A resource becomes cleanable only after
 its scope, identity, inactivity, and effect are positively known.
 
-## Version 0.1 Mutation Boundary
+## Safe Artifact Mutation Boundary
 
 Only `artifacts.remove` mutates:
 
