@@ -630,6 +630,8 @@ async function recoverInitialQuarantineForUndo(
     pathExists(entry.quarantinePath, dependencies.inspect),
   ]);
   if (originalExists && !quarantineExists) {
+    const expectedRegistrationPaths =
+      entry.status === "moved" ? [entry.originalPath, entry.quarantinePath] : [entry.originalPath];
     await verifyRecoveryPath(
       entry,
       options,
@@ -638,7 +640,7 @@ async function recoverInitialQuarantineForUndo(
       entry.target,
       true,
       "unlocked",
-      [entry.originalPath],
+      expectedRegistrationPaths,
     );
     await deleteRecoveryRef(entry, dependencies);
     return persist(

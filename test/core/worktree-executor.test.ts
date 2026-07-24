@@ -619,6 +619,60 @@ describe("worktree quarantine recovery", () => {
     expect(await missing(quarantinePath)).toBe(true);
   });
 
+  it("repairs rollback interrupted after the worktree returned home", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-rollback-before-repair",
+      entryId: "entry-rollback-before-repair",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    await fixture.runGit([
+      "--git-dir",
+      fixture.action.target.repositoryCommonDir,
+      "worktree",
+      "unlock",
+      result.quarantinePath,
+    ]);
+    await renameNoReplace(result.quarantinePath, fixture.linked);
+    const moved = quarantineEntrySchema.parse({ ...manifest, status: "moved" });
+    await writeJsonAtomic(result.manifestPath, moved, {
+      privateDirectories: [quarantineDirectory],
+    });
+
+    const restored = await undoWorktreeQuarantine(moved, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    });
+
+    expect(restored.status).toBe("restored");
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: fixture.linked,
+          head: fixture.action.target.head,
+        }),
+      ]),
+    );
+  });
+
   it("does not repair an interrupted move protected by a foreign lock", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
