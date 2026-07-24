@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 coverage/
 .DS_Store
@@ -9,4 +9,3 @@ coverage/
 !.env.example
 .agentrinse/
 tmp/
-
