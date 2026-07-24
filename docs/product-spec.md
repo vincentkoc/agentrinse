@@ -3290,7 +3290,8 @@ The supported npm release remains the first distribution target. A formula in
   manifests by inspecting both paths, repairing the actual registration, and
   preserving or recreating only the exact namespaced recovery ref.
 - Mutation verifies the exact `AgentRinse quarantine <entry-id>` lock reason.
-  A foreign or operator-owned Git worktree lock is immutable protection.
+  A foreign or operator-owned Git worktree lock is immutable protection and
+  is checked before any `git worktree repair`.
 - Git operation markers are re-read immediately before every quarantine,
   undo, and purge mutation; clean status alone is not terminal-state proof.
 - Undo unlocks, atomically renames, repairs, verifies, and only then deletes

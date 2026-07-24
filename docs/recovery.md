@@ -63,6 +63,8 @@ recovery ref when missing, relocks the worktree, then completes normal undo.
 Every recovery mutation requires either an unlocked registration at the
 expected transition or the exact `AgentRinse quarantine <entry-id>` lock.
 AgentRinse never unlocks a worktree carrying an operator or third-party lock.
+That lock check happens before `git worktree repair`, including interrupted
+move and purge-isolation recovery.
 Merge, rebase, cherry-pick, revert, and bisect markers are rechecked from the
 worktree's Git administration directory immediately before mutation.
 

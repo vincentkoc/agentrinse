@@ -178,6 +178,17 @@ function registeredWorktree(
   );
 }
 
+function targetRegistrationLockMatches(
+  output: string,
+  action: WorktreeQuarantineAction,
+  expectedLockReason?: string,
+): boolean {
+  const records = parseWorktreePorcelain(output).filter(
+    (record) => record.head === action.target.head && record.branch === action.target.branch,
+  );
+  return records.length === 1 && records[0]?.locked === expectedLockReason;
+}
+
 function pathContains(parent: string, candidate: string): boolean {
   const relativePath = relative(resolve(parent), resolve(candidate));
   return (
@@ -481,6 +492,22 @@ export async function executeWorktreeQuarantine(
         entry,
       );
     }
+    const beforeRepair = await runGit([
+      "--git-dir",
+      action.target.repositoryCommonDir,
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]);
+    if (!targetRegistrationLockMatches(beforeRepair, action)) {
+      throw new WorktreeExecutionError(
+        "worktree registration or lock ownership changed before repair",
+        "partially-applied",
+        entry,
+        { diagnosticCode: "QUARANTINE_REGISTRATION_CHANGED" },
+      );
+    }
     await runGit([
       "--git-dir",
       action.target.repositoryCommonDir,
@@ -647,6 +674,17 @@ export async function executeWorktreeQuarantine(
         locked = false;
       }
       if (moved) {
+        const beforeRollbackRepair = await runGit([
+          "--git-dir",
+          action.target.repositoryCommonDir,
+          "worktree",
+          "list",
+          "--porcelain",
+          "-z",
+        ]);
+        if (!targetRegistrationLockMatches(beforeRollbackRepair, action)) {
+          throw new Error("worktree lock ownership changed before automatic rollback");
+        }
         if (
           (await pathExists(action.target.path, inspect)) ||
           !(await pathExists(quarantinePath, inspect))

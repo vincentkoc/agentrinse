@@ -171,6 +171,30 @@ async function assertNoGitOperations(
   }
 }
 
+async function assertTargetRegistrationLock(
+  entry: QuarantineEntry,
+  dependencies: ResolvedRecoveryDependencies,
+  lockExpectation: LockExpectation,
+): Promise<void> {
+  const records = parseWorktreePorcelain(
+    await dependencies.runGit([
+      "--git-dir",
+      entry.target.repositoryCommonDir,
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]),
+  ).filter((record) => record.head === entry.target.head && record.branch === entry.target.branch);
+  if (records.length !== 1 || !lockMatches(records[0]?.locked, lockExpectation, entry)) {
+    throw new WorktreeRecoveryError(
+      "QUARANTINE_REGISTRATION_CHANGED",
+      "target worktree registration or lock ownership changed before repair",
+      entry,
+    );
+  }
+}
+
 function resolveDependencies(options: WorktreeRecoveryOptions): ResolvedRecoveryDependencies {
   return {
     runGit: options.dependencies?.runGit ?? defaultGitRunner,
@@ -511,6 +535,7 @@ async function verifyRecoveryPath(
     );
   }
 
+  await assertTargetRegistrationLock(entry, dependencies, lockExpectation);
   await dependencies.runGit([
     "--git-dir",
     entry.target.repositoryCommonDir,
@@ -752,6 +777,7 @@ async function rollbackPurgeIsolation(
     ) {
       throw new Error("worktree paths are not safe for purge isolation rollback");
     }
+    await assertTargetRegistrationLock(entry, dependencies, "unlocked");
     await dependencies.move(isolationPath, entry.quarantinePath);
     await dependencies.runGit([
       "--git-dir",
@@ -860,6 +886,7 @@ async function resumeInterruptedPurge(
   }
   if (isolationExists) {
     try {
+      await assertTargetRegistrationLock(entry, dependencies, "unlocked");
       await dependencies.runGit([
         "--git-dir",
         entry.target.repositoryCommonDir,
@@ -883,6 +910,12 @@ async function resumeInterruptedPurge(
         );
       }
     } catch (error) {
+      if (
+        error instanceof WorktreeRecoveryError &&
+        error.code === "QUARANTINE_REGISTRATION_CHANGED"
+      ) {
+        throw error;
+      }
       return rollbackPurgeIsolation(entry, isolationPath, options, dependencies, error);
     }
   }
@@ -1130,6 +1163,7 @@ export async function purgeWorktreeQuarantine(
     }
     await dependencies.move(entry.quarantinePath, isolationPath);
     isolated = true;
+    await assertTargetRegistrationLock(entry, dependencies, "unlocked");
     await dependencies.runGit([
       "--git-dir",
       entry.target.repositoryCommonDir,
@@ -1178,6 +1212,13 @@ export async function purgeWorktreeQuarantine(
         entry,
         { cause: error },
       );
+    }
+    if (
+      isolated &&
+      error instanceof WorktreeRecoveryError &&
+      error.code === "QUARANTINE_REGISTRATION_CHANGED"
+    ) {
+      throw error;
     }
     try {
       if (isolated) {
