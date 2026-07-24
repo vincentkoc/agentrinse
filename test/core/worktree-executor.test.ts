@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -201,6 +201,34 @@ describe("executeWorktreeQuarantine", () => {
       ]),
     ).rejects.toThrow();
   });
+
+  it("rolls back when contents race after the atomic move", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-race",
+        entryId: "entry-race",
+        quarantineDirectory,
+        dependencies: {
+          runGit: fixture.runGit,
+          move: async (source, destination) => {
+            await rename(source, destination);
+            if (source === fixture.action.target.path) {
+              await writeFile(join(destination, "README.md"), "changed fixture!\n");
+            }
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: WorktreeExecutionError.name,
+      outcome: "rolled-back",
+    });
+
+    expect(await missing(fixture.linked)).toBe(false);
+    expect(await readFile(join(fixture.linked, "README.md"), "utf8")).toBe("changed fixture!\n");
+  });
 });
 
 describe("worktree quarantine recovery", () => {
@@ -283,6 +311,7 @@ describe("worktree quarantine recovery", () => {
       },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    await mkdir(fixture.linked);
 
     const purged = await purgeWorktreeQuarantine(manifest, {
       manifestPath: result.manifestPath,
@@ -302,6 +331,7 @@ describe("worktree quarantine recovery", () => {
     const removeCall = calls.find((args) => args.includes("worktree") && args.includes("remove"));
     expect(removeCall).toBeDefined();
     expect(removeCall).not.toContain("--force");
+    expect(await missing(fixture.linked)).toBe(false);
   });
 
   it("refuses purge after quarantined contents change", async () => {
@@ -333,6 +363,33 @@ describe("worktree quarantine recovery", () => {
       }),
     ).rejects.toMatchObject({
       code: "QUARANTINE_IDENTITY_CHANGED",
+    });
+    expect(await missing(result.quarantinePath)).toBe(false);
+  });
+
+  it("blocks recovery mutation on native Windows", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-windows",
+      entryId: "entry-windows",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+
+    await expect(
+      undoWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        maxEntries: 10_000,
+        dependencies: {
+          platform: "win32",
+          runGit: fixture.runGit,
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "WORKTREE_PLATFORM_UNSUPPORTED",
     });
     expect(await missing(result.quarantinePath)).toBe(false);
   });

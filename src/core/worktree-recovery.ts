@@ -34,6 +34,7 @@ export type WorktreeRecoveryDependencies = {
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   clock?: () => Date;
+  platform?: NodeJS.Platform;
 };
 
 export type WorktreeRecoveryOptions = {
@@ -51,7 +52,6 @@ async function defaultGitRunner(args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
-    timeout: 15_000,
   });
   return result.stdout;
 }
@@ -113,6 +113,7 @@ async function persist(
 async function validateQuarantinedEntry(
   entry: QuarantineEntry,
   options: WorktreeRecoveryOptions,
+  requireOriginalVacant: boolean,
 ): Promise<{
   dependencies: Required<
     Pick<
@@ -134,13 +135,20 @@ async function validateQuarantinedEntry(
     throw new WorktreeRecoveryError(code, message, entry);
   };
 
+  const platform = options.dependencies?.platform ?? process.platform;
+  if (!["darwin", "linux"].includes(platform)) {
+    fail(
+      "WORKTREE_PLATFORM_UNSUPPORTED",
+      `worktree recovery mutation is unsupported on ${platform}`,
+    );
+  }
   if (entry.status !== "quarantined") {
     fail("QUARANTINE_NOT_LIVE", `quarantine entry status is ${entry.status}`);
   }
   const quarantineIdentity =
     entry.quarantineIdentity ??
     fail("QUARANTINE_IDENTITY_MISSING", "post-repair quarantine identity is missing");
-  if (await pathExists(entry.originalPath, dependencies.inspect)) {
+  if (requireOriginalVacant && (await pathExists(entry.originalPath, dependencies.inspect))) {
     fail("UNDO_DESTINATION_OCCUPIED", `original path is occupied: ${entry.originalPath}`);
   }
 
@@ -248,7 +256,7 @@ export async function undoWorktreeQuarantine(
   options: WorktreeRecoveryOptions,
 ): Promise<QuarantineEntry> {
   let entry = quarantineEntrySchema.parse(input);
-  const { dependencies } = await validateQuarantinedEntry(entry, options);
+  const { dependencies } = await validateQuarantinedEntry(entry, options, true);
   entry = await persist({ ...entry, status: "restoring" }, options);
   let unlocked = false;
   let moved = false;
@@ -400,7 +408,7 @@ export async function purgeWorktreeQuarantine(
   options: PurgeWorktreeOptions,
 ): Promise<{ entry: QuarantineEntry; reclaimedBytes: number }> {
   let entry = quarantineEntrySchema.parse(input);
-  const { dependencies } = await validateQuarantinedEntry(entry, options);
+  const { dependencies } = await validateQuarantinedEntry(entry, options, false);
   if (
     options.allowUnexpired !== true &&
     dependencies.clock().getTime() < Date.parse(entry.expiresAt)

@@ -289,10 +289,23 @@ export async function executeWorktreeQuarantine(
       status: "moved",
     });
 
-    const quarantinedStats = await inspect(quarantinePath);
-    if (!matchesFilesystemIdentity(quarantinedStats, action)) {
+    const [quarantinedStats, isolatedMeasurement] = await Promise.all([
+      inspect(quarantinePath),
+      measure(quarantinePath, {
+        maxEntries: dependencies.maxEntries ?? 100_000,
+      }),
+    ]);
+    if (
+      !matchesFilesystemIdentity(quarantinedStats, action) ||
+      isolatedMeasurement.truncated ||
+      isolatedMeasurement.specialEntries > 0 ||
+      isolatedMeasurement.mountBoundaries > 0 ||
+      isolatedMeasurement.bytes !== action.target.measuredBytes ||
+      isolatedMeasurement.newestMtimeMs !== action.target.newestMtimeMs ||
+      isolatedMeasurement.fingerprint !== action.target.fingerprint
+    ) {
       throw new WorktreeExecutionError(
-        "worktree identity changed during quarantine",
+        "worktree contents or identity changed during quarantine",
         "partially-applied",
         entry,
       );
