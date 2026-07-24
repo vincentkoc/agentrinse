@@ -1,9 +1,20 @@
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
 import { describe, expect, it, vi } from "vitest";
 
+import { createAuditAdapters } from "../../src/adapters/registry.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
+import type { AgentRinseConfig } from "../../src/config/schema.js";
 import type { WorktreeQuarantineAction } from "../../src/contracts/action.js";
 import type { AuditReport } from "../../src/contracts/report.js";
+import { runAudit } from "../../src/core/audit.js";
 import { revalidateWorktreeQuarantine } from "../../src/core/worktree-revalidation.js";
+
+const execFileAsync = promisify(execFile);
 
 const ACTION: WorktreeQuarantineAction = {
   actionId: "worktree.quarantine:fixture",
@@ -92,6 +103,75 @@ describe("revalidateWorktreeQuarantine", () => {
     expect(result).toMatchObject({
       status: "stale",
       diagnostic: { code: "WORKTREE_IDENTITY_CHANGED" },
+    });
+  });
+
+  it("blocks a worktree newly referenced by provider metadata", async () => {
+    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-revalidation-")));
+    const main = join(home, "repo");
+    const linked = join(home, "task");
+    const remote = join(home, "remote.git");
+    const codexRoot = join(home, ".codex");
+    const metadataPath = join(codexRoot, ".codex-global-state.json");
+    await mkdir(codexRoot, { recursive: true });
+    await writeFile(
+      metadataPath,
+      JSON.stringify({
+        "active-workspace-roots": [],
+        "electron-saved-workspace-roots": [],
+        "thread-workspace-root-hints": {},
+      }),
+    );
+    await execFileAsync("git", ["init", "--bare", remote]);
+    await execFileAsync("git", ["init", "-b", "main", main]);
+    await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
+    await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
+    await writeFile(join(main, "README.md"), "fixture\n");
+    await execFileAsync("git", ["-C", main, "add", "README.md"]);
+    await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
+    await execFileAsync("git", ["-C", main, "remote", "add", "origin", remote]);
+    await execFileAsync("git", ["-C", main, "push", "-u", "origin", "main"]);
+    await execFileAsync("git", ["-C", main, "branch", "task"]);
+    await execFileAsync("git", ["-C", main, "push", "-u", "origin", "task"]);
+    await execFileAsync("git", ["-C", main, "worktree", "add", linked, "task"]);
+
+    const config: AgentRinseConfig = structuredClone(DEFAULT_CONFIG);
+    for (const adapter of ["claude", "cursor", "copilot", "zed", "opencode", "grok"] as const) {
+      config.adapters[adapter] = { enabled: false };
+    }
+    config.adapters.codex = { enabled: true, root: codexRoot };
+    config.adapters.git = { enabled: true, root: main };
+    config.worktrees = { ...config.worktrees, minAgeMinutes: 0 };
+    const platform = process.platform === "linux" ? "linux" : "darwin";
+    const initial = await runAudit({
+      home,
+      config,
+      adapters: createAuditAdapters(config, platform),
+    });
+    const action = initial.findings
+      .flatMap((finding) => finding.candidateActions)
+      .find(
+        (candidate): candidate is WorktreeQuarantineAction =>
+          candidate.type === "worktree.quarantine" && candidate.target.path === linked,
+      );
+    expect(action).toBeDefined();
+
+    await writeFile(
+      metadataPath,
+      JSON.stringify({
+        "active-workspace-roots": [linked],
+        "electron-saved-workspace-roots": [],
+        "thread-workspace-root-hints": {},
+      }),
+    );
+    const result = await revalidateWorktreeQuarantine(action!, home, config, { platform });
+
+    expect(result).toMatchObject({
+      status: "stale",
+      diagnostic: {
+        code: "WORKTREE_ELIGIBILITY_CHANGED",
+        message: expect.stringContaining("active-session"),
+      },
     });
   });
 

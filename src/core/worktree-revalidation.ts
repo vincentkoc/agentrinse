@@ -61,9 +61,7 @@ export async function revalidateWorktreeQuarantine(
         ? await runAudit({
             home,
             config,
-            adapters: createAuditAdapters(config, platform, {
-              providerInventory: false,
-            }),
+            adapters: createAuditAdapters(config, platform),
             ...(dependencies.now === undefined ? {} : { now: dependencies.now }),
           })
         : await dependencies.audit({ home, config, platform });

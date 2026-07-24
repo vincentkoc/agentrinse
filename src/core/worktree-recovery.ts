@@ -548,11 +548,8 @@ async function resumeInterruptedPurge(
   options: PurgeWorktreeOptions,
 ): Promise<{ entry: QuarantineEntry; reclaimedBytes: number } | QuarantineEntry> {
   const dependencies = resolveDependencies(options);
-  const [originalExists, quarantineExists] = await Promise.all([
-    pathExists(entry.originalPath, dependencies.inspect),
-    pathExists(entry.quarantinePath, dependencies.inspect),
-  ]);
-  if (quarantineExists && !originalExists) {
+  const quarantineExists = await pathExists(entry.quarantinePath, dependencies.inspect);
+  if (quarantineExists) {
     const validated = await validateQuarantinedEntry(entry, options, false, ["purging"], false);
     if (!validated.registrationLocked) {
       await dependencies.runGit([
@@ -568,7 +565,7 @@ async function resumeInterruptedPurge(
     }
     return persist({ ...entry, status: "quarantined" }, options);
   }
-  if (!originalExists && !quarantineExists) {
+  if (!quarantineExists) {
     assertSupportedPlatform(entry, options);
     assertManifestPath(entry, options);
     const records = await dependencies.runGit([
@@ -579,11 +576,7 @@ async function resumeInterruptedPurge(
       "--porcelain",
       "-z",
     ]);
-    if (
-      parseWorktreePorcelain(records).some(
-        (record) => record.path === entry.originalPath || record.path === entry.quarantinePath,
-      )
-    ) {
+    if (parseWorktreePorcelain(records).some((record) => record.path === entry.quarantinePath)) {
       throw new WorktreeRecoveryError(
         "QUARANTINE_REGISTRATION_CHANGED",
         "interrupted purge left a worktree registration behind",

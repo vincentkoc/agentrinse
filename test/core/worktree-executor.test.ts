@@ -632,6 +632,12 @@ describe("worktree quarantine recovery", () => {
       dependencies: { runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    await mkdir(fixture.linked);
+    await writeFile(join(fixture.linked, "replacement.txt"), "unrelated replacement\n");
+    const purgingBeforeUnlock = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
+    await writeJsonAtomic(result.manifestPath, purgingBeforeUnlock, {
+      privateDirectories: [quarantineDirectory],
+    });
     const runGit = async (args: string[]) => {
       if (args.includes("worktree") && args.includes("unlock")) {
         throw new Error("injected unlock failure");
@@ -640,7 +646,7 @@ describe("worktree quarantine recovery", () => {
     };
 
     await expect(
-      purgeWorktreeQuarantine(manifest, {
+      purgeWorktreeQuarantine(purgingBeforeUnlock, {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         allowUnexpired: true,
@@ -657,6 +663,9 @@ describe("worktree quarantine recovery", () => {
     const persisted = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     expect(persisted.status).toBe("quarantined");
     expect(await missing(result.quarantinePath)).toBe(false);
+    await expect(readFile(join(fixture.linked, "replacement.txt"), "utf8")).resolves.toBe(
+      "unrelated replacement\n",
+    );
   });
 
   it("finishes an interrupted purge after Git removed the worktree", async () => {
@@ -694,6 +703,8 @@ describe("worktree quarantine recovery", () => {
       result.recoveryRef,
       fixture.action.target.head,
     ]);
+    await mkdir(fixture.linked);
+    await writeFile(join(fixture.linked, "replacement.txt"), "unrelated replacement\n");
     const purging = quarantineEntrySchema.parse({ ...manifest, status: "purging" });
     await writeJsonAtomic(result.manifestPath, purging, {
       privateDirectories: [quarantineDirectory],
@@ -710,6 +721,9 @@ describe("worktree quarantine recovery", () => {
 
     expect(purged.entry.status).toBe("purged");
     expect(purged.reclaimedBytes).toBe(fixture.action.target.measuredBytes);
+    await expect(readFile(join(fixture.linked, "replacement.txt"), "utf8")).resolves.toBe(
+      "unrelated replacement\n",
+    );
   });
 
   it("refuses purge after quarantined contents change", async () => {
