@@ -114,6 +114,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           completedAt: clock().toISOString(),
           diagnostic: revalidation.diagnostic,
         });
+        throwIfInterrupted(options.signal);
         continue;
       }
       throwIfInterrupted(options.signal);
@@ -131,6 +132,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             resourceId: action.resourceId,
           },
         });
+        throwIfInterrupted(options.signal);
         continue;
       }
 
@@ -179,6 +181,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           },
         });
         if (executionError?.outcome === "skipped-stale") {
+          throwIfInterrupted(options.signal);
           continue;
         }
         break;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AuditReport } from "../../src/contracts/report.js";
-import { redactAuditReport } from "../../src/core/redaction.js";
+import { redactAuditReport, redactAuditValue } from "../../src/core/redaction.js";
 
 const HOME = "/tmp/private-user";
 
@@ -89,5 +89,40 @@ describe("audit redaction", () => {
     const second = redactAuditReport(REPORT, "salt-two");
 
     expect(first.findings[0]?.resource.id).not.toBe(second.findings[0]?.resource.id);
+  });
+
+  it("conservatively removes diagnostic-only paths containing spaces", () => {
+    const redacted = redactAuditValue(
+      {
+        message: "could not inspect /Users/alice/Secret Project/file after permission failure",
+      },
+      HOME,
+      "fixture-salt",
+    );
+    const output = JSON.stringify(redacted);
+
+    expect(output).not.toContain("/Users/alice");
+    expect(output).not.toContain("Secret Project");
+    expect(output).not.toContain("file after permission failure");
+    expect(output).toContain("$PATH/<path:");
+  });
+
+  it("redacts large path collections without scanning every path for every string", () => {
+    const entries = Array.from({ length: 5_000 }, (_, index) => ({
+      path: `${HOME}/projects/project-${index}/node_modules`,
+    }));
+    const redacted = redactAuditValue(
+      {
+        entries,
+        message: `changed ${HOME}/projects/project-4999/node_modules`,
+      },
+      HOME,
+      "fixture-salt",
+    );
+    const output = JSON.stringify(redacted);
+
+    expect(output).not.toContain(HOME);
+    expect(output).not.toContain("project-4999");
+    expect(output).toContain("$HOME/<path:");
   });
 });

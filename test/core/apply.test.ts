@@ -488,6 +488,37 @@ describe("applyCleanupPlan", () => {
     ).resolves.toBeDefined();
   });
 
+  it("journals interruption requested during stale revalidation", async () => {
+    const value = await fixture();
+    const controller = new AbortController();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      signal: controller.signal,
+      dependencies: {
+        clock: CLOCK,
+        revalidate: async () => {
+          controller.abort(new Error("fixture interruption"));
+          return {
+            status: "stale",
+            diagnostic: {
+              severity: "warning",
+              code: "ARTIFACT_IDENTITY_CHANGED",
+              message: "fixture changed",
+            },
+          };
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("interrupted");
+    expect(result.run.actions[0]?.status).toBe("skipped-stale");
+    expect(result.run.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
+    expect(await exists(value.target)).toBe(true);
+  });
+
   it("does not mask a real failure just because interruption was also requested", async () => {
     const value = await fixture();
     const controller = new AbortController();

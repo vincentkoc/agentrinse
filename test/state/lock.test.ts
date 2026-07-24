@@ -192,6 +192,41 @@ describe("apply state lock", () => {
     expect(JSON.parse(await readFile(path, "utf8"))).toMatchObject({ token: "replacement" });
   });
 
+  it("serializes stale recovery before inspecting the apply lock", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    await writeOwner(root, owner());
+    let continueFirst!: () => void;
+    let firstEntered!: () => void;
+    const firstEnteredPromise = new Promise<void>((resolve) => {
+      firstEntered = resolve;
+    });
+    const continueFirstPromise = new Promise<void>((resolve) => {
+      continueFirst = resolve;
+    });
+    const dependencies = {
+      inspectProcess: async () => ({ status: "dead" as const }),
+    };
+
+    const firstRecovery = recoverStaleApplyLock(root, {
+      ...dependencies,
+      beforeRecoveryRemove: async () => {
+        firstEntered();
+        await continueFirstPromise;
+      },
+    });
+    await firstEnteredPromise;
+
+    await expect(recoverStaleApplyLock(root, dependencies)).rejects.toThrow(
+      "apply lock recovery is already in progress",
+    );
+    continueFirst();
+    await expect(firstRecovery).resolves.toMatchObject({ token: "lock-token" });
+
+    const replacement = await acquireApplyLock(root, request("plan-2", "run-2"));
+    await expect(readFile(replacement.path, "utf8")).resolves.toContain('"planId":"plan-2"');
+    await replacement.release();
+  });
+
   it("does not remove a replacement lock during release", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
     const lock = await acquireApplyLock(root, request());

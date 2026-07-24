@@ -4,6 +4,16 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
+type RunProcessCommand = (
+  file: string,
+  args: string[],
+  options: { encoding: "utf8"; env: NodeJS.ProcessEnv },
+) => Promise<{ stdout: string; stderr: string }>;
+
+export type ProcessIdentityDependencies = {
+  runProcessCommand?: RunProcessCommand;
+};
+
 export type ProcessIdentityInspection =
   | { status: "alive"; identity: string }
   | { status: "dead" }
@@ -56,10 +66,21 @@ async function inspectLinuxProcess(pid: number): Promise<ProcessIdentityInspecti
   }
 }
 
-async function inspectMacProcess(pid: number): Promise<ProcessIdentityInspection> {
+async function inspectMacProcess(
+  pid: number,
+  dependencies: ProcessIdentityDependencies,
+): Promise<ProcessIdentityInspection> {
   try {
-    const { stdout } = await execFileAsync("ps", ["-p", String(pid), "-o", "lstart="], {
+    const runProcessCommand =
+      dependencies.runProcessCommand ?? (execFileAsync as RunProcessCommand);
+    const { stdout } = await runProcessCommand("ps", ["-p", String(pid), "-o", "lstart="], {
       encoding: "utf8",
+      env: {
+        ...process.env,
+        LANG: "C",
+        LC_ALL: "C",
+        TZ: "UTC",
+      },
     });
     const startTime = stdout.trim().replace(/\s+/gu, " ");
     if (startTime.length === 0) {
@@ -83,6 +104,7 @@ async function inspectMacProcess(pid: number): Promise<ProcessIdentityInspection
 export async function inspectProcessIdentity(
   pid: number,
   platform: NodeJS.Platform = process.platform,
+  dependencies: ProcessIdentityDependencies = {},
 ): Promise<ProcessIdentityInspection> {
   if (!Number.isSafeInteger(pid) || pid <= 0) {
     return { status: "unknown", reason: `invalid process ID ${pid}` };
@@ -91,7 +113,7 @@ export async function inspectProcessIdentity(
     return inspectLinuxProcess(pid);
   }
   if (platform === "darwin") {
-    return inspectMacProcess(pid);
+    return inspectMacProcess(pid, dependencies);
   }
 
   const status = probePid(pid);

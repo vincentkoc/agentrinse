@@ -102,6 +102,60 @@ async function readOwner(path: string): Promise<ApplyLockOwner | undefined> {
   }
 }
 
+async function acquireRecoveryMutex(locksDirectory: string): Promise<StateLock> {
+  await mkdir(locksDirectory, { recursive: true, mode: 0o700 });
+  const path = join(locksDirectory, "apply.recovery.lock");
+  const token = randomUUID();
+  let handle: FileHandle;
+  try {
+    handle = await open(path, "wx", 0o600);
+  } catch (error) {
+    if (isErrno(error, "EEXIST")) {
+      throw new LockRecoveryError("apply lock recovery is already in progress");
+    }
+    throw error;
+  }
+
+  try {
+    await handle.writeFile(`${JSON.stringify({ token, pid: process.pid })}\n`, "utf8");
+    await handle.sync();
+    await syncDirectory(locksDirectory);
+    const identity = await handle.stat();
+    let released = false;
+
+    return {
+      path,
+      async release() {
+        if (released) {
+          return;
+        }
+        released = true;
+        await handle.close();
+        try {
+          const [raw, current] = await Promise.all([readFile(path, "utf8"), lstat(path)]);
+          const record = JSON.parse(raw) as { token?: unknown };
+          if (
+            record.token === token &&
+            current.dev === identity.dev &&
+            current.ino === identity.ino
+          ) {
+            await rm(path);
+            await syncDirectory(locksDirectory);
+          }
+        } catch (error) {
+          if (!isErrno(error, "ENOENT")) {
+            throw error;
+          }
+        }
+      },
+    };
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    await rm(path, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
 async function inspectLockSnapshot(
   locksDirectory: string,
   dependencies: LockInspectionDependencies = {},
@@ -203,34 +257,39 @@ export async function recoverStaleApplyLock(
   locksDirectory: string,
   dependencies: LockInspectionDependencies = {},
 ): Promise<ApplyLockOwner> {
-  const snapshot = await inspectLockSnapshot(locksDirectory, dependencies);
-  if (snapshot.status.status !== "stale" || snapshot.identity === undefined) {
-    throw new LockRecoveryError(
-      `apply lock is ${snapshot.status.status}; recovery requires a proven stale local owner`,
-    );
-  }
+  const recoveryMutex = await acquireRecoveryMutex(locksDirectory);
+  try {
+    const snapshot = await inspectLockSnapshot(locksDirectory, dependencies);
+    if (snapshot.status.status !== "stale" || snapshot.identity === undefined) {
+      throw new LockRecoveryError(
+        `apply lock is ${snapshot.status.status}; recovery requires a proven stale local owner`,
+      );
+    }
 
-  await dependencies.beforeRecoveryRemove?.();
-  const [owner, current] = await Promise.all([
-    readOwner(snapshot.status.path),
-    lstat(snapshot.status.path),
-  ]).catch((error: unknown) => {
-    if (isErrno(error, "ENOENT")) {
+    await dependencies.beforeRecoveryRemove?.();
+    const [owner, current] = await Promise.all([
+      readOwner(snapshot.status.path),
+      lstat(snapshot.status.path),
+    ]).catch((error: unknown) => {
+      if (isErrno(error, "ENOENT")) {
+        throw new LockRecoveryError("apply lock changed before recovery");
+      }
+      throw error;
+    });
+    if (
+      owner?.token !== snapshot.status.owner.token ||
+      current.dev !== snapshot.identity.dev ||
+      current.ino !== snapshot.identity.ino
+    ) {
       throw new LockRecoveryError("apply lock changed before recovery");
     }
-    throw error;
-  });
-  if (
-    owner?.token !== snapshot.status.owner.token ||
-    current.dev !== snapshot.identity.dev ||
-    current.ino !== snapshot.identity.ino
-  ) {
-    throw new LockRecoveryError("apply lock changed before recovery");
-  }
 
-  await rm(snapshot.status.path);
-  await syncDirectory(locksDirectory);
-  return snapshot.status.owner;
+    await rm(snapshot.status.path);
+    await syncDirectory(locksDirectory);
+    return snapshot.status.owner;
+  } finally {
+    await recoveryMutex.release();
+  }
 }
 
 export async function acquireApplyLock(

@@ -57,8 +57,9 @@ exact tarball is:
 - attached to the GitHub release with its `.sha256` file
 
 The npm job has no repository write permission. The release-asset job has no
-OIDC token or npm environment. Verify the published registry integrity and the
-GitHub checksum against the downloaded tarball after every release.
+OIDC token or npm environment, runs only after npm publication succeeds, and
+never overwrites existing assets. Verify the published registry integrity and
+the GitHub checksum against the downloaded tarball after every release.
 
 If a release-triggered run contains obsolete verification automation, run the
 current workflow manually with `release_tag` set to the existing tag. Manual
