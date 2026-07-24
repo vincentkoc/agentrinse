@@ -27,7 +27,7 @@ export function renderRunDetails(run: CleanupRun): string {
     }
   }
 
-  if (run.status === "partial" || run.status === "failed") {
+  if (run.status === "partial" || run.status === "failed" || run.status === "interrupted") {
     lines.push(
       "",
       "Recovery: inspect every isolation path and diagnostic above.",

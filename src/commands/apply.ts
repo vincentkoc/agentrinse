@@ -15,6 +15,7 @@ export type ApplyCommandOptions = {
   stateDir?: string;
   yes: boolean;
   json: boolean;
+  signal?: AbortSignal;
 };
 
 export type ApplyCommandResult = {
@@ -75,6 +76,7 @@ export async function executeApplyCommand(
     input,
     config,
     stateRoot: resolveStateRoot(plan.home, options.stateDir),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   return {
     run: result.run,

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import type { CleanupPlan } from "../contracts/plan.js";
+import type { Diagnostic } from "../contracts/diagnostic.js";
 import { cleanupRunSchema, type ActionExecution, type CleanupRun } from "../contracts/run.js";
 import { writeJsonAtomic } from "./json-file.js";
 
@@ -10,6 +11,7 @@ export type RunJournal = {
   snapshot(): CleanupRun;
   updateAction(actionId: string, patch: Partial<ActionExecution>): Promise<CleanupRun>;
   complete(completedAt?: Date): Promise<CleanupRun>;
+  interrupt(diagnostic: Diagnostic, completedAt?: Date): Promise<CleanupRun>;
 };
 
 export async function createRunJournal(
@@ -73,6 +75,15 @@ export async function createRunJournal(
         ...run,
         completedAt: completedAt.toISOString(),
         status: failed === 0 ? "completed" : applied > 0 ? "partial" : "failed",
+      };
+      return persist();
+    },
+    async interrupt(diagnostic, completedAt = new Date()) {
+      run = {
+        ...run,
+        completedAt: completedAt.toISOString(),
+        status: "interrupted",
+        diagnostics: [...run.diagnostics, diagnostic],
       };
       return persist();
     },

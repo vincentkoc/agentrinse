@@ -440,4 +440,71 @@ describe("applyCleanupPlan", () => {
       }),
     ).rejects.toBeInstanceOf(ApplySafetyError);
   });
+
+  it("journals interruption at a safe checkpoint and leaves the target intact", async () => {
+    const value = await fixture();
+    const controller = new AbortController();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      signal: controller.signal,
+      dependencies: {
+        clock: CLOCK,
+        createJournal: async (runsDirectory, plan, startedAt, runId) => {
+          const journal = await createRunJournal(runsDirectory, plan, startedAt, runId);
+          controller.abort(new Error("fixture interruption"));
+          return journal;
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("interrupted");
+    expect(result.run.actions[0]?.status).toBe("pending");
+    expect(result.run.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
+    expect(await exists(value.target)).toBe(true);
+    await expect(readJsonFile(result.journalPath)).resolves.toEqual(result.run);
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        dependencies: {
+          clock: CLOCK,
+          revalidate: async () => ({
+            status: "stale",
+            diagnostic: {
+              severity: "warning",
+              code: "STALE",
+              message: "skip",
+            },
+          }),
+        },
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("does not mask a real failure just because interruption was also requested", async () => {
+    const value = await fixture();
+    const controller = new AbortController();
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        signal: controller.signal,
+        dependencies: {
+          clock: CLOCK,
+          revalidate: async () => {
+            controller.abort(new Error("fixture interruption"));
+            throw new Error("authoritative revalidation failure");
+          },
+        },
+      }),
+    ).rejects.toThrow("authoritative revalidation failure");
+    expect(await exists(value.target)).toBe(true);
+  });
 });

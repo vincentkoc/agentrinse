@@ -101,4 +101,27 @@ describe("run journal", () => {
 
     expect((await journal.complete()).status).toBe("failed");
   });
+
+  it("persists an interrupted run without rewriting action truth", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const journal = await createRunJournal(root, PLAN);
+    await journal.updateAction("action-1", {
+      status: "applying",
+      isolationPath: "/tmp/fixture/.agentrinse-tombstone",
+    });
+
+    const interrupted = await journal.interrupt(
+      {
+        severity: "warning",
+        code: "COMMAND_INTERRUPTED",
+        message: "fixture interrupted",
+      },
+      new Date("2026-07-23T00:00:03.000Z"),
+    );
+
+    expect(interrupted.status).toBe("interrupted");
+    expect(interrupted.actions[0]?.status).toBe("applying");
+    expect(interrupted.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
+    expect(await readJsonFile(journal.path)).toEqual(interrupted);
+  });
 });

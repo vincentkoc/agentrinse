@@ -20,6 +20,7 @@ import {
   executeShowResourceCommand,
   executeShowRunCommand,
 } from "./commands/show.js";
+import { CommandInterruptedError } from "./core/interruption.js";
 import { VERSION } from "./version.js";
 
 export function buildProgram(): Command {
@@ -89,10 +90,24 @@ export function buildProgram(): Command {
         yes: boolean;
         json: boolean;
       }) => {
-        const result = await executeApplyCommand(options);
-        process.stdout.write(result.output);
-        if (["failed", "partial"].includes(result.run.status)) {
-          process.exitCode = 2;
+        const controller = new AbortController();
+        const interrupt = () => {
+          controller.abort(new CommandInterruptedError("interrupted by SIGINT"));
+        };
+        process.on("SIGINT", interrupt);
+        try {
+          const result = await executeApplyCommand({
+            ...options,
+            signal: controller.signal,
+          });
+          process.stdout.write(result.output);
+          if (result.run.status === "interrupted") {
+            process.exitCode = 130;
+          } else if (["failed", "partial"].includes(result.run.status)) {
+            process.exitCode = 2;
+          }
+        } finally {
+          process.removeListener("SIGINT", interrupt);
         }
       },
     );

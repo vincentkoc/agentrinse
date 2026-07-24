@@ -26,7 +26,7 @@
     },
     "status": {
       "type": "string",
-      "enum": ["running", "completed", "partial", "failed"]
+      "enum": ["running", "completed", "partial", "failed", "interrupted"]
     },
     "actions": {
       "type": "array",
