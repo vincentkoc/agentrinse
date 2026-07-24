@@ -47,7 +47,12 @@ const PLAN: CleanupPlan = {
 describe("run journal", () => {
   it("persists every action transition", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
-    const journal = await createRunJournal(root, PLAN, new Date("2026-07-23T00:00:00.000Z"));
+    const journal = await createRunJournal(
+      root,
+      PLAN,
+      new Date("2026-07-23T00:00:00.000Z"),
+      "run-1",
+    );
 
     await journal.updateAction("action-1", {
       status: "applied",
@@ -58,6 +63,7 @@ describe("run journal", () => {
     const completed = await journal.complete(new Date("2026-07-23T00:00:03.000Z"));
 
     expect(completed.status).toBe("completed");
+    expect(completed.runId).toBe("run-1");
     expect(completed.reclaimedBytes).toBe(10);
     expect(await readJsonFile(journal.path)).toEqual(completed);
   });
@@ -94,5 +100,31 @@ describe("run journal", () => {
     });
 
     expect((await journal.complete()).status).toBe("failed");
+  });
+
+  it("persists an interrupted run without rewriting action truth", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const journal = await createRunJournal(root, PLAN);
+    await journal.updateAction("action-1", {
+      status: "applying",
+      isolationPath: "/tmp/fixture/.agentrinse-tombstone",
+    });
+
+    const interrupted = await journal.interrupt(
+      {
+        severity: "warning",
+        code: "COMMAND_INTERRUPTED",
+        message: "fixture interrupted",
+      },
+      new Date("2026-07-23T00:00:03.000Z"),
+    );
+
+    expect(interrupted.status).toBe("interrupted");
+    expect(interrupted.actions[0]?.status).toBe("applying");
+    expect(interrupted.reclaimedBytes).toBe(
+      interrupted.actions.reduce((total, action) => total + (action.reclaimedBytes ?? 0), 0),
+    );
+    expect(interrupted.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
+    expect(await readJsonFile(journal.path)).toEqual(interrupted);
   });
 });

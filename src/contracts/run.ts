@@ -24,7 +24,7 @@ export const actionExecutionSchema = z.object({
   diagnostic: diagnosticSchema.optional(),
 });
 
-export const runStatusSchema = z.enum(["running", "completed", "partial", "failed"]);
+export const runStatusSchema = z.enum(["running", "completed", "partial", "failed", "interrupted"]);
 
 export const cleanupRunSchema = z.object({
   schemaVersion: z.literal(1),

@@ -4,12 +4,22 @@ import { join } from "node:path";
 
 import { z } from "zod";
 
-import { auditReportSchema, cleanupPlanSchema, cleanupRunSchema } from "../dist/index.js";
+import {
+  auditReportSchema,
+  commandEnvelopeSchema,
+  commandEventSchema,
+  cleanupPlanSchema,
+  cleanupRunSchema,
+  doctorReportSchema,
+} from "../dist/index.js";
 
 const outputDirectory = join(process.cwd(), "schemas");
 const check = process.argv.includes("--check");
 const schemas = [
   ["audit.schema.json", "audit", auditReportSchema],
+  ["command-envelope.schema.json", "command-envelope", commandEnvelopeSchema],
+  ["command-event.schema.json", "command-event", commandEventSchema],
+  ["doctor.schema.json", "doctor", doctorReportSchema],
   ["plan.schema.json", "plan", cleanupPlanSchema],
   ["run.schema.json", "run", cleanupRunSchema],
 ];

@@ -1,8 +1,8 @@
 {
   "name": "agentrinse",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
-  "description": "Reservation release for safe agentic-development cleanup.",
+  "description": "Safe, local-first cleanup for agentic development.",
   "keywords": [
     "agents",
     "cleanup",
@@ -50,6 +50,7 @@
     "schemas:check": "pnpm build && node scripts/generate-schemas.mjs --check",
     "schemas:generate": "pnpm build && node scripts/generate-schemas.mjs",
     "smoke": "pnpm build && node scripts/smoke.mjs",
+    "smoke:package": "pnpm build && node scripts/smoke-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit"

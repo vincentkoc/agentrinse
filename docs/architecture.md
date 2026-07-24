@@ -47,7 +47,7 @@ The apply engine:
 5. revalidates each action
 6. records the isolation path before mutation
 7. invokes the type-specific executor
-8. records applied, stale, rolled-back, failed, or partial outcomes
+8. records applied, stale, rolled-back, failed, partial, or interrupted outcomes
 9. stops after an execution failure
 10. finalizes the run and releases the owned lock
 
@@ -63,6 +63,8 @@ Default state:
 
 ```text
 $XDG_STATE_HOME/agentrinse/
+  audits/<audit-id>.json
+  plans/<plan-id>.json
   locks/apply.lock
   runs/<run-id>.json
 ```
@@ -70,5 +72,6 @@ $XDG_STATE_HOME/agentrinse/
 Without `XDG_STATE_HOME`, the root is
 `$HOME/.local/state/agentrinse`.
 
-All machine-readable output remains the source of truth. Human output is a
-projection of validated contracts.
+State records remain the execution source of truth. Audit JSON and NDJSON
+stdout use versioned public output contracts. Human output is a projection of
+validated records.

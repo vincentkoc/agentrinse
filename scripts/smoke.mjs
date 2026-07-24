@@ -6,7 +6,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+const { assertDestructiveFixtureRoot } = await import("../dist/core/safety.js");
+const installedCli = process.env.AGENTRINSE_SMOKE_CLI;
+const runCli = (args) =>
+  installedCli
+    ? execFileAsync(installedCli, args, { cwd: process.cwd() })
+    : execFileAsync(process.execPath, ["dist/cli.js", ...args], { cwd: process.cwd() });
 const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-smoke-")));
+await assertDestructiveFixtureRoot(root);
 const home = join(root, "home");
 const auditPath = join(root, "audit.json");
 const planPath = join(root, "plan.json");
@@ -44,16 +51,8 @@ await writeFile(
   )}\n`,
 );
 
-await execFileAsync(
-  process.execPath,
-  ["dist/cli.js", "audit", "--home", home, "--config", configPath, "--json", "--output", auditPath],
-  { cwd: process.cwd() },
-);
-await execFileAsync(
-  process.execPath,
-  ["dist/cli.js", "plan", "--audit", auditPath, "--config", configPath, "--output", planPath],
-  { cwd: process.cwd() },
-);
+await runCli(["audit", "--home", home, "--config", configPath, "--json", "--output", auditPath]);
+await runCli(["plan", "--audit", auditPath, "--config", configPath, "--output", planPath]);
 
 const audit = JSON.parse(await readFile(auditPath, "utf8"));
 const plan = JSON.parse(await readFile(planPath, "utf8"));
@@ -74,84 +73,39 @@ if (!Array.isArray(plan.actions) || plan.actions.length !== 1) {
 }
 
 await access(artifact);
-if (packageJson.version === "0.0.0") {
-  try {
-    await execFileAsync(
-      process.execPath,
-      [
-        "dist/cli.js",
-        "apply",
-        "--plan",
-        planPath,
-        "--config",
-        configPath,
-        "--state-dir",
-        statePath,
-        "--yes",
-        "--json",
-      ],
-      { cwd: process.cwd() },
-    );
-    throw new Error("reservation smoke apply unexpectedly succeeded");
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      !("stderr" in error) ||
-      !String(error.stderr).includes("apply is unavailable in the unsupported 0.0.0")
-    ) {
-      throw error;
-    }
-  }
-  await access(artifact);
-  await access(join(project, "source.ts"));
-  process.stdout.write(
-    `${JSON.stringify({
-      syntheticRoot: root,
-      findings: audit.findings.length,
-      protected: 2,
-      planActions: plan.actions.length,
-      apply: "blocked-reservation",
-    })}\n`,
-  );
-} else {
-  const apply = await execFileAsync(
-    process.execPath,
-    [
-      "dist/cli.js",
-      "apply",
-      "--plan",
-      planPath,
-      "--config",
-      configPath,
-      "--state-dir",
-      statePath,
-      "--yes",
-      "--json",
-    ],
-    { cwd: process.cwd() },
-  );
-  const run = JSON.parse(apply.stdout);
+const apply = await runCli([
+  "apply",
+  "--plan",
+  planPath,
+  "--config",
+  configPath,
+  "--state-dir",
+  statePath,
+  "--yes",
+  "--json",
+]);
+const run = JSON.parse(apply.stdout);
 
-  if (run.status !== "completed" || run.actions?.[0]?.status !== "applied") {
-    throw new Error("smoke apply did not complete");
-  }
-  await access(join(project, "source.ts"));
-  try {
-    await access(artifact);
-    throw new Error("smoke apply left the planned artifact in place");
-  } catch (error) {
-    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
-      throw error;
-    }
-  }
-  process.stdout.write(
-    `${JSON.stringify({
-      syntheticRoot: root,
-      findings: audit.findings.length,
-      protected: 2,
-      planActions: plan.actions.length,
-      applied: 1,
-      reclaimedBytes: run.reclaimedBytes,
-    })}\n`,
-  );
+if (run.status !== "completed" || run.actions?.[0]?.status !== "applied") {
+  throw new Error("smoke apply did not complete");
 }
+await access(join(project, "source.ts"));
+try {
+  await access(artifact);
+  throw new Error("smoke apply left the planned artifact in place");
+} catch (error) {
+  if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+    throw error;
+  }
+}
+process.stdout.write(
+  `${JSON.stringify({
+    version: packageJson.version,
+    syntheticRoot: root,
+    findings: audit.findings.length,
+    protected: 2,
+    planActions: plan.actions.length,
+    applied: 1,
+    reclaimedBytes: run.reclaimedBytes,
+  })}\n`,
+);

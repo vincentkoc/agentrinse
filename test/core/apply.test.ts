@@ -22,6 +22,7 @@ import { ApplySafetyError, applyCleanupPlan } from "../../src/core/apply.js";
 import { sha256Json } from "../../src/core/digest.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
+import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import { createRunJournal } from "../../src/state/run-journal.js";
 
@@ -34,6 +35,7 @@ async function fixture(): Promise<{
   target: string;
 }> {
   const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-apply-")));
+  await assertDestructiveFixtureRoot(home);
   const stateRoot = join(home, "state");
   const project = join(home, "project");
   const target = join(project, "node_modules");
@@ -356,8 +358,8 @@ describe("applyCleanupPlan", () => {
         stateRoot: value.stateRoot,
         dependencies: {
           clock: CLOCK,
-          createJournal: async (runsDirectory, plan, startedAt) => {
-            const journal = await createRunJournal(runsDirectory, plan, startedAt);
+          createJournal: async (runsDirectory, plan, startedAt, runId) => {
+            const journal = await createRunJournal(runsDirectory, plan, startedAt, runId);
             journalPath = journal.path;
             return {
               ...journal,
@@ -439,5 +441,143 @@ describe("applyCleanupPlan", () => {
         dependencies: { clock: CLOCK },
       }),
     ).rejects.toBeInstanceOf(ApplySafetyError);
+  });
+
+  it("journals interruption at a safe checkpoint and leaves the target intact", async () => {
+    const value = await fixture();
+    const controller = new AbortController();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      signal: controller.signal,
+      dependencies: {
+        clock: CLOCK,
+        createJournal: async (runsDirectory, plan, startedAt, runId) => {
+          const journal = await createRunJournal(runsDirectory, plan, startedAt, runId);
+          controller.abort(new Error("fixture interruption"));
+          return journal;
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("interrupted");
+    expect(result.run.actions[0]?.status).toBe("pending");
+    expect(result.run.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
+    expect(await exists(value.target)).toBe(true);
+    await expect(readJsonFile(result.journalPath)).resolves.toEqual(result.run);
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        dependencies: {
+          clock: CLOCK,
+          revalidate: async () => ({
+            status: "stale",
+            diagnostic: {
+              severity: "warning",
+              code: "STALE",
+              message: "skip",
+            },
+          }),
+        },
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it("journals interruption requested during stale revalidation", async () => {
+    const value = await fixture();
+    const controller = new AbortController();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      signal: controller.signal,
+      dependencies: {
+        clock: CLOCK,
+        revalidate: async () => {
+          controller.abort(new Error("fixture interruption"));
+          return {
+            status: "stale",
+            diagnostic: {
+              severity: "warning",
+              code: "ARTIFACT_IDENTITY_CHANGED",
+              message: "fixture changed",
+            },
+          };
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("interrupted");
+    expect(result.run.actions[0]?.status).toBe("skipped-stale");
+    expect(result.run.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("journals interruption requested while finalizing a completed run", async () => {
+    const value = await fixture();
+    const controller = new AbortController();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      signal: controller.signal,
+      dependencies: {
+        clock: CLOCK,
+        createJournal: async (runsDirectory, plan, startedAt, runId) => {
+          const journal = await createRunJournal(runsDirectory, plan, startedAt, runId);
+          return {
+            ...journal,
+            complete: async (completedAt) => {
+              const run = await journal.complete(completedAt);
+              controller.abort(new Error("fixture interruption"));
+              return run;
+            },
+          };
+        },
+        revalidate: async () => ({
+          status: "stale",
+          diagnostic: {
+            severity: "warning",
+            code: "ARTIFACT_IDENTITY_CHANGED",
+            message: "fixture changed",
+          },
+        }),
+      },
+    });
+
+    expect(result.run.status).toBe("interrupted");
+    expect(result.run.actions[0]?.status).toBe("skipped-stale");
+    expect(result.run.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
+    expect(await exists(value.target)).toBe(true);
+    await expect(readJsonFile(result.journalPath)).resolves.toEqual(result.run);
+  });
+
+  it("does not mask a real failure just because interruption was also requested", async () => {
+    const value = await fixture();
+    const controller = new AbortController();
+
+    await expect(
+      applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        signal: controller.signal,
+        dependencies: {
+          clock: CLOCK,
+          revalidate: async () => {
+            controller.abort(new Error("fixture interruption"));
+            throw new Error("authoritative revalidation failure");
+          },
+        },
+      }),
+    ).rejects.toThrow("authoritative revalidation failure");
+    expect(await exists(value.target)).toBe(true);
   });
 });

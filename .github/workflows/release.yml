@@ -15,22 +15,25 @@ permissions:
   contents: read
 
 jobs:
-  npm:
+  package:
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: npm
     permissions:
       contents: read
-      id-token: write
     env:
       RELEASE_TAG: ${{ github.event.release.tag_name }}
 
     steps:
-      - name: Check out repository
+      - name: Check out release source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
+          ref: refs/tags/${{ github.event.release.tag_name }}
+
+      - name: Verify selected tag
+        run: |
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$RELEASE_TAG")"
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -44,38 +47,85 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install OIDC-capable npm
-        run: npm install --global npm@11.18.0
-
       - name: Verify source and package
         run: |
           pnpm check
+          pnpm smoke
           pnpm pack:check
 
       - name: Verify release version
         run: |
           test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
 
+      - name: Build checksummed release package
+        run: |
+          mkdir release
+          npm pack --pack-destination release
+          test "$(find release -maxdepth 1 -name 'agentrinse-*.tgz' | wc -l | tr -d ' ')" = "1"
+          (
+            cd release
+            sha256sum agentrinse-*.tgz > agentrinse-$(node -p "require('../package.json').version").tgz.sha256
+            sha256sum --check *.sha256
+          )
+
+      - name: Smoke exact release package
+        if: env.RELEASE_TAG != 'v0.0.0'
+        run: pnpm smoke:package -- release/agentrinse-*.tgz
+
+      - name: Store release package
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentrinse-release-package
+          path: |
+            release/agentrinse-*.tgz
+            release/agentrinse-*.tgz.sha256
+          if-no-files-found: error
+
+  npm:
+    if: github.event_name == 'release'
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+
+    steps:
+      - name: Download release package
+        uses: actions/download-artifact@v8
+        with:
+          name: agentrinse-release-package
+          path: release
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install OIDC-capable npm
+        run: npm install --global npm@11.18.0
+
+      - name: Verify package checksum
+        run: |
+          cd release
+          sha256sum --check *.sha256
+
       - name: Verify bootstrap package
         if: env.RELEASE_TAG == 'v0.0.0'
         run: |
           bootstrap_root="$RUNNER_TEMP/agentrinse-bootstrap"
-          mkdir -p \
-            "$bootstrap_root/local-pack" \
-            "$bootstrap_root/local-tree" \
-            "$bootstrap_root/registry-pack" \
-            "$bootstrap_root/registry-tree"
+          mkdir -p "$bootstrap_root/local-tree" "$bootstrap_root/registry-pack" "$bootstrap_root/registry-tree"
 
-          npm pack --json \
-            --pack-destination "$bootstrap_root/local-pack" \
-            > "$bootstrap_root/local.json"
           npm pack agentrinse@0.0.0 --json \
             --pack-destination "$bootstrap_root/registry-pack" \
             > "$bootstrap_root/registry.json"
 
-          local_file="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$bootstrap_root/local.json")"
           registry_file="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$bootstrap_root/registry.json")"
-          tar -xzf "$bootstrap_root/local-pack/$local_file" -C "$bootstrap_root/local-tree"
+          tar -xzf release/agentrinse-0.0.0.tgz -C "$bootstrap_root/local-tree"
           tar -xzf "$bootstrap_root/registry-pack/$registry_file" -C "$bootstrap_root/registry-tree"
 
           diff -qr \
@@ -85,7 +135,76 @@ jobs:
 
       - name: Publish to npm
         if: env.RELEASE_TAG != 'v0.0.0'
-        run: npm publish --access public
+        run: npm publish release/agentrinse-*.tgz --access public
+
+  release-assets:
+    if: github.event_name == 'release'
+    needs:
+      - package
+      - npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+
+    steps:
+      - name: Download release package
+        uses: actions/download-artifact@v8
+        with:
+          name: agentrinse-release-package
+          path: release
+
+      - name: Verify package checksum
+        run: |
+          cd release
+          sha256sum --check *.sha256
+
+      - name: Upload package and checksum
+        run: |
+          asset_exists() {
+            gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" \
+              --jq '.assets[].name' |
+              grep -Fxq "$1"
+          }
+
+          verify_existing_asset() {
+            local asset="$1"
+            local name
+            local directory
+            name="$(basename "$asset")"
+            directory="$(mktemp -d)"
+            gh release download "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --pattern "$name" \
+              --dir "$directory"
+            cmp --silent "$asset" "$directory/$name"
+            rm -rf "$directory"
+          }
+
+          upload_asset() {
+            local asset="$1"
+            local name
+            name="$(basename "$asset")"
+
+            if asset_exists "$name"; then
+              verify_existing_asset "$asset"
+              return
+            fi
+
+            if gh release upload "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY"; then
+              return
+            fi
+
+            asset_exists "$name"
+            verify_existing_asset "$asset"
+          }
+
+          for asset in release/agentrinse-*.tgz release/agentrinse-*.tgz.sha256; do
+            upload_asset "$asset"
+          done
 
   validate:
     if: github.event_name == 'workflow_dispatch'
@@ -125,32 +244,39 @@ jobs:
       - name: Verify source and package
         run: |
           pnpm check
+          pnpm smoke
           pnpm pack:check
 
       - name: Verify release version
         run: |
           test "$RELEASE_TAG" = "v$(node -p "require('./package.json').version")"
 
+      - name: Build and verify checksum
+        run: |
+          mkdir release
+          npm pack --pack-destination release
+          (
+            cd release
+            sha256sum agentrinse-*.tgz > agentrinse-$(node -p "require('../package.json').version").tgz.sha256
+            sha256sum --check *.sha256
+          )
+
+      - name: Smoke exact release package
+        if: env.RELEASE_TAG != 'v0.0.0'
+        run: pnpm smoke:package -- release/agentrinse-*.tgz
+
       - name: Verify bootstrap package
         if: env.RELEASE_TAG == 'v0.0.0'
         run: |
           bootstrap_root="$RUNNER_TEMP/agentrinse-bootstrap"
-          mkdir -p \
-            "$bootstrap_root/local-pack" \
-            "$bootstrap_root/local-tree" \
-            "$bootstrap_root/registry-pack" \
-            "$bootstrap_root/registry-tree"
+          mkdir -p "$bootstrap_root/local-tree" "$bootstrap_root/registry-pack" "$bootstrap_root/registry-tree"
 
-          npm pack --json \
-            --pack-destination "$bootstrap_root/local-pack" \
-            > "$bootstrap_root/local.json"
           npm pack agentrinse@0.0.0 --json \
             --pack-destination "$bootstrap_root/registry-pack" \
             > "$bootstrap_root/registry.json"
 
-          local_file="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$bootstrap_root/local.json")"
           registry_file="$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$bootstrap_root/registry.json")"
-          tar -xzf "$bootstrap_root/local-pack/$local_file" -C "$bootstrap_root/local-tree"
+          tar -xzf release/agentrinse-0.0.0.tgz -C "$bootstrap_root/local-tree"
           tar -xzf "$bootstrap_root/registry-pack/$registry_file" -C "$bootstrap_root/registry-tree"
 
           diff -qr \

@@ -7,6 +7,7 @@ Development and CI use synthetic homes only.
 ```bash
 pnpm check
 pnpm smoke
+pnpm smoke:package
 pnpm pack:check
 ```
 
@@ -15,7 +16,7 @@ tests, and JSON Schema drift verification.
 
 `pnpm smoke` builds the CLI and:
 
-1. creates a temporary synthetic home
+1. creates a temporary synthetic home and passes the destructive-root guard
 2. writes synthetic provider resources and a project source file
 3. creates one configured `node_modules` artifact
 4. saves an audit and content-addressed plan
@@ -25,11 +26,15 @@ tests, and JSON Schema drift verification.
 8. verifies the project source file remains
 9. validates the completed run journal
 
-It never reads `$HOME`.
+It never reads data from `$HOME`.
 
 ## Fixture Rules
 
 - create fixtures with `mkdtemp`
+- call `assertDestructiveFixtureRoot` before any fixture can remove data
+- keep destructive roots below the resolved OS temporary directory
+- never use `/`, the temporary root itself, the real home, an ancestor of the
+  repository checkout, or a path reached through an escaping symlink
 - never copy real transcripts or provider databases into Git
 - replace personal paths with `/tmp` or `/fixture`
 - never preserve real hostnames, usernames, tokens, emails, or IP addresses

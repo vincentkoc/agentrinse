@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 import type { CleanupPlan } from "../contracts/plan.js";
+import type { Diagnostic } from "../contracts/diagnostic.js";
 import { cleanupRunSchema, type ActionExecution, type CleanupRun } from "../contracts/run.js";
 import { writeJsonAtomic } from "./json-file.js";
 
@@ -10,16 +11,18 @@ export type RunJournal = {
   snapshot(): CleanupRun;
   updateAction(actionId: string, patch: Partial<ActionExecution>): Promise<CleanupRun>;
   complete(completedAt?: Date): Promise<CleanupRun>;
+  interrupt(diagnostic: Diagnostic, completedAt?: Date): Promise<CleanupRun>;
 };
 
 export async function createRunJournal(
   runsDirectory: string,
   plan: CleanupPlan,
   startedAt = new Date(),
+  runId: string = randomUUID(),
 ): Promise<RunJournal> {
   let run = cleanupRunSchema.parse({
     schemaVersion: 1,
-    runId: randomUUID(),
+    runId,
     planId: plan.planId,
     startedAt: startedAt.toISOString(),
     status: "running",
@@ -32,11 +35,12 @@ export async function createRunJournal(
     diagnostics: [],
   });
   const path = join(runsDirectory, `${run.runId}.json`);
-  await writeJsonAtomic(path, run);
+  const privateDirectories = [runsDirectory];
+  await writeJsonAtomic(path, run, { privateDirectories });
 
   const persist = async (): Promise<CleanupRun> => {
     run = cleanupRunSchema.parse(run);
-    await writeJsonAtomic(path, run);
+    await writeJsonAtomic(path, run, { privateDirectories });
     return structuredClone(run);
   };
 
@@ -72,6 +76,19 @@ export async function createRunJournal(
         ...run,
         completedAt: completedAt.toISOString(),
         status: failed === 0 ? "completed" : applied > 0 ? "partial" : "failed",
+      };
+      return persist();
+    },
+    async interrupt(diagnostic, completedAt = new Date()) {
+      run = {
+        ...run,
+        completedAt: completedAt.toISOString(),
+        status: "interrupted",
+        reclaimedBytes: run.actions.reduce(
+          (total, action) => total + (action.reclaimedBytes ?? 0),
+          0,
+        ),
+        diagnostics: [...run.diagnostics, diagnostic],
       };
       return persist();
     },

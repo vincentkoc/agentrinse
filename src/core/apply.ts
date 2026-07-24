@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { CleanupPlan } from "../contracts/plan.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { acquireApplyLock } from "../state/lock.js";
 import { stateLayout } from "../state/layout.js";
+import { ensurePrivateDirectory } from "../state/json-file.js";
 import { createRunJournal } from "../state/run-journal.js";
 import {
   ArtifactExecutionError,
@@ -16,6 +19,7 @@ import {
   type ArtifactRevalidationResult,
 } from "./artifact-revalidation.js";
 import { sha256 } from "./digest.js";
+import { CommandInterruptedError } from "./interruption.js";
 import { verifyCleanupPlan } from "./plan-verification.js";
 import { isPathInside, resolvePhysicalPath } from "./safety.js";
 
@@ -44,10 +48,21 @@ export type ApplyCleanupPlanOptions = {
   input: unknown;
   config: AgentRinseConfig;
   stateRoot: string;
+  signal?: AbortSignal;
   dependencies?: ApplyDependencies;
 };
 
+function throwIfInterrupted(signal?: AbortSignal): void {
+  if (signal?.aborted !== true) {
+    return;
+  }
+  throw signal.reason instanceof CommandInterruptedError
+    ? signal.reason
+    : new CommandInterruptedError("apply interrupted");
+}
+
 export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promise<ApplyResult> {
+  throwIfInterrupted(options.signal);
   const clock = options.dependencies?.clock ?? (() => new Date());
   const config = agentRinseConfigSchema.parse(options.config);
   const plan = verifyCleanupPlan(options.input, config, clock());
@@ -64,22 +79,34 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
       );
     }
   }
-  const lock = await acquireApplyLock(layout.locks, plan.planId);
+  const runId = randomUUID();
+  await ensurePrivateDirectory(layout.root);
+  await ensurePrivateDirectory(layout.locks);
+  await ensurePrivateDirectory(layout.runs);
+  const lock = await acquireApplyLock(layout.locks, {
+    planId: plan.planId,
+    runId,
+    command: "agentrinse apply",
+  });
 
+  let journal: Awaited<ReturnType<typeof createRunJournal>> | undefined;
   try {
-    const journal = await (options.dependencies?.createJournal ?? createRunJournal)(
+    journal = await (options.dependencies?.createJournal ?? createRunJournal)(
       layout.runs,
       plan,
       clock(),
+      runId,
     );
-    const runId = journal.snapshot().runId;
+    throwIfInterrupted(options.signal);
 
     for (const action of plan.actions) {
+      throwIfInterrupted(options.signal);
       const startedAt = clock().toISOString();
       await journal.updateAction(action.actionId, {
         status: "revalidating",
         startedAt,
       });
+      throwIfInterrupted(options.signal);
 
       const revalidation =
         options.dependencies?.revalidate === undefined
@@ -91,8 +118,10 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           completedAt: clock().toISOString(),
           diagnostic: revalidation.diagnostic,
         });
+        throwIfInterrupted(options.signal);
         continue;
       }
+      throwIfInterrupted(options.signal);
 
       const authorizationCheckedAt = clock();
       if (authorizationCheckedAt.getTime() >= Date.parse(plan.expiresAt)) {
@@ -107,6 +136,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             resourceId: action.resourceId,
           },
         });
+        throwIfInterrupted(options.signal);
         continue;
       }
 
@@ -116,6 +146,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
         status: "applying",
         isolationPath,
       });
+      throwIfInterrupted(options.signal);
 
       let result: ArtifactExecutionResult;
       try {
@@ -154,6 +185,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           },
         });
         if (executionError?.outcome === "skipped-stale") {
+          throwIfInterrupted(options.signal);
           continue;
         }
         break;
@@ -165,10 +197,28 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
         reclaimedBytes: result.reclaimedBytes,
         isolationPath: result.isolationPath,
       });
+      throwIfInterrupted(options.signal);
     }
 
     const run = await journal.complete(clock());
+    if (run.status === "completed") {
+      throwIfInterrupted(options.signal);
+    }
     return { plan, run, journalPath: journal.path };
+  } catch (error) {
+    if (error instanceof CommandInterruptedError && journal !== undefined) {
+      const run = await journal.interrupt(
+        {
+          severity: "warning",
+          code: "COMMAND_INTERRUPTED",
+          message:
+            "Apply was interrupted at a safe checkpoint. Inspect the journal before creating a fresh audit and plan.",
+        },
+        clock(),
+      );
+      return { plan, run, journalPath: journal.path };
+    }
+    throw error;
   } finally {
     await lock.release();
   }

@@ -6,6 +6,8 @@ export type StateEnvironment = {
 
 export type StateLayout = {
   root: string;
+  audits: string;
+  plans: string;
   locks: string;
   runs: string;
   tombstones: string;
@@ -29,6 +31,8 @@ export function stateLayout(root: string): StateLayout {
   const resolved = resolve(root);
   return {
     root: resolved,
+    audits: join(resolved, "audits"),
+    plans: join(resolved, "plans"),
     locks: join(resolved, "locks"),
     runs: join(resolved, "runs"),
     tombstones: join(resolved, "tombstones"),

@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-24
+
 ### Added
 
 - TypeScript npm package and `agentrinse` CLI
@@ -24,6 +26,14 @@ The project follows semantic versioning after its first supported release.
 - durable per-action run journals and partial-apply recovery paths
 - versioned JSON Schemas
 - packaged audit, plan, and apply smoke test
+- configuration initialization and validation
+- environment doctor, run history, record inspection, and owned stale-lock
+  recovery
+- versioned JSON envelopes, NDJSON audit events, and non-executable redacted
+  audit output
+- bash, zsh, and fish completion generation
+- cooperative SIGINT handling with durable interrupted-run journals
+- runtime guards for every destructive synthetic fixture
 
 ### Safety
 

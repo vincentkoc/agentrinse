@@ -1,10 +1,10 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { loadConfig } from "../../src/config/load.js";
+import { loadConfig, loadConfigForHome } from "../../src/config/load.js";
 
 describe("loadConfig", () => {
   it("returns isolated defaults", async () => {
@@ -13,6 +13,32 @@ describe("loadConfig", () => {
 
     const second = await loadConfig();
     expect(second.adapters.codex).toEqual({ enabled: true });
+  });
+
+  it("loads the default home config when present", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(home, ".config", "agentrinse", "config.json");
+    await mkdir(join(home, ".config", "agentrinse"), { recursive: true });
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        audit: { measureBytes: false },
+      }),
+    );
+
+    const loaded = await loadConfigForHome(home, undefined, {});
+    expect(loaded.exists).toBe(true);
+    expect(loaded.path).toBe(path);
+    expect(loaded.config.audit.measureBytes).toBe(false);
+  });
+
+  it("uses safe defaults when the default home config is absent", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const loaded = await loadConfigForHome(home, undefined, {});
+
+    expect(loaded.exists).toBe(false);
+    expect(loaded.config.artifacts.projects).toEqual([]);
   });
 
   it("merges a partial config over defaults", async () => {

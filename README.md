@@ -2,53 +2,39 @@
 
 Safe, local-first cleanup for agentic development.
 
-AgentRinse inventories agent state and developer residue, explains why
-resources are protected, produces content-addressed cleanup plans, and applies
-only actions that still pass every safety check.
+AgentRinse inventories agent state and developer residue, explains why each
+resource is protected or eligible, creates content-addressed cleanup plans,
+and applies only actions that still pass every safety check.
 
-> [!IMPORTANT]
-> `0.0.0` is a package-reservation release. It is not supported for cleanup
-> against real developer state. The first supported release will be `0.1.0`.
-
-## Reservation Release
-
-The implemented mutation boundary under development is intentionally narrow:
-
-- removes only exact rebuildable artifact directories declared in config
-- supports `node_modules`, `dist`, `dist-runtime`, `build`, `.next`, `.turbo`,
-  `.cache`, `coverage`, `target`, and `.venv`
-- revalidates path, realpath, inode, device, recursive metadata fingerprint,
-  newest descendant mtime, measured bytes, configured scope, current working
-  directory, and process ownership after acquiring the apply lock
-- rejects artifact roots and descendants that cross filesystem mount
-  boundaries
-- rejects sockets, pipes, devices, and other non-regular filesystem entries
-- rechecks size, age, and plan expiration immediately before each mutation
-- atomically renames an artifact to a same-parent tombstone before recursive
-  removal, repeats fingerprint and process checks on the isolated tree, and
-  performs a final synchronous inode check at the deletion boundary
-- journals every transition and records the recovery path for partial actions
-
-Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, Grok Build, Git,
-and Docker are report-only. Provider state, worktrees, images, containers,
-volumes, branches, stashes, credentials, configuration, plugins, skills, and
-memories are not cleanup targets.
+Version `0.1.0` supports one mutating action: removing exact rebuildable
+artifact directories declared under explicit project roots. Provider state,
+Git worktrees, and Docker resources remain report-only.
 
 ## Install
 
-Do not install `0.0.0` for operational cleanup. Maintainers may verify the
-reservation package with:
+Node.js 22 or newer is required.
 
 ```bash
 npm install --global agentrinse
 agentrinse --version
 ```
 
-The command must report `0.0.0`. Node.js 22 or newer is required.
+One-off use also works:
 
-## Configure
+```bash
+npx agentrinse@0.1.0 doctor
+```
 
-Artifact cleanup is disabled until project roots are explicitly declared.
+## Quickstart
+
+Create a default configuration without overwriting an existing file:
+
+```bash
+agentrinse config init
+agentrinse config path
+```
+
+Edit the generated JSON and add explicit artifact roots:
 
 ```json
 {
@@ -71,69 +57,129 @@ Artifact cleanup is disabled until project roots are explicitly declared.
 }
 ```
 
-Project roots must be unique canonical absolute real directories inside the
-audited home; paths reached through symlinked ancestors are rejected. Artifact
-targets cannot overlap. AgentRinse never discovers arbitrary projects or
-expands wildcards.
-
-## Use
-
-Audit and save immutable evidence:
+Run diagnostics before the first audit:
 
 ```bash
-agentrinse audit \
-  --home "$HOME" \
-  --config agentrinse.json \
-  --json \
-  --output audit.json
+agentrinse config validate
+agentrinse doctor
 ```
 
-Create a bounded cleanup plan:
+Audit and save exact evidence:
 
 ```bash
-agentrinse plan \
-  --audit audit.json \
-  --config agentrinse.json \
-  --output plan.json
+agentrinse audit --home "$HOME" --output audit.json
 ```
 
-Review `plan.json`, then apply it:
+Create and review a bounded plan:
 
 ```bash
-agentrinse apply \
-  --plan plan.json \
-  --config agentrinse.json \
-  --yes
+agentrinse plan --audit audit.json --output plan.json
+cat plan.json
 ```
 
-Without `--yes`, apply requires an interactive terminal confirmation. JSON
-output requires `--yes` so prompts can never corrupt stdout. A plan is rejected
-when it expires, changes, no longer matches the config, or contains inconsistent
-action totals. An action whose authorization expires during a run is recorded
-as `skipped-stale`, not deleted.
+Apply only after reviewing the plan:
 
-Run journals are stored under `$XDG_STATE_HOME/agentrinse/runs` or
-`$HOME/.local/state/agentrinse/runs`. Use `--state-dir` to select another
-location.
+```bash
+agentrinse apply --plan plan.json
+```
 
-## Safety
+Interactive apply asks for confirmation. Automation must pass `--yes`.
 
-- discovery and planning never mutate
-- unknown state is protected
-- symlinks are not followed
-- no process is killed
-- no `sudo`
-- no Docker volume deletion
-- no generic `--force`
-- no wildcard deletion
-- one apply run holds the exclusive state lock
-- AgentRinse never removes its own working directory, lock, or journal
+## Mutation Boundary
 
-AgentRinse fails closed around ordinary concurrent developer tools. It does not
-claim isolation from a hostile process already running as the same OS user;
-that process can directly alter the user's files and AgentRinse state.
+AgentRinse can remove only these configured artifact names:
 
-See `docs/safety.md` for the complete mutation contract.
+- `node_modules`
+- `dist`
+- `dist-runtime`
+- `build`
+- `.next`
+- `.turbo`
+- `.cache`
+- `coverage`
+- `target`
+- `.venv`
+
+Before removal it revalidates configured scope, canonical paths, device and
+inode identity, recursive metadata fingerprint, measured bytes, newest
+descendant age, mount boundaries, current working directory ownership,
+same-user processes, and plan expiration. The exact target is atomically moved
+to a same-parent tombstone and verified again before deletion.
+
+AgentRinse never removes provider sessions, transcripts, databases,
+credentials, configuration, plugins, skills, memories, Git branches, stashes,
+worktrees, Docker images, containers, networks, volumes, or build cache in
+`0.1.0`.
+
+## Operations
+
+```bash
+agentrinse history
+agentrinse show run <run-id>
+agentrinse show plan <plan-id>
+agentrinse show resource <resource-id>
+agentrinse lock status
+```
+
+A stale lock can be recovered only after AgentRinse proves the recorded local
+process identity no longer exists:
+
+```bash
+agentrinse lock status
+agentrinse lock recover --yes
+```
+
+Generate shell completion without modifying shell startup files:
+
+```bash
+agentrinse completion bash
+agentrinse completion zsh
+agentrinse completion fish
+```
+
+## Machine Output
+
+`agentrinse audit --json` emits a versioned command envelope. Long audits can
+emit incremental event records:
+
+```bash
+agentrinse audit --ndjson
+```
+
+Create a non-executable report for issue filing:
+
+```bash
+agentrinse audit --json --redact > audit-redacted.json
+```
+
+Redaction replaces paths, salts identifiers per report, removes host fields,
+and strips candidate actions. Persisted state and `--output` evidence remain
+exact so they can be used for planning.
+
+## Platform Support
+
+| Platform       | `0.1.0` support                                     |
+| -------------- | --------------------------------------------------- |
+| macOS          | audit and safe artifact apply                       |
+| Linux          | audit and safe artifact apply                       |
+| WSL            | Linux contract inside the WSL filesystem            |
+| native Windows | audit-only; mutation remains blocked before `1.0.0` |
+
+Git and `lsof` are required for the complete diagnostic and process-ownership
+contract. Docker is optional. Doctor can detect the optional external Mole
+tool on macOS.
+
+## Documentation
+
+- [Configuration](docs/configuration.md)
+- [Automation](docs/automation.md)
+- [Recovery](docs/recovery.md)
+- [Platform support](docs/platforms.md)
+- [Safety model](docs/safety.md)
+- [Adapter matrix](docs/adapters.md)
+- [Development](docs/development.md)
+- [Releasing](docs/releasing.md)
+- [Product specification](docs/product-spec.md)
 
 ## Development
 
@@ -144,9 +190,8 @@ pnpm smoke
 pnpm pack:check
 ```
 
-Development, tests, smoke runs, and destructive proof use temporary synthetic
-homes only. Never point `0.0.0` or an unreleased development build at a
-workstation home.
+Tests and smoke runs use guarded temporary synthetic roots. Never point an
+unreleased build at real developer state.
 
 ## License
 
