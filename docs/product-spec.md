@@ -2494,6 +2494,9 @@ Every event includes:
 - command/run ID
 - sequence number
 
+Once `command.started` is emitted, `command.completed` is always the terminal
+record, including a `failed` status when audit or persistence fails.
+
 ### Output compatibility
 
 Breaking changes to:

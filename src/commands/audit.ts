@@ -72,69 +72,85 @@ export async function executeAuditCommand(
   if (options.ndjson === true) {
     emitEvent("command.started", startedAt, options.redact === true ? { home: "$HOME" } : { home });
   }
-  const report = await runAudit({
-    home,
-    config,
-    adapters: createAuditAdapters(config),
-    now: clock,
-    ...(options.ndjson === true
-      ? {
-          onEvent: (event: AuditProgressEvent) => {
-            emitEvent(
-              event.type,
-              event.timestamp,
-              options.redact === true ? redactAuditValue(event.data, home, salt) : event.data,
-            );
-          },
-        }
-      : {}),
-  });
-  const statePath = resolve(
-    stateLayout(resolveStateRoot(home, options.stateDir)).audits,
-    `${report.auditId}.json`,
-  );
-  await writeJsonAtomic(statePath, report);
-
-  if (options.output !== undefined) {
-    await writeJsonAtomic(resolve(options.output), report);
-  }
-
-  const selectedReport = options.redact === true ? redactAuditReport(report, salt) : report;
-  if (options.ndjson === true) {
-    emitEvent("command.completed", report.completedAt, {
-      auditId:
-        options.redact === true
-          ? redactAuditValue({ auditId: report.auditId }, home, salt).auditId
-          : report.auditId,
-      status:
-        report.probes.some((probe) => probe.status === "degraded") || report.diagnostics.length > 0
-          ? "degraded"
-          : "ok",
-      probes: report.probes.length,
-      findings: report.findings.length,
+  try {
+    const report = await runAudit({
+      home,
+      config,
+      adapters: createAuditAdapters(config),
+      now: clock,
+      ...(options.ndjson === true
+        ? {
+            onEvent: (event: AuditProgressEvent) => {
+              emitEvent(
+                event.type,
+                event.timestamp,
+                options.redact === true ? redactAuditValue(event.data, home, salt) : event.data,
+              );
+            },
+          }
+        : {}),
     });
+    const statePath = resolve(
+      stateLayout(resolveStateRoot(home, options.stateDir)).audits,
+      `${report.auditId}.json`,
+    );
+    await writeJsonAtomic(statePath, report);
+
+    if (options.output !== undefined) {
+      await writeJsonAtomic(resolve(options.output), report);
+    }
+
+    const selectedReport = options.redact === true ? redactAuditReport(report, salt) : report;
+    if (options.ndjson === true) {
+      emitEvent("command.completed", report.completedAt, {
+        auditId:
+          options.redact === true
+            ? redactAuditValue({ auditId: report.auditId }, home, salt).auditId
+            : report.auditId,
+        status:
+          report.probes.some((probe) => probe.status === "degraded") ||
+          report.diagnostics.length > 0
+            ? "degraded"
+            : "ok",
+        probes: report.probes.length,
+        findings: report.findings.length,
+      });
+    }
+    const status =
+      report.probes.some((probe) => probe.status === "degraded") || report.diagnostics.length > 0
+        ? "degraded"
+        : "ok";
+    return {
+      report,
+      statePath,
+      output:
+        options.ndjson === true
+          ? ndjson.join("")
+          : options.json === true
+            ? jsonDocument(
+                createCommandEnvelope({
+                  command: "audit",
+                  startedAt: report.startedAt,
+                  completedAt: report.completedAt,
+                  status,
+                  data: selectedReport,
+                  diagnostics: selectedReport.diagnostics,
+                }),
+              )
+            : renderAudit(report),
+    };
+  } catch (error) {
+    if (options.ndjson === true) {
+      const data = {
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      };
+      emitEvent(
+        "command.completed",
+        clock().toISOString(),
+        options.redact === true ? redactAuditValue(data, home, salt) : data,
+      );
+    }
+    throw error;
   }
-  const status =
-    report.probes.some((probe) => probe.status === "degraded") || report.diagnostics.length > 0
-      ? "degraded"
-      : "ok";
-  return {
-    report,
-    statePath,
-    output:
-      options.ndjson === true
-        ? ndjson.join("")
-        : options.json === true
-          ? jsonDocument(
-              createCommandEnvelope({
-                command: "audit",
-                startedAt: report.startedAt,
-                completedAt: report.completedAt,
-                status,
-                data: selectedReport,
-                diagnostics: selectedReport.diagnostics,
-              }),
-            )
-          : renderAudit(report),
-  };
 }

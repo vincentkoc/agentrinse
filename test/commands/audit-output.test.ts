@@ -61,6 +61,31 @@ describe("audit machine output", () => {
     expect(await readFile(result.statePath, "utf8")).toContain(home);
   });
 
+  it("emits a failed terminal NDJSON event when persistence fails", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-output-"));
+    const stateDir = await mkdtemp(join(tmpdir(), "agentrinse-audit-state-"));
+    const records: string[] = [];
+
+    await expect(
+      executeAuditCommand({
+        home,
+        stateDir,
+        output: stateDir,
+        ndjson: true,
+        now: () => new Date("2026-07-24T00:00:00.000Z"),
+        emit: (record) => records.push(record),
+      }),
+    ).rejects.toThrow();
+
+    const events = records.map((record) => commandEventSchema.parse(JSON.parse(record)));
+    expect(events[0]?.event).toBe("command.started");
+    expect(events.at(-1)).toMatchObject({
+      event: "command.completed",
+      data: { status: "failed" },
+    });
+    expect(events.map((event) => event.sequence)).toEqual(events.map((_, index) => index + 1));
+  });
+
   it("rejects ambiguous or non-machine redaction modes", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-output-"));
 
