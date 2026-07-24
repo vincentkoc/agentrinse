@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { AuditReport } from "../../src/contracts/report.js";
 import { redactAuditReport, redactAuditValue } from "../../src/core/redaction.js";
+import { jsonDocument, ndjsonRecord } from "../../src/machine-output.js";
 
 const HOME = "/tmp/private-user";
 
@@ -152,6 +153,23 @@ describe("audit redaction", () => {
     expect(output).not.toContain("client");
     expect(output).not.toContain("draft");
     expect(output).toContain("$PATH/<path:");
+  });
+
+  it("removes UNC paths from JSON and NDJSON output", () => {
+    const redacted = redactAuditValue(
+      {
+        message: String.raw`could not inspect \\server\private-share\project`,
+      },
+      HOME,
+      "fixture-salt",
+    );
+
+    for (const output of [jsonDocument(redacted), ndjsonRecord(redacted)]) {
+      expect(output).not.toContain("server");
+      expect(output).not.toContain("private-share");
+      expect(output).not.toContain("project");
+      expect(output).toContain("$PATH/<path:");
+    }
   });
 
   it("redacts large path collections without scanning every path for every string", () => {

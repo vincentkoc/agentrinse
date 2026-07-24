@@ -1,4 +1,4 @@
-import { isAbsolute, sep } from "node:path";
+import { posix, win32 } from "node:path";
 
 import type { AuditReport } from "../contracts/report.js";
 import { sha256 } from "./digest.js";
@@ -43,10 +43,12 @@ function redactPath(value: string, home: string, salt: string): string {
   if (value === home) {
     return "$HOME";
   }
-  if (value.startsWith(`${home}${sep}`)) {
+  if (value.startsWith(`${home}${posix.sep}`) || value.startsWith(`${home}${win32.sep}`)) {
     return `$HOME/<${token("path", value, salt)}>`;
   }
-  return isAbsolute(value) ? `$PATH/<${token("path", value, salt)}>` : value;
+  return posix.isAbsolute(value) || win32.isAbsolute(value)
+    ? `$PATH/<${token("path", value, salt)}>`
+    : value;
 }
 
 function replacePathMatch(matched: string, context: RedactionContext): string {
@@ -57,6 +59,7 @@ function replacePathMatch(matched: string, context: RedactionContext): string {
 
 function redactText(value: string, context: RedactionContext): string {
   let output = value;
+  output = output.replace(/\\\\.*/gu, (matched) => replacePathMatch(matched, context));
   output = output.replace(/(?<![$\w>])\/.*/gu, (matched) => replacePathMatch(matched, context));
   return output.replace(/\b[A-Za-z]:\\.*/gu, (matched) => replacePathMatch(matched, context));
 }
