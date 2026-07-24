@@ -19,7 +19,13 @@ const temporaryRoot = await mkdtemp(join(tmpdir(), "agentrinse-package-manifest-
 try {
   await writeFile(join(temporaryRoot, "package.json"), source);
   await cp(join(root, "dist"), join(temporaryRoot, "dist"), { recursive: true });
-  await execFileAsync("npm", ["pkg", "fix"], { cwd: temporaryRoot });
+  if (process.platform === "win32") {
+    await execFileAsync(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "npm pkg fix"], {
+      cwd: temporaryRoot,
+    });
+  } else {
+    await execFileAsync("npm", ["pkg", "fix"], { cwd: temporaryRoot });
+  }
 
   const normalized = await readFile(join(temporaryRoot, "package.json"), "utf8");
   if (normalized !== source) {
