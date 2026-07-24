@@ -57,12 +57,14 @@ export type CloseoutSummary = {
   protectedWorktrees: number;
   eligibleActions: number;
   expectedReclaimBytes: number;
+  pendingQuarantineBytes: number;
   mole: MoleHandoff;
   run?: {
     runId: string;
     status: CleanupRun["status"];
     journalPath: string;
     reclaimedBytes: number;
+    quarantinedBytes: number;
   };
 };
 
@@ -164,14 +166,15 @@ function renderCloseout(summary: CloseoutSummary): string {
     `Repository: ${summary.repositoryRoot}`,
     `Worktrees: ${summary.worktrees} (${summary.protectedWorktrees} protected)`,
     `Eligible actions: ${summary.eligibleActions}`,
-    `Expected reclaim: ${summary.expectedReclaimBytes} bytes`,
+    `Immediate reclaim: ${summary.expectedReclaimBytes} bytes`,
+    `Pending quarantine: ${summary.pendingQuarantineBytes} bytes`,
     `Audit: ${summary.auditPath}`,
     `Plan: ${summary.planPath}`,
     `Config: ${summary.configPath}`,
   ];
   if (summary.run !== undefined) {
     lines.push(
-      `Run: ${summary.run.status} (${summary.run.reclaimedBytes} bytes)`,
+      `Run: ${summary.run.status} (${summary.run.reclaimedBytes} reclaimed, ${summary.run.quarantinedBytes} quarantined bytes)`,
       `Journal: ${summary.run.journalPath}`,
     );
   }
@@ -286,6 +289,7 @@ export async function executeCleanCommand(
     protectedWorktrees: gitFindings.filter((finding) => finding.state !== "eligible").length,
     eligibleActions: plan.actions.length,
     expectedReclaimBytes: plan.expectedReclaimBytes,
+    pendingQuarantineBytes: plan.pendingQuarantineBytes ?? 0,
     mole: await moleHandoff(platform, runCommand),
     ...(run === undefined || journalPath === undefined
       ? {}
@@ -295,6 +299,7 @@ export async function executeCleanCommand(
             status: run.status,
             journalPath,
             reclaimedBytes: run.reclaimedBytes,
+            quarantinedBytes: run.quarantinedBytes ?? 0,
           },
         }),
   };

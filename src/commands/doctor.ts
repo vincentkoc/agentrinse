@@ -112,14 +112,14 @@ function platformCheck(platform: NodeJS.Platform): DoctorCheck {
     return {
       id: "platform",
       status: "pass",
-      summary: "macOS supports audit and safe artifact cleanup",
+      summary: "macOS supports audit, artifact cleanup, and recoverable worktree quarantine",
     };
   }
   if (platform === "linux") {
     return {
       id: "platform",
       status: "pass",
-      summary: "Linux supports audit and safe artifact cleanup",
+      summary: "Linux supports audit, artifact cleanup, and recoverable worktree quarantine",
     };
   }
   if (platform === "win32") {
