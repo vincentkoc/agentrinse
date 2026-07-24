@@ -74,6 +74,10 @@ agentrinse lock recover --yes
 
 Remote, active, malformed, or uninspectable locks fail closed.
 
+Recovery is serialized by a kernel-held mutex (`lockf` on macOS, `flock` on
+Linux). A crashed recovery process releases that mutex automatically; the
+marker file itself is not evidence that recovery is active.
+
 ## State Corruption
 
 Run:

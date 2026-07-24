@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { executeApplyCommand } from "../../src/commands/apply.js";
+import { confirmApply, executeApplyCommand } from "../../src/commands/apply.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { CleanupPlan } from "../../src/contracts/plan.js";
 import { sha256Json } from "../../src/core/digest.js";
@@ -14,6 +14,21 @@ import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 
 describe("executeApplyCommand", () => {
+  it("propagates cancellation into interactive confirmation", async () => {
+    const controller = new AbortController();
+
+    await expect(
+      confirmApply(1, controller.signal, {
+        isInteractive: () => true,
+        question: async (_prompt, signal) => {
+          expect(signal).toBe(controller.signal);
+          controller.abort(new Error("interrupted by SIGINT"));
+          throw Object.assign(new Error("question aborted"), { name: "AbortError" });
+        },
+      }),
+    ).rejects.toMatchObject({ name: "CommandInterruptedError" });
+  });
+
   it("requires --yes before entering JSON mode", async () => {
     await expect(
       executeApplyCommand({

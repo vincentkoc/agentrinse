@@ -255,6 +255,39 @@ async function processOwnershipCheck(
   }
 }
 
+async function recoveryMutexCheck(
+  platform: NodeJS.Platform,
+  runCommand: (command: string, args: string[]) => Promise<CommandResult>,
+): Promise<DoctorCheck> {
+  if (platform !== "darwin" && platform !== "linux") {
+    return {
+      id: "recovery-mutex",
+      status: "pass",
+      summary: "stale-lock recovery is not available on this platform",
+    };
+  }
+  const command = platform === "darwin" ? "lockf" : "flock";
+  try {
+    const result = await runCommand("sh", ["-c", `command -v ${command}`]);
+    return {
+      id: "recovery-mutex",
+      status: "pass",
+      summary: `${result.stdout.trim() || command} provides crash-safe stale-lock recovery`,
+    };
+  } catch (error) {
+    return {
+      id: "recovery-mutex",
+      status: "error",
+      summary: `${command} is unavailable`,
+      detail: errorMessage(error),
+      remediation:
+        platform === "darwin"
+          ? "Restore the macOS lockf utility before recovering stale locks."
+          : "Install util-linux to provide flock before recovering stale locks.",
+    };
+  }
+}
+
 async function gitChecks(
   config: AgentRinseConfig,
   runCommand: (command: string, args: string[]) => Promise<CommandResult>,
@@ -569,6 +602,7 @@ export async function executeDoctorCommand(
     ...loaded.checks,
     await stateCheck(root),
     await processOwnershipCheck(platform, runCommand),
+    await recoveryMutexCheck(platform, runCommand),
     ...(await gitChecks(loaded.config, runCommand)),
     await dockerCheck(loaded.config.adapters.docker?.enabled === true, runCommand),
     await moleCheck(platform, runCommand),

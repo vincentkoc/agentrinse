@@ -227,6 +227,18 @@ describe("apply state lock", () => {
     await replacement.release();
   });
 
+  it("ignores an orphaned recovery marker when no process holds its kernel lock", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    await writeOwner(root, owner());
+    await writeFile(join(root, "apply.recovery.lock"), "orphaned marker\n");
+
+    await expect(
+      recoverStaleApplyLock(root, {
+        inspectProcess: async () => ({ status: "dead" }),
+      }),
+    ).resolves.toMatchObject({ token: "lock-token" });
+  });
+
   it("does not remove a replacement lock during release", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
     const lock = await acquireApplyLock(root, request());

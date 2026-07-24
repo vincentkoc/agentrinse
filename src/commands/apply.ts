@@ -5,6 +5,7 @@ import { loadConfigForHome } from "../config/load.js";
 import { cleanupPlanSchema } from "../contracts/plan.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { applyCleanupPlan } from "../core/apply.js";
+import { CommandInterruptedError } from "../core/interruption.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot } from "../state/layout.js";
 
@@ -23,20 +24,59 @@ export type ApplyCommandResult = {
   output: string;
 };
 
-async function confirmApply(actionCount: number): Promise<boolean> {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error("apply requires --yes when stdin or stdout is not an interactive terminal");
-  }
+export type ConfirmApplyDependencies = {
+  isInteractive?: () => boolean;
+  question?: (prompt: string, signal?: AbortSignal) => Promise<string>;
+};
 
+async function defaultQuestion(promptText: string, signal?: AbortSignal): Promise<string> {
   const prompt = createInterface({
     input: process.stdin,
     output: process.stdout,
   });
   try {
-    const answer = await prompt.question(`Apply ${actionCount} safe cleanup action(s)? [y/N] `);
-    return ["y", "yes"].includes(answer.trim().toLowerCase());
+    return signal === undefined
+      ? await prompt.question(promptText)
+      : await prompt.question(promptText, { signal });
   } finally {
     prompt.close();
+  }
+}
+
+function interruptionFrom(signal?: AbortSignal): CommandInterruptedError | undefined {
+  if (signal?.aborted !== true) {
+    return undefined;
+  }
+  return signal.reason instanceof CommandInterruptedError
+    ? signal.reason
+    : new CommandInterruptedError("apply interrupted");
+}
+
+export async function confirmApply(
+  actionCount: number,
+  signal?: AbortSignal,
+  dependencies: ConfirmApplyDependencies = {},
+): Promise<boolean> {
+  const initialInterruption = interruptionFrom(signal);
+  if (initialInterruption !== undefined) {
+    throw initialInterruption;
+  }
+  if (!(dependencies.isInteractive ?? (() => process.stdin.isTTY && process.stdout.isTTY))()) {
+    throw new Error("apply requires --yes when stdin or stdout is not an interactive terminal");
+  }
+
+  try {
+    const answer = await (dependencies.question ?? defaultQuestion)(
+      `Apply ${actionCount} safe cleanup action(s)? [y/N] `,
+      signal,
+    );
+    return ["y", "yes"].includes(answer.trim().toLowerCase());
+  } catch (error) {
+    const interruption = interruptionFrom(signal);
+    if (interruption !== undefined) {
+      throw interruption;
+    }
+    throw error;
   }
 }
 
@@ -63,7 +103,7 @@ export async function executeApplyCommand(
   const plan = cleanupPlanSchema.parse(input);
   const { config } = await loadConfigForHome(plan.home, options.config);
 
-  if (!options.yes && !(await confirmApply(plan.actions.length))) {
+  if (!options.yes && !(await confirmApply(plan.actions.length, options.signal))) {
     throw new Error("apply cancelled");
   }
 

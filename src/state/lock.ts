@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import type { Stats } from "node:fs";
 import { lstat, mkdir, open, readFile, rm, type FileHandle } from "node:fs/promises";
 import { hostname } from "node:os";
@@ -102,58 +103,98 @@ async function readOwner(path: string): Promise<ApplyLockOwner | undefined> {
   }
 }
 
-async function acquireRecoveryMutex(locksDirectory: string): Promise<StateLock> {
+type RecoveryMutex = {
+  assertHeld(): void;
+  release(): Promise<void>;
+};
+
+async function acquireRecoveryMutex(locksDirectory: string): Promise<RecoveryMutex> {
   await mkdir(locksDirectory, { recursive: true, mode: 0o700 });
   const path = join(locksDirectory, "apply.recovery.lock");
-  const token = randomUUID();
-  let handle: FileHandle;
-  try {
-    handle = await open(path, "wx", 0o600);
-  } catch (error) {
-    if (isErrno(error, "EEXIST")) {
-      throw new LockRecoveryError("apply lock recovery is already in progress");
-    }
-    throw error;
+  const holdCommand = 'printf "agentrinse-recovery-lock\\n"; cat >/dev/null';
+  const command =
+    process.platform === "darwin" ? "lockf" : process.platform === "linux" ? "flock" : undefined;
+  if (command === undefined) {
+    throw new LockRecoveryError(`apply lock recovery is unsupported on ${process.platform}`);
   }
+  const args =
+    command === "lockf"
+      ? ["-k", "-s", "-t", "0", path, "sh", "-c", holdCommand]
+      : ["-n", path, "sh", "-c", holdCommand];
+  const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stderr = "";
+  let ready = false;
+  let released = false;
+  child.stderr.on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  let stdout = "";
 
-  try {
-    await handle.writeFile(`${JSON.stringify({ token, pid: process.pid })}\n`, "utf8");
-    await handle.sync();
-    await syncDirectory(locksDirectory);
-    const identity = await handle.stat();
-    let released = false;
-
-    return {
-      path,
-      async release() {
-        if (released) {
-          return;
-        }
-        released = true;
-        await handle.close();
-        try {
-          const [raw, current] = await Promise.all([readFile(path, "utf8"), lstat(path)]);
-          const record = JSON.parse(raw) as { token?: unknown };
-          if (
-            record.token === token &&
-            current.dev === identity.dev &&
-            current.ino === identity.ino
-          ) {
-            await rm(path);
-            await syncDirectory(locksDirectory);
-          }
-        } catch (error) {
-          if (!isErrno(error, "ENOENT")) {
-            throw error;
-          }
+  const exit = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+    (resolve, reject) => {
+      child.once("error", reject);
+      child.once("exit", (code, signal) => resolve({ code, signal }));
+    },
+  );
+  await new Promise<void>((resolve, reject) => {
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      if (!ready && stdout.includes("agentrinse-recovery-lock\n")) {
+        ready = true;
+        resolve();
+      }
+    });
+    void exit.then(
+      ({ code, signal }) => {
+        if (!ready) {
+          const detail = stderr.trim();
+          reject(
+            new LockRecoveryError(
+              code === 1 || code === 75
+                ? "apply lock recovery is already in progress"
+                : `could not acquire recovery mutex${detail === "" ? "" : `: ${detail}`}${
+                    signal === null ? "" : ` (${signal})`
+                  }`,
+            ),
+          );
         }
       },
-    };
-  } catch (error) {
-    await handle.close().catch(() => undefined);
-    await rm(path, { force: true }).catch(() => undefined);
-    throw error;
-  }
+      (error: unknown) => {
+        reject(
+          new LockRecoveryError(
+            `could not start ${command} for recovery mutex: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+        );
+      },
+    );
+  });
+
+  return {
+    assertHeld() {
+      if (released || child.exitCode !== null || child.signalCode !== null) {
+        throw new LockRecoveryError("apply lock recovery mutex was lost");
+      }
+    },
+    async release() {
+      if (released) {
+        return;
+      }
+      released = true;
+      child.stdin.end();
+      const result = await exit;
+      if (result.code !== 0) {
+        throw new LockRecoveryError(
+          `recovery mutex exited unexpectedly${
+            result.signal === null ? ` with code ${String(result.code)}` : ` (${result.signal})`
+          }`,
+        );
+      }
+    },
+  };
 }
 
 async function inspectLockSnapshot(
@@ -284,6 +325,7 @@ export async function recoverStaleApplyLock(
       throw new LockRecoveryError("apply lock changed before recovery");
     }
 
+    recoveryMutex.assertHeld();
     await rm(snapshot.status.path);
     await syncDirectory(locksDirectory);
     return snapshot.status.owner;

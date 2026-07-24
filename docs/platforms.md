@@ -9,6 +9,7 @@ ownership proof.
 - Node.js 22 or newer
 - Git
 - `lsof`
+- `lockf` on macOS or `flock` from `util-linux` on Linux
 - local filesystem state directory with owner read/write access
 
 Docker is optional and isolated to its adapter. Mole is an optional external
@@ -37,6 +38,10 @@ Linux is Tier 2 for `0.1.0`.
 - safe configured artifact apply
 
 If neither `/proc` nor `lsof` can prove a target idle, apply skips it.
+
+Stale-lock recovery uses the kernel-held `lockf` utility on macOS and `flock`
+from `util-linux` on Linux. A crashed recovery process releases the mutex
+automatically.
 
 ## WSL
 

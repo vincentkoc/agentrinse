@@ -107,6 +107,21 @@ describe("audit redaction", () => {
     expect(output).toContain("$PATH/<path:");
   });
 
+  it("does not leak descendants of a path that is also present structurally", () => {
+    const redacted = redactAuditValue(
+      {
+        path: `${HOME}/project`,
+        message: `could not inspect ${HOME}/project/private/file`,
+      },
+      HOME,
+      "fixture-salt",
+    );
+    const output = JSON.stringify(redacted);
+
+    expect(output).not.toContain(HOME);
+    expect(output).not.toContain("private/file");
+  });
+
   it("redacts large path collections without scanning every path for every string", () => {
     const entries = Array.from({ length: 5_000 }, (_, index) => ({
       path: `${HOME}/projects/project-${index}/node_modules`,

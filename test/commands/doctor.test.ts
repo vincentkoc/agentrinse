@@ -23,6 +23,7 @@ function healthyRunner(command: string, args: string[]): Promise<CommandResult> 
     "docker context show": "desktop-linux",
     "docker version --format {{.Server.Version}}": "28.3.0",
     "mo --version": "Mole 1.17.0",
+    "sh -c command -v lockf": "/usr/bin/lockf",
   };
   const stdout = output[key];
   return stdout === undefined
@@ -61,6 +62,9 @@ describe("doctor command", () => {
     expect(result.output).toContain("AgentRinse doctor: ok");
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "process-ownership", status: "pass" }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({ id: "recovery-mutex", status: "pass" }),
     );
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "docker", status: "pass" }),
@@ -143,6 +147,9 @@ describe("doctor command", () => {
     );
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "git", status: "error" }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({ id: "recovery-mutex", status: "error" }),
     );
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "docker", status: "pass" }),
