@@ -448,5 +448,50 @@ describe("GitWorktreeAuditAdapter", () => {
       state: "protected",
       roots: expect.arrayContaining([expect.objectContaining({ code: "git-status-suppressed" })]),
     });
+
+    const failingMeasurementAdapter = new GitWorktreeAuditAdapter(
+      main,
+      runGit,
+      undefined,
+      async () => ({ status: "idle", matches: [] }),
+      undefined,
+      {
+        maxEntries: 10_000,
+        measureBytes: true,
+        minAgeMinutes: 0,
+        quarantineTtlMinutes: 60,
+        platform: process.platform === "linux" ? "linux" : "darwin",
+      },
+      {
+        measure: async () => {
+          throw new Error("injected measurement failure");
+        },
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    );
+    const failedCollection = await failingMeasurementAdapter.collect(
+      context,
+      await failingMeasurementAdapter.probe(context),
+    );
+    const failedResource = failedCollection.resources.find(
+      (resource) => resource.facts.isMain === false,
+    );
+    const failedFinding = await failingMeasurementAdapter.classify(context, failedResource!);
+    expect(failedResource?.facts.inspectionComplete).toBe(false);
+    expect(failedCollection.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "GIT_WORKTREE_INSPECTION_FAILED",
+          message: "injected measurement failure",
+        }),
+      ]),
+    );
+    expect(failedFinding).toMatchObject({
+      state: "unknown",
+      roots: expect.arrayContaining([
+        expect.objectContaining({ code: "git-inspection-incomplete" }),
+      ]),
+      candidateActions: [],
+    });
   });
 });
