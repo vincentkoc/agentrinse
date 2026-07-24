@@ -30,6 +30,12 @@ const PATH_KEYS = new Set([
 ]);
 const HOST_KEYS = new Set(["host", "hostname"]);
 
+type RedactionContext = {
+  home: string;
+  salt: string;
+  paths: string[];
+};
+
 function token(kind: string, value: string, salt: string): string {
   return `${kind}:${sha256(`${salt}\0${value}`).slice(0, 16)}`;
 }
@@ -48,27 +54,61 @@ function escapeRegularExpression(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
 
-function redactText(value: string, home: string, salt: string): string {
-  const homePath = new RegExp(`${escapeRegularExpression(home)}[^\\s"'<>]*`, "gu");
-  return value.replace(homePath, (matched) => {
-    const suffix = matched.match(/[),.;:]+$/u)?.[0] ?? "";
-    const path = suffix === "" ? matched : matched.slice(0, -suffix.length);
-    return `${redactPath(path, home, salt)}${suffix}`;
-  });
+function replacePathMatch(matched: string, context: RedactionContext): string {
+  const suffix = matched.match(/[),.;:]+$/u)?.[0] ?? "";
+  const path = suffix === "" ? matched : matched.slice(0, -suffix.length);
+  return `${redactPath(path, context.home, context.salt)}${suffix}`;
 }
 
-function redactValue(value: unknown, home: string, salt: string, key?: string): unknown {
+function redactText(value: string, context: RedactionContext): string {
+  let output = value;
+  for (const path of context.paths) {
+    output = output.split(path).join(redactPath(path, context.home, context.salt));
+  }
+
+  const homePath = new RegExp(`${escapeRegularExpression(context.home)}[^\\s"'<>]*`, "gu");
+  output = output.replace(homePath, (matched) => replacePathMatch(matched, context));
+  output = output.replace(/(?<![$\w:>])\/[^\s"'<>]+/gu, (matched) =>
+    replacePathMatch(matched, context),
+  );
+  return output.replace(/\b[A-Za-z]:\\[^\s"'<>]+/gu, (matched) =>
+    replacePathMatch(matched, context),
+  );
+}
+
+function collectPaths(value: unknown, key: string | undefined, paths: Set<string>): void {
   if (typeof value === "string") {
-    if (key !== undefined && IDENTIFIER_KEYS.has(key)) {
-      return token("id", value, salt);
+    if (key !== undefined && PATH_KEYS.has(key) && isAbsolute(value)) {
+      paths.add(value);
     }
-    if (key !== undefined && PATH_KEYS.has(key)) {
-      return redactPath(value, home, salt);
-    }
-    return redactText(value, home, salt);
+    return;
   }
   if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, home, salt, key));
+    for (const item of value) {
+      collectPaths(item, key, paths);
+    }
+    return;
+  }
+  if (typeof value !== "object" || value === null) {
+    return;
+  }
+  for (const [childKey, childValue] of Object.entries(value)) {
+    collectPaths(childValue, childKey, paths);
+  }
+}
+
+function redactValue(value: unknown, context: RedactionContext, key?: string): unknown {
+  if (typeof value === "string") {
+    if (key !== undefined && IDENTIFIER_KEYS.has(key)) {
+      return token("id", value, context.salt);
+    }
+    if (key !== undefined && PATH_KEYS.has(key)) {
+      return redactPath(value, context.home, context.salt);
+    }
+    return redactText(value, context);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactValue(item, context, key));
   }
   if (typeof value !== "object" || value === null) {
     return value;
@@ -80,13 +120,20 @@ function redactValue(value: unknown, home: string, salt: string, key?: string): 
       continue;
     }
     output[childKey] =
-      childKey === "candidateActions" ? [] : redactValue(childValue, home, salt, childKey);
+      childKey === "candidateActions" ? [] : redactValue(childValue, context, childKey);
   }
   return output;
 }
 
 export function redactAuditValue<T>(value: T, home: string, salt: string): T {
-  return redactValue(value, home, salt) as T;
+  const paths = new Set<string>([home]);
+  collectPaths(value, undefined, paths);
+  const context: RedactionContext = {
+    home,
+    salt,
+    paths: [...paths].sort((left, right) => right.length - left.length),
+  };
+  return redactValue(value, context) as T;
 }
 
 export function redactAuditReport(report: AuditReport, salt: string): AuditReport {

@@ -16,7 +16,7 @@ const REPORT: AuditReport = {
       adapter: "artifacts",
       status: "available",
       root: `${HOME}/src/secret-client`,
-      detail: `Root ${HOME}/src/secret-client is available`,
+      detail: `Root ${HOME}/src/secret-client is available; mirror /Volumes/Private/client`,
       diagnostics: [],
     },
   ],
@@ -78,6 +78,7 @@ describe("audit redaction", () => {
     expect(output).not.toContain("secret-client");
     expect(output).not.toContain("private-host");
     expect(output).not.toContain("resource-private");
+    expect(output).not.toContain("/Volumes/Private/client");
     expect(redacted.home).toBe("$HOME");
     expect(redacted.findings[0]?.candidateActions).toEqual([]);
     expect(redacted.findings[0]?.resource.path).toMatch(/^\$HOME\/<path:/u);
