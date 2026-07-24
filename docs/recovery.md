@@ -40,16 +40,18 @@ agentrinse undo <run-id> --action <action-id>
 ```
 
 Undo prompts before mutation; automation must use `--yes`. It refuses to
-overwrite a recreated original path. It also refuses changed content, a dirty
-Git status, a live process, a mount boundary, a changed registration, or a
-recovery ref that no longer points to the recorded HEAD.
+overwrite a recreated original path. It also refuses changed content, tracked,
+untracked, ignored, or status-suppressed Git state, a live process, a mount
+boundary, a changed registration, or a recovery ref that no longer points to
+the recorded HEAD.
 
 Successful undo:
 
 1. unlocks the quarantined Git worktree
 2. atomically renames it to the original path
 3. repairs and verifies the Git registration
-4. verifies the exact HEAD, branch, and clean status
+4. verifies the exact HEAD, branch, complete clean status, process state, and
+   mount state
 5. deletes only the recorded recovery ref
 6. persists the manifest as `restored`
 

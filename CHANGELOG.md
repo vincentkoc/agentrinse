@@ -27,8 +27,9 @@ The project follows semantic versioning after its first supported release.
 
 - the default `safe` risk ceiling excludes whole-worktree mutation
 - quarantine requires an explicit `recoverable` ceiling, a clean pushed
-  branch, complete measurement, no submodules, no live process, no pin or
-  provider root, and at least the configured age
+  branch, complete measurement, no ignored or status-suppressed paths, no
+  submodules, no live process, no pin or provider root, and at least the
+  configured age
 - detached, locked, dirty, busy, recent, unpushed, unknown-remote, prunable,
   cross-device, mounted, or incompletely inspected worktrees fail closed
 - purge uses `git worktree remove` without `--force` and refuses changed or

@@ -19,7 +19,11 @@ import {
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
 import { parseWorktreePorcelain } from "./porcelain.js";
-import { parseGitStatusPorcelainV2, type GitStatusFacts } from "./status.js";
+import {
+  countStatusSuppressedIndexEntries,
+  parseGitStatusPorcelainV2,
+  type GitStatusFacts,
+} from "./status.js";
 
 const execFileAsync = promisify(execFile);
 const OPERATION_MARKERS = [
@@ -199,6 +203,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         reason: "worktree does not exist",
       };
       let hasSubmodules = false;
+      let statusSuppressedEntries = 0;
       let stats: Awaited<ReturnType<typeof lstat>> | undefined;
       const operations = new Set<string>();
       let processOwnership: ProcessOwnershipResult = {
@@ -220,6 +225,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
               "--branch",
               "-z",
               "--untracked-files=all",
+              "--ignored=matching",
             ]),
           );
           remotes = lines(await this.runGit(["-C", worktreePath, "remote"]));
@@ -236,6 +242,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           hasSubmodules = (await this.runGit(["-C", worktreePath, "ls-files", "-z", "--stage"]))
             .split("\0")
             .some((entry) => entry.startsWith("160000 "));
+          statusSuppressedEntries = countStatusSuppressedIndexEntries(
+            await this.runGit(["-C", worktreePath, "ls-files", "-z", "-v"]),
+          );
           if (this.options.measureBytes) {
             measurement = await (this.dependencies.measure ?? measurePath)(worktreePath, {
               maxEntries: this.options.maxEntries,
@@ -326,6 +335,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       const modified = status?.modified ?? 0;
       const untracked = status?.untracked ?? 0;
       const conflicted = status?.conflicted ?? 0;
+      const ignored = status?.ignored ?? 0;
       resources.push({
         resource: {
           id: `git:git-worktree:${sha256(canonicalKey)}`,
@@ -370,7 +380,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           modified,
           untracked,
           conflicted,
-          dirty: staged + modified + untracked + conflicted > 0,
+          ignored,
+          statusSuppressedEntries,
+          dirty: staged + modified + untracked + conflicted + ignored > 0,
           ahead,
           behind: status?.behind ?? 0,
           operations: [...operations].sort(),
@@ -445,7 +457,18 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         code: "dirty-worktree",
         source: "git",
         observedAt,
-        detail: "Git reports staged, modified, conflicted, or untracked work.",
+        detail: "Git reports staged, modified, conflicted, untracked, or ignored work.",
+      });
+    }
+    if (
+      typeof resource.facts.statusSuppressedEntries === "number" &&
+      resource.facts.statusSuppressedEntries > 0
+    ) {
+      roots.push({
+        code: "git-status-suppressed",
+        source: "git",
+        observedAt,
+        detail: "Git index flags suppress status visibility for one or more tracked paths.",
       });
     }
     if (Array.isArray(resource.facts.operations) && resource.facts.operations.length > 0) {

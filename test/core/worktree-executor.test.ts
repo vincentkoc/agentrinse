@@ -45,7 +45,8 @@ async function gitFixture(): Promise<Fixture> {
   await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
   await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
   await writeFile(join(main, "README.md"), "fixture\n");
-  await execFileAsync("git", ["-C", main, "add", "README.md"]);
+  await writeFile(join(main, ".gitignore"), ".env\n");
+  await execFileAsync("git", ["-C", main, "add", "README.md", ".gitignore"]);
   await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
   await execFileAsync("git", ["-C", main, "remote", "add", "origin", remote]);
   await execFileAsync("git", ["-C", main, "push", "-u", "origin", "main"]);

@@ -5,7 +5,10 @@ import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
-import { parseGitStatusPorcelainV2 } from "../adapters/git/status.js";
+import {
+  countStatusSuppressedIndexEntries,
+  parseGitStatusPorcelainV2,
+} from "../adapters/git/status.js";
 import {
   quarantineEntrySchema,
   type QuarantineEntry,
@@ -254,12 +257,17 @@ async function validateQuarantinedEntry(
       "--branch",
       "-z",
       "--untracked-files=all",
+      "--ignored=matching",
     ]),
+  );
+  const statusSuppressedEntries = countStatusSuppressedIndexEntries(
+    await dependencies.runGit(["-C", entry.quarantinePath, "ls-files", "-z", "-v"]),
   );
   if (
     status.head !== entry.target.head ||
     branchRef(status.branch) !== entry.target.branch ||
-    status.staged + status.modified + status.untracked + status.conflicted > 0
+    status.staged + status.modified + status.untracked + status.conflicted + status.ignored > 0 ||
+    statusSuppressedEntries > 0
   ) {
     fail("QUARANTINE_GIT_STATE_CHANGED", "quarantined worktree is no longer clean at planned HEAD");
   }
@@ -457,12 +465,17 @@ async function verifyRestoredTransition(
       "--branch",
       "-z",
       "--untracked-files=all",
+      "--ignored=matching",
     ]),
+  );
+  const statusSuppressedEntries = countStatusSuppressedIndexEntries(
+    await dependencies.runGit(["-C", entry.originalPath, "ls-files", "-z", "-v"]),
   );
   if (
     status.head !== entry.target.head ||
     branchRef(status.branch) !== entry.target.branch ||
-    status.staged + status.modified + status.untracked + status.conflicted > 0
+    status.staged + status.modified + status.untracked + status.conflicted + status.ignored > 0 ||
+    statusSuppressedEntries > 0
   ) {
     throw new WorktreeRecoveryError(
       "QUARANTINE_GIT_STATE_CHANGED",

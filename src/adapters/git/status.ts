@@ -94,3 +94,13 @@ export function parseGitStatusPorcelainV2(input: string): GitStatusFacts {
 
   return facts;
 }
+
+export function countStatusSuppressedIndexEntries(input: string): number {
+  return input
+    .split("\0")
+    .filter(
+      (entry) =>
+        entry.startsWith("S ") ||
+        (entry.length >= 2 && entry[1] === " " && /^[a-z]$/u.test(entry[0]!)),
+    ).length;
+}

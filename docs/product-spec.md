@@ -247,7 +247,8 @@ AgentRinse succeeds when:
 - a user can tell why a worktree is protected without reading source code
 - repeated audits with unchanged inputs produce equivalent findings
 - stale worktrees with active ownership are never proposed for deletion
-- dirty, untracked, stashed, detached, or unpushed work is protected
+- dirty, untracked, ignored, status-suppressed, stashed, detached, or unpushed
+  work is protected
 - an interrupted run can be inspected and safely resumed or rolled back
 - Docker being stopped does not prevent Git and provider audits
 - `--json` remains stable enough for skills and scripts
@@ -1596,7 +1597,8 @@ Resource facts include:
 - filesystem size
 - modification/activity observations
 - Git operation state
-- dirty tracked, staged, and untracked counts
+- dirty tracked, staged, untracked, and ignored counts
+- assume-unchanged and skip-worktree index flags
 - stash count associated with the repository
 - upstream and ahead/behind counts where configured
 - reachability of HEAD from durable refs
@@ -1660,7 +1662,8 @@ Default eligibility:
 
 - linked worktree, not main
 - unlocked
-- clean including untracked files
+- clean including untracked and ignored files
+- no assume-unchanged or skip-worktree index flags
 - no in-progress Git operation
 - no live process ownership
 - no provider root
@@ -3269,9 +3272,10 @@ The supported npm release remains the first distribution target. A formula in
 `0.3.0` adds exactly one new mutating action: `worktree.quarantine`.
 
 - Eligibility requires a linked, unlocked, clean, terminal worktree with
-  complete filesystem measurement, no submodules, no live ownership, no
-  reachability root, no detached state, no unpushed commit, and at least 14
-  days since the newest measured worktree entry.
+  complete filesystem measurement, no ignored files, no status-suppressed
+  index entries, no submodules, no live ownership, no reachability root, no
+  detached state, no unpushed commit, and at least 14 days since the newest
+  measured worktree entry.
 - The action is `recoverable` and is excluded by the default `safe` risk
   ceiling. Automation must explicitly select `--max-risk recoverable`.
 - Quarantine uses an atomic rename into an owner-only

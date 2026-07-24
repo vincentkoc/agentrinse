@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -354,7 +354,8 @@ describe("GitWorktreeAuditAdapter", () => {
     await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
     await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
     await writeFile(join(main, "README.md"), "fixture\n");
-    await execFileAsync("git", ["-C", main, "add", "README.md"]);
+    await writeFile(join(main, ".gitignore"), ".env\n");
+    await execFileAsync("git", ["-C", main, "add", "README.md", ".gitignore"]);
     await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
     await execFileAsync("git", ["-C", main, "remote", "add", "origin", remote]);
     await execFileAsync("git", ["-C", main, "push", "-u", "origin", "main"]);
@@ -409,6 +410,29 @@ describe("GitWorktreeAuditAdapter", () => {
         repositoryCommonDir: join(physicalMain, ".git"),
         branch: "refs/heads/task",
       },
+    });
+
+    await writeFile(join(linked, ".env"), "local-only\n");
+    const ignoredCollection = await adapter.collect(context, await adapter.probe(context));
+    const ignoredResource = ignoredCollection.resources.find(
+      (resource) => resource.facts.isMain === false,
+    );
+    const ignoredFinding = await adapter.classify(context, ignoredResource!);
+    expect(ignoredFinding).toMatchObject({
+      state: "protected",
+      roots: expect.arrayContaining([expect.objectContaining({ code: "dirty-worktree" })]),
+    });
+
+    await rm(join(linked, ".env"));
+    await execFileAsync("git", ["-C", linked, "update-index", "--assume-unchanged", "README.md"]);
+    const suppressedCollection = await adapter.collect(context, await adapter.probe(context));
+    const suppressedResource = suppressedCollection.resources.find(
+      (resource) => resource.facts.isMain === false,
+    );
+    const suppressedFinding = await adapter.classify(context, suppressedResource!);
+    expect(suppressedFinding).toMatchObject({
+      state: "protected",
+      roots: expect.arrayContaining([expect.objectContaining({ code: "git-status-suppressed" })]),
     });
   });
 });

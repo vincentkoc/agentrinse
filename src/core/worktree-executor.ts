@@ -5,7 +5,10 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
-import { parseGitStatusPorcelainV2 } from "../adapters/git/status.js";
+import {
+  countStatusSuppressedIndexEntries,
+  parseGitStatusPorcelainV2,
+} from "../adapters/git/status.js";
 import type { WorktreeQuarantineAction } from "../contracts/action.js";
 import {
   quarantineEntryIdSchema,
@@ -128,7 +131,7 @@ function cleanStatusMatches(output: string, action: WorktreeQuarantineAction): b
   return (
     status.head === action.target.head &&
     branchRef(status.branch) === action.target.branch &&
-    status.staged + status.modified + status.untracked + status.conflicted === 0
+    status.staged + status.modified + status.untracked + status.conflicted + status.ignored === 0
   );
 }
 
@@ -353,8 +356,13 @@ export async function executeWorktreeQuarantine(
       "--branch",
       "-z",
       "--untracked-files=all",
+      "--ignored=matching",
     ]);
-    if (!cleanStatusMatches(boundaryStatus, action)) {
+    const boundaryIndexFlags = await runGit(["-C", action.target.path, "ls-files", "-z", "-v"]);
+    if (
+      !cleanStatusMatches(boundaryStatus, action) ||
+      countStatusSuppressedIndexEntries(boundaryIndexFlags) > 0
+    ) {
       throw new WorktreeExecutionError(
         "worktree Git state changed before quarantine",
         "skipped-stale",
@@ -506,8 +514,13 @@ export async function executeWorktreeQuarantine(
       "--branch",
       "-z",
       "--untracked-files=all",
+      "--ignored=matching",
     ]);
-    if (!cleanStatusMatches(finalStatus, action)) {
+    const finalIndexFlags = await runGit(["-C", quarantinePath, "ls-files", "-z", "-v"]);
+    if (
+      !cleanStatusMatches(finalStatus, action) ||
+      countStatusSuppressedIndexEntries(finalIndexFlags) > 0
+    ) {
       throw new WorktreeExecutionError(
         "quarantined worktree Git state changed before commit",
         "partially-applied",
