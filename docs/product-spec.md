@@ -2474,6 +2474,7 @@ Examples:
 ```text
 command.started
 adapter.probed
+diagnostic.reported
 resource.discovered
 finding.completed
 plan.action-selected

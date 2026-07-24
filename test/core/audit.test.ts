@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { createAuditAdapters } from "../../src/adapters/registry.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
+import type { AuditAdapter } from "../../src/contracts/adapter.js";
 import { runAudit } from "../../src/core/audit.js";
 
 describe("runAudit", () => {
@@ -65,5 +66,43 @@ describe("runAudit", () => {
     ];
 
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).toContain("artifacts");
+  });
+
+  it("streams collection diagnostics even when no resources are discovered", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-diagnostic-"));
+    const events: string[] = [];
+    const adapter: AuditAdapter = {
+      id: "fixture",
+      probe: async () => ({
+        adapter: "fixture",
+        status: "available",
+        detail: "fixture adapter is available",
+        diagnostics: [],
+      }),
+      collect: async () => ({
+        resources: [],
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "FIXTURE_COLLECTION_WARNING",
+            message: "collection completed with partial visibility",
+            adapter: "fixture",
+          },
+        ],
+      }),
+      classify: async () => {
+        throw new Error("classify must not run without resources");
+      },
+    };
+
+    const report = await runAudit({
+      home,
+      config: DEFAULT_CONFIG,
+      adapters: [adapter],
+      onEvent: (event) => events.push(event.type),
+    });
+
+    expect(report.diagnostics).toHaveLength(1);
+    expect(events).toEqual(["adapter.probed", "diagnostic.reported"]);
   });
 });

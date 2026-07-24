@@ -557,7 +557,18 @@ async function lockCheck(
   locksDirectory: string,
   dependencies?: LockInspectionDependencies,
 ): Promise<DoctorCheck> {
-  const status = await inspectApplyLock(locksDirectory, dependencies);
+  let status: Awaited<ReturnType<typeof inspectApplyLock>>;
+  try {
+    status = await inspectApplyLock(locksDirectory, dependencies);
+  } catch (error) {
+    return {
+      id: "apply-lock",
+      status: "error",
+      summary: "apply lock could not be inspected",
+      detail: errorMessage(error),
+      remediation: "Do not apply or recover until the lock owner can be inspected.",
+    };
+  }
   if (status.status === "absent") {
     return { id: "apply-lock", status: "pass", summary: "no apply lock is present" };
   }

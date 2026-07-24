@@ -69,6 +69,7 @@ jobs:
           )
 
       - name: Smoke exact release package
+        if: env.RELEASE_TAG != 'v0.0.0'
         run: pnpm smoke:package -- release/agentrinse-*.tgz
 
       - name: Store release package

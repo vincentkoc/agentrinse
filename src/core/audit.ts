@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter, AuditContext } from "../contracts/adapter.js";
+import type { Diagnostic } from "../contracts/diagnostic.js";
 import type { Finding } from "../contracts/finding.js";
 import { auditReportSchema, type AuditReport } from "../contracts/report.js";
 import type { ResourceSnapshot } from "../contracts/resource.js";
@@ -21,6 +22,11 @@ export type AuditProgressEvent =
       type: "adapter.probed";
       timestamp: string;
       data: AuditReport["probes"][number];
+    }
+  | {
+      type: "diagnostic.reported";
+      timestamp: string;
+      data: Diagnostic;
     }
   | {
       type: "resource.discovered";
@@ -57,9 +63,23 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
       timestamp: clock().toISOString(),
       data: probe,
     });
+    for (const diagnostic of probe.diagnostics) {
+      options.onEvent?.({
+        type: "diagnostic.reported",
+        timestamp: clock().toISOString(),
+        data: diagnostic,
+      });
+    }
 
     const collection = await adapter.collect(context, probe);
     diagnostics.push(...collection.diagnostics);
+    for (const diagnostic of collection.diagnostics) {
+      options.onEvent?.({
+        type: "diagnostic.reported",
+        timestamp: clock().toISOString(),
+        data: diagnostic,
+      });
+    }
     for (const resource of collection.resources) {
       options.onEvent?.({
         type: "resource.discovered",

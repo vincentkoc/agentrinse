@@ -159,6 +159,50 @@ describe("doctor command", () => {
     );
   });
 
+  it("reports lock inspection failures instead of aborting doctor", async () => {
+    const value = await setup();
+    const layout = stateLayout(value.stateRoot);
+    await mkdir(layout.locks, { recursive: true });
+    const owner: ApplyLockOwner = {
+      token: "fixture-token",
+      pid: 42,
+      processStartIdentity: "fixture-start",
+      hostname: "fixture-host",
+      command: "agentrinse apply",
+      planId: "plan-1",
+      runId: "run-1",
+      createdAt: "2026-07-23T00:00:00.000Z",
+    };
+    await writeFile(join(layout.locks, "apply.lock"), `${JSON.stringify(owner)}\n`);
+
+    const result = await executeDoctorCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateRoot,
+      json: false,
+      dependencies: {
+        platform: "darwin",
+        runCommand: healthyRunner,
+        lock: {
+          currentHostname: () => "fixture-host",
+          inspectProcess: async () => {
+            throw commandError("permission denied", "EACCES");
+          },
+        },
+      },
+    });
+
+    expect(result.report.status).toBe("error");
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "apply-lock",
+        status: "error",
+        summary: "apply lock could not be inspected",
+        detail: "permission denied",
+      }),
+    );
+  });
+
   it("proves Git worktree porcelain when the adapter is enabled", async () => {
     const value = await setup();
     await writeJsonAtomic(value.configPath, {
