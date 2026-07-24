@@ -186,6 +186,28 @@ describe("executeWorktreeQuarantine", () => {
     });
   });
 
+  it("rejects a quarantine container that is another registered worktree", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const quarantineParent = join(fixture.home, ".agentrinse-quarantine");
+    await fixture.runGit(["-C", fixture.main, "branch", "container"]);
+    await fixture.runGit(["-C", fixture.main, "worktree", "add", quarantineParent, "container"]);
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-container-worktree",
+        entryId: "entry-container-worktree",
+        quarantineDirectory,
+        dependencies: { runGit: fixture.runGit },
+      }),
+    ).rejects.toMatchObject({
+      diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE",
+    });
+
+    expect(await missing(join(quarantineParent, "entry-container-worktree"))).toBe(true);
+    expect(await missing(join(quarantineDirectory, "entry-container-worktree.json"))).toBe(true);
+  });
+
   it("rejects a Git operation that starts after audit", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
@@ -1281,6 +1303,70 @@ describe("worktree quarantine recovery", () => {
     expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
       "quarantined",
     );
+  });
+
+  it("does not finalize normal purge when the target registration reappears elsewhere", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: "run-purge-relocated",
+      entryId: "entry-purge-relocated",
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const thirdPath = join(fixture.home, "purge-relocated");
+    let removed = false;
+    let relocated = false;
+    const runGit = async (args: string[]) => {
+      const output = await fixture.runGit(args);
+      if (args.includes("worktree") && args.includes("remove")) {
+        removed = true;
+      } else if (removed && !relocated && args.includes("worktree") && args.includes("list")) {
+        relocated = true;
+        await fixture.runGit([
+          "--git-dir",
+          fixture.action.target.repositoryCommonDir,
+          "worktree",
+          "add",
+          thirdPath,
+          fixture.action.target.branch!.replace(/^refs\/heads\//, ""),
+        ]);
+        return fixture.runGit(args);
+      }
+      return output;
+    };
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        allowUnexpired: true,
+        dependencies: {
+          runGit,
+          processProbe: async () => ({ status: "idle", matches: [] }),
+          mountProbe: async () => ({ status: "clear", paths: [] }),
+        },
+      }),
+    ).rejects.toMatchObject({
+      code: "QUARANTINE_PURGE_FINALIZE_PENDING",
+    });
+
+    expect(await missing(thirdPath)).toBe(false);
+    expect(quarantineEntrySchema.parse(await readJsonFile(result.manifestPath)).status).toBe(
+      "purging",
+    );
+    expect(
+      (
+        await fixture.runGit([
+          "--git-dir",
+          fixture.action.target.repositoryCommonDir,
+          "rev-parse",
+          "--verify",
+          result.recoveryRef,
+        ])
+      ).trim(),
+    ).toBe(fixture.action.target.head);
   });
 
   it("keeps an entry retryable when purge fails before unlock", async () => {

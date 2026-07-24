@@ -1236,8 +1236,14 @@ export async function purgeWorktreeQuarantine(
       "--porcelain",
       "-z",
     ]);
-    if (parseWorktreePorcelain(records).some((record) => record.path === isolationPath)) {
-      throw new Error("Git reported success but the purge isolation registration remains");
+    if (
+      parseWorktreePorcelain(records).some(
+        (record) =>
+          record.path === isolationPath ||
+          (record.head === entry.target.head && record.branch === entry.target.branch),
+      )
+    ) {
+      throw new Error("Git reported success but the target worktree registration remains or moved");
     }
     await deleteRecoveryRef(entry, dependencies);
     entry = await persist(

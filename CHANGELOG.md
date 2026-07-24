@@ -26,6 +26,8 @@ The project follows semantic versioning after its first supported release.
   isolation failures
 - mutation-time Git operation checks, moved-registration refusal, and reserved
   quarantine-container protection
+- registered-worktree container refusal and symmetric relocated-registration
+  checks during purge finalization
 - packaged end-to-end quarantine, undo, and clean purge smoke proof
 - Homebrew distribution through `vincentkoc/tap`
 

@@ -292,6 +292,28 @@ export async function executeWorktreeQuarantine(
   let repaired = false;
   let locked = false;
 
+  const initialRegistrations = parseWorktreePorcelain(
+    await runGit([
+      "--git-dir",
+      action.target.repositoryCommonDir,
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]),
+  );
+  if (
+    initialRegistrations.some(
+      (registration) => resolve(registration.path) === resolve(quarantineParent),
+    )
+  ) {
+    throw new WorktreeExecutionError(
+      "quarantine container is itself a registered Git worktree",
+      "failed",
+      undefined,
+      { diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE" },
+    );
+  }
   await ensurePrivateDirectory(options.quarantineDirectory);
   await ensurePrivateDirectory(quarantineParent);
   entry = await writeManifest(manifestPath, options.quarantineDirectory, entry);

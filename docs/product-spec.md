@@ -3277,7 +3277,7 @@ The supported npm release remains the first distribution target. A formula in
   detached state, no unpushed commit, and at least 14 days since the newest
   measured worktree entry. A worktree named `.agentrinse-quarantine` is
   protected because that sibling name is reserved for the quarantine
-  container.
+  container, and the container itself must not be a registered worktree.
 - The action is `recoverable` and is excluded by the default `safe` risk
   ceiling. Automation must explicitly select `--max-risk recoverable`.
 - Quarantine uses an atomic rename into an owner-only
