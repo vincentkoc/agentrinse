@@ -394,12 +394,16 @@ async function dockerCheck(
   } catch (error) {
     return {
       id: "docker",
-      status: "warning",
-      summary: "Docker CLI is installed but its daemon or context is unavailable",
-      detail: errorMessage(error),
-      remediation: enabled
-        ? "Start Docker or disable the Docker adapter."
-        : "No action is required while the Docker adapter is disabled.",
+      status: enabled ? "warning" : "pass",
+      summary: enabled
+        ? "Docker CLI is installed but its daemon or context is unavailable"
+        : "Docker daemon is unavailable (optional)",
+      ...(enabled
+        ? {
+            detail: errorMessage(error),
+            remediation: "Start Docker or disable the Docker adapter.",
+          }
+        : {}),
     };
   }
 }

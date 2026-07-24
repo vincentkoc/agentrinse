@@ -160,6 +160,33 @@ describe("doctor command", () => {
     );
   });
 
+  it("passes when an installed Docker CLI has no daemon and its adapter is disabled", async () => {
+    const value = await setup();
+    const result = await executeDoctorCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateRoot,
+      json: false,
+      dependencies: {
+        platform: "darwin",
+        runCommand: async (command, args) => {
+          if (command === "docker" && args[0] !== "--version") {
+            throw commandError("daemon unavailable", "ECONNREFUSED");
+          }
+          return healthyRunner(command, args);
+        },
+      },
+    });
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "docker",
+        status: "pass",
+        summary: "Docker daemon is unavailable (optional)",
+      }),
+    );
+  });
+
   it("reports lock inspection failures instead of aborting doctor", async () => {
     const value = await setup();
     const layout = stateLayout(value.stateRoot);
