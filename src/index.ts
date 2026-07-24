@@ -14,6 +14,12 @@ export {
   type PathIdentity,
   type PlannedAction,
 } from "./contracts/action.js";
+export {
+  doctorCheckSchema,
+  doctorReportSchema,
+  type DoctorCheck,
+  type DoctorReport,
+} from "./contracts/doctor.js";
 export { cleanupPlanSchema, type CleanupPlan } from "./contracts/plan.js";
 export { auditReportSchema, type AdapterProbe, type AuditReport } from "./contracts/report.js";
 export {

@@ -10,6 +10,7 @@ import {
   executeConfigShowCommand,
   executeConfigValidateCommand,
 } from "./commands/config.js";
+import { executeDoctorCommand } from "./commands/doctor.js";
 import { executeHistoryCommand } from "./commands/history.js";
 import { executeLockRecoverCommand, executeLockStatusCommand } from "./commands/lock.js";
 import { executePlanCommand } from "./commands/plan.js";
@@ -94,6 +95,26 @@ export function buildProgram(): Command {
     .action(() => {
       process.stdout.write(renderAdapters());
     });
+
+  program
+    .command("doctor")
+    .description("Diagnose platform, configuration, state, and optional integrations.")
+    .option("--home <path>", "home directory used for diagnostics")
+    .option("--config <path>", "explicit JSON config")
+    .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--json", "emit the versioned JSON report", false)
+    .action(
+      async (options: { home?: string; config?: string; stateDir?: string; json: boolean }) => {
+        const result = await executeDoctorCommand({
+          ...options,
+          home: options.home ?? homedir(),
+        });
+        process.stdout.write(result.output);
+        if (result.report.status === "error") {
+          process.exitCode = 1;
+        }
+      },
+    );
 
   const config = program.command("config").description("Inspect and initialize configuration.");
 
