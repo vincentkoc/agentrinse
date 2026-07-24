@@ -10,7 +10,8 @@ The project follows semantic versioning after its first supported release.
 
 - rewrote the public README around a faster product explanation, scannable
   agent coverage and command tables, install and closeout examples, and the
-  shipped safety and recovery boundaries
+  shipped mutation, safety, and recovery boundaries, with visual integration
+  icons matching TokenJuice
 
 ## [0.3.0] - 2026-07-24
 
