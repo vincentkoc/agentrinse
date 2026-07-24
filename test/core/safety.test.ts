@@ -81,14 +81,15 @@ describe("assertDestructiveFixtureRoot", () => {
     ).resolves.toBe(candidate);
   });
 
-  it("rejects the temporary root, real home, repository ancestors, and outside paths", async () => {
+  it("rejects the temporary root, real home, repository overlap, and outside paths", async () => {
     const parent = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-destructive-parent-")));
     const temporaryRoot = join(parent, "temporary");
     const outside = join(parent, "outside");
     const repositoryRoot = join(temporaryRoot, "repo", "checkout");
     const repositoryParent = join(temporaryRoot, "repo");
+    const repositoryChild = join(repositoryRoot, "fixture");
     const realHome = join(temporaryRoot, "home");
-    await mkdir(repositoryRoot, { recursive: true });
+    await mkdir(repositoryChild, { recursive: true });
     await mkdir(realHome);
     await mkdir(outside);
 
@@ -97,6 +98,7 @@ describe("assertDestructiveFixtureRoot", () => {
       temporaryRoot,
       realHome,
       repositoryParent,
+      repositoryChild,
       outside,
     ]) {
       await expect(

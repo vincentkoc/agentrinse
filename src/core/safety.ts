@@ -94,9 +94,12 @@ export async function assertDestructiveFixtureRoot(
   if (resolvedCandidate === resolvedHome) {
     throw new UnsafeDestructiveFixtureError("destructive fixture cannot use the real home");
   }
-  if (isPathInside(resolvedCandidate, resolvedRepository)) {
+  if (
+    isPathInside(resolvedCandidate, resolvedRepository) ||
+    isPathInside(resolvedRepository, resolvedCandidate)
+  ) {
     throw new UnsafeDestructiveFixtureError(
-      "destructive fixture cannot contain the repository checkout",
+      "destructive fixture cannot overlap the repository checkout",
     );
   }
 
