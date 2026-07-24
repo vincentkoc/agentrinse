@@ -199,7 +199,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
           code: "provider-owned-report-only",
           source: this.id,
           observedAt,
-          detail: "This adapter inventories provider state but version 0.1 does not clean it.",
+          detail: "This adapter inventories provider state but does not clean it.",
         },
       ],
       facts: resource.facts,

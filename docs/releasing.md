@@ -1,12 +1,13 @@
 # Releasing
 
-## First Publish
+## Reservation Publish
 
-The unscoped `agentrinse` name was unclaimed when version 0.1 was prepared.
+The unscoped `agentrinse` name was unclaimed when `0.0.0` was prepared.
 Registry availability must be checked again immediately before publishing.
 
 Trusted publishing cannot be configured until the package exists. Bootstrap
-the package once from a maintainer machine with npm account 2FA:
+the unsupported reservation package once from a maintainer machine with npm
+account 2FA:
 
 ```bash
 pnpm check
@@ -14,7 +15,9 @@ pnpm pack:check
 npm publish --access public
 ```
 
-This is the only release that should require local registry credentials.
+Verify that `npm view agentrinse@0.0.0` succeeds and that a clean global install
+reports `0.0.0`. This is the only release that should require local registry
+credentials.
 
 ## Trusted Publisher
 
@@ -29,11 +32,10 @@ After the first publish:
 The workflow uses GitHub-hosted runners, OIDC `id-token: write`, and npm
 11.18.0. It does not require a long-lived npm token.
 
-The repository is private, so npm provenance is unavailable until the source
-repository is public. Trusted publishing authentication still avoids a
-long-lived publish secret.
+The repository is public. Trusted publishing automatically emits npm
+provenance and avoids a long-lived publish secret.
 
-## Subsequent Releases
+## Supported Releases
 
 1. update `package.json`, `src/version.ts`, and `CHANGELOG.md`
 2. run `pnpm check`, `pnpm smoke`, and `pnpm pack:check`
@@ -43,3 +45,6 @@ long-lived publish secret.
 6. verify the Release workflow, npm version, package contents, and CLI smoke
 
 The workflow refuses tags that do not exactly match `package.json`.
+
+The first supported release is `0.1.0`. Never advertise `0.0.0` for cleanup
+against real developer state.

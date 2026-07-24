@@ -1,7 +1,7 @@
 # Adapter Matrix
 
-All provider, Git, and Docker adapters are read-only in version 0.1. Artifact
-cleanup is separately scoped to explicitly configured rebuildable directories.
+All provider, Git, and Docker adapters are read-only. Artifact cleanup is
+separately scoped to explicitly configured rebuildable directories.
 
 | Adapter        | Current capability                                         | Protected state |
 | -------------- | ---------------------------------------------------------- | --------------- |

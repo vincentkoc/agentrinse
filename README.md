@@ -6,9 +6,13 @@ AgentRinse inventories agent state and developer residue, explains why
 resources are protected, produces content-addressed cleanup plans, and applies
 only actions that still pass every safety check.
 
-## Version 0.1
+> [!IMPORTANT]
+> `0.0.0` is a package-reservation release. It is not supported for cleanup
+> against real developer state. The first supported release will be `0.1.0`.
 
-The first production mutation boundary is intentionally narrow:
+## Reservation Release
+
+The implemented mutation boundary under development is intentionally narrow:
 
 - removes only exact rebuildable artifact directories declared in config
 - supports `node_modules`, `dist`, `dist-runtime`, `build`, `.next`, `.turbo`,
@@ -28,16 +32,19 @@ The first production mutation boundary is intentionally narrow:
 Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, Grok Build, Git,
 and Docker are report-only. Provider state, worktrees, images, containers,
 volumes, branches, stashes, credentials, configuration, plugins, skills, and
-memories are never removed by version 0.1.
+memories are not cleanup targets.
 
 ## Install
+
+Do not install `0.0.0` for operational cleanup. Maintainers may verify the
+reservation package with:
 
 ```bash
 npm install --global agentrinse
 agentrinse --version
 ```
 
-Node.js 22 or newer is required.
+The command must report `0.0.0`. Node.js 22 or newer is required.
 
 ## Configure
 
@@ -138,7 +145,8 @@ pnpm pack:check
 ```
 
 Development, tests, smoke runs, and destructive proof use temporary synthetic
-homes only. Never point an unreleased development build at a workstation home.
+homes only. Never point `0.0.0` or an unreleased development build at a
+workstation home.
 
 ## License
 

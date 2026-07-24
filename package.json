@@ -1,9 +1,18 @@
 {
   "name": "agentrinse",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "private": false,
-  "description": "Safe, local-first cleanup for agentic development.",
-  "homepage": "https://agentrinse.com",
+  "description": "Reservation release for safe agentic-development cleanup.",
+  "keywords": [
+    "agents",
+    "cleanup",
+    "cli",
+    "developer-tools",
+    "docker",
+    "git",
+    "worktrees"
+  ],
+  "homepage": "https://github.com/vincentkoc/agentrinse",
   "bugs": {
     "url": "https://github.com/vincentkoc/agentrinse/issues"
   },
