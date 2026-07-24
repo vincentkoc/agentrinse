@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -24,7 +24,7 @@ describe("executeApplyCommand", () => {
     ).rejects.toThrow("apply --json requires --yes");
   });
 
-  it("refuses mutation in the reservation release", async () => {
+  it("applies an exact guarded artifact plan and preserves project source", async () => {
     const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-command-")));
     await assertDestructiveFixtureRoot(home);
     const project = join(home, "project");
@@ -33,6 +33,7 @@ describe("executeApplyCommand", () => {
     const configPath = join(home, "config.json");
     const planPath = join(home, "plan.json");
     await mkdir(target, { recursive: true });
+    await writeFile(join(project, "source.ts"), "keep");
     await writeFile(join(target, "cache.bin"), "remove");
     const stats = await stat(target);
     const measurement = await measurePath(target, { maxEntries: 100 });
@@ -85,16 +86,19 @@ describe("executeApplyCommand", () => {
       planId: cleanupPlanId(content),
     });
 
-    await expect(
-      executeApplyCommand({
-        plan: planPath,
-        config: configPath,
-        stateDir,
-        yes: true,
-        json: true,
-      }),
-    ).rejects.toThrow("apply is unavailable in the unsupported 0.0.0 reservation release");
+    const result = await executeApplyCommand({
+      plan: planPath,
+      config: configPath,
+      stateDir,
+      yes: true,
+      json: true,
+    });
 
-    await expect(stat(target)).resolves.toBeDefined();
+    expect(result.run.status).toBe("completed");
+    expect(result.run.actions[0]?.status).toBe("applied");
+    expect(JSON.parse(result.output)).toEqual(result.run);
+    await expect(access(target)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(project, "source.ts"), "utf8")).resolves.toBe("keep");
+    await expect(readFile(result.journalPath, "utf8")).resolves.toContain('"status": "completed"');
   });
 });

@@ -1,8 +1,8 @@
 {
   "name": "agentrinse",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
-  "description": "Reservation release for safe agentic-development cleanup.",
+  "description": "Safe, local-first cleanup for agentic development.",
   "keywords": [
     "agents",
     "cleanup",

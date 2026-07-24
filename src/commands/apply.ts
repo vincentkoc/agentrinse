@@ -7,7 +7,6 @@ import type { CleanupRun } from "../contracts/run.js";
 import { applyCleanupPlan } from "../core/apply.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot } from "../state/layout.js";
-import { VERSION } from "../version.js";
 
 export type ApplyCommandOptions = {
   plan: string;
@@ -60,10 +59,6 @@ export async function executeApplyCommand(
   if (options.json && !options.yes) {
     throw new Error("apply --json requires --yes");
   }
-  if (VERSION === "0.0.0") {
-    throw new Error("apply is unavailable in the unsupported 0.0.0 reservation release");
-  }
-
   const input = await readJsonFile(resolve(options.plan));
   const plan = cleanupPlanSchema.parse(input);
   const { config } = await loadConfigForHome(plan.home, options.config);
