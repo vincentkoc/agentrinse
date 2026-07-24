@@ -1,6 +1,6 @@
 # agentrinse 🫧
 
-fail-closed cleanup for developer agent state and Git worktrees.
+audit first. clean deliberately. recover when it matters.
 
 ## what is agentrinse?
 
@@ -14,35 +14,60 @@ reconstructs ownership and reachability, explains why every resource is
 protected or eligible, creates a content-addressed plan, and revalidates the
 same facts immediately before mutation.
 
-the point is confidence: clean up after agentic development without deleting
-the session, branch, worktree, database, or cache that another agent still
-needs. unknown state fails closed. recoverable worktrees are quarantined before
-they can be purged. exact configured build artifacts are the only direct
-safe-clean surface.
+agentrinse is not audit-only. audit establishes the evidence; apply performs
+the approved filesystem and Git metadata changes. `0.3.0` removes exact
+configured rebuildable artifacts, quarantines proven inactive linked
+worktrees, repairs and locks their Git registrations, restores quarantined
+worktrees, and permanently purges explicitly selected quarantine entries.
+
+the point is confidence: make real cleanup changes without deleting the
+session, branch, worktree, database, or cache that another agent still needs.
+unknown state fails closed and recoverable worktrees are quarantined before
+they can be purged.
 
 agentrinse is deliberately not another generic disk cleaner. it understands
 agent and Git ownership; [Mole](https://github.com/tw93/Mole) remains an
 optional external handoff for broader macOS and project debris.
 
-## agent coverage
+## cleanup actions
+
+| Action                 | Risk        | What changes                                                                  | Recovery                              |
+| ---------------------- | ----------- | ----------------------------------------------------------------------------- | ------------------------------------- |
+| 🧹 artifact removal    | safe        | atomically isolates and removes an exact configured rebuildable directory     | rebuild from the project              |
+| 🌿 worktree quarantine | recoverable | moves a linked worktree, creates a recovery ref, and repairs Git registration | `agentrinse undo <run-id>`            |
+| ↩️ worktree undo       | recoverable | restores the worktree path and Git registration                               | original quarantine remains journaled |
+| 🗑️ quarantine purge    | destructive | permanently removes an explicitly selected quarantined worktree               | none                                  |
+| ⚙️ config init         | operational | creates the default config without overwriting an existing file               | edit or remove the generated config   |
+| 🔒 lock recovery       | operational | removes only a stale AgentRinse lock after proving its process is gone        | rerun the interrupted command         |
+
+provider-owned state and Docker remain audit-only in `0.3.0`. agentrinse uses
+that evidence to protect cleanup targets; it does not yet rewrite agent logs,
+vacuum provider databases, or prune Docker objects.
+
+## agent integrations
 
 provider state is report-only. agentrinse uses it to protect resources, never
 to erase transcripts, sessions, credentials, configuration, or memories.
 
-| Adapter            | Mode               | What it understands                                                     |
-| ------------------ | ------------------ | ----------------------------------------------------------------------- |
-| OpenAI Codex       | audit-only         | sessions, workspace roots, and reachability                             |
-| Claude Code        | audit-only         | sessions, workspace roots, and reachability                             |
-| Cursor             | audit-only         | local agent state and workspace references                              |
-| GitHub Copilot CLI | audit-only         | local session and configuration state                                   |
-| Zed                | audit-only         | local agent state                                                       |
-| OpenCode           | audit-only         | local agent state                                                       |
-| Grok Build         | audit-only         | local agent state                                                       |
-| Git worktrees      | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots |
-| Build artifacts    | safe-clean         | exact configured rebuildable directories                                |
-| Agent runtimes     | audit-only, opt-in | installed agent executables and versions                                |
-| Docker             | audit-only, opt-in | images and containers                                                   |
-| Mole               | suggestions only   | external dry-run cleanup opportunities on macOS                         |
+| Logo                                                                        | Client                                                        | Mode       | What it protects                            |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------- | ------------------------------------------- |
+| <img width="48px" src="docs/client-openai.jpg" alt="OpenAI Codex" />        | [OpenAI Codex](https://github.com/openai/codex)               | audit-only | sessions, workspace roots, and reachability |
+| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | audit-only | sessions, workspace roots, and reachability |
+| <img width="48px" src="docs/client-cursor.jpg" alt="Cursor" />              | [Cursor](https://cursor.com/docs)                             | audit-only | local agent state and workspace references  |
+| <img width="48px" src="docs/client-copilot.png" alt="GitHub Copilot CLI" /> | [GitHub Copilot CLI](https://github.com/github/copilot-cli)   | audit-only | local session and configuration state       |
+| <img width="48px" src="docs/client-zed.svg" alt="Zed" />                    | [Zed](https://zed.dev/docs/ai/overview)                       | audit-only | local agent state                           |
+| <img width="48px" src="docs/client-opencode.png" alt="OpenCode" />          | [OpenCode](https://opencode.ai/)                              | audit-only | local agent state                           |
+| <img width="48px" src="docs/client-grok-build.svg" alt="Grok Build" />      | [Grok Build](https://docs.x.ai/build/overview)                | audit-only | local agent state                           |
+
+## cleanup surfaces
+
+| Icon                                                                 | Surface                              | Mode               | What it understands                                                     |
+| -------------------------------------------------------------------- | ------------------------------------ | ------------------ | ----------------------------------------------------------------------- |
+| 🌿                                                                   | Git worktrees                        | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots |
+| 🧹                                                                   | Build artifacts                      | safe-clean         | exact configured rebuildable directories                                |
+| ⚡                                                                   | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                |
+| <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" /> | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images and containers                                                   |
+| 🕳️                                                                   | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                         |
 
 ## install
 
