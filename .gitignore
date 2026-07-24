@@ -8,4 +8,5 @@ coverage/
 .env.*
 !.env.example
 .agentrinse/
+.crabbox/
 tmp/
