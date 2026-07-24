@@ -515,7 +515,7 @@ describe("executeWorktreeQuarantine", () => {
     );
   });
 
-  it("restores the original worktree when Git locking fails", async () => {
+  it("does not move the worktree when the Git lock claim fails", async () => {
     const fixture = await gitFixture();
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
     const entryId = "entry-rollback";
@@ -529,7 +529,7 @@ describe("executeWorktreeQuarantine", () => {
         const persisted = quarantineEntrySchema.parse(
           await readJsonFile(join(quarantineDirectory, `${entryId}.json`)),
         );
-        expect(persisted.status).toBe("moved");
+        expect(persisted.status).toBe("recovery-ref-created");
       }
       return fixture.runGit(args);
     };
@@ -543,7 +543,7 @@ describe("executeWorktreeQuarantine", () => {
       }),
     ).rejects.toMatchObject({
       name: WorktreeExecutionError.name,
-      outcome: "rolled-back",
+      outcome: "failed",
     });
 
     expect(await missing(fixture.linked)).toBe(false);
@@ -561,6 +561,73 @@ describe("executeWorktreeQuarantine", () => {
         worktreeRecoveryRef(fixture.action, runId),
       ]),
     ).rejects.toThrow();
+  });
+
+  it("preserves a foreign lock acquired at the quarantine boundary", async () => {
+    const fixture = await gitFixture();
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const entryId = "entry-boundary-foreign-lock";
+    let moveCalled = false;
+    let injected = false;
+    const runGit = async (args: string[]) => {
+      if (
+        !injected &&
+        args.includes("worktree") &&
+        args.includes("lock") &&
+        args.includes(`AgentRinse quarantine ${entryId}`)
+      ) {
+        injected = true;
+        await fixture.runGit([
+          "--git-dir",
+          fixture.action.target.repositoryCommonDir,
+          "worktree",
+          "lock",
+          "--reason",
+          "operator hold",
+          fixture.linked,
+        ]);
+      }
+      return fixture.runGit(args);
+    };
+
+    await expect(
+      executeWorktreeQuarantine(fixture.action, {
+        runId: "run-boundary-foreign-lock",
+        entryId,
+        quarantineDirectory,
+        dependencies: {
+          runGit,
+          move: async () => {
+            moveCalled = true;
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: WorktreeExecutionError.name,
+      outcome: "failed",
+    });
+
+    expect(injected).toBe(true);
+    expect(moveCalled).toBe(false);
+    expect(await missing(fixture.linked)).toBe(false);
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: fixture.linked,
+          locked: "operator hold",
+        }),
+      ]),
+    );
   });
 
   it("keeps rollback recoverable when recovery ref deletion fails", async () => {
@@ -597,7 +664,7 @@ describe("executeWorktreeQuarantine", () => {
     expect(await missing(fixture.linked)).toBe(false);
     expect(await missing(worktreeQuarantinePath(fixture.action, entryId))).toBe(true);
     const interrupted = quarantineEntrySchema.parse(await readJsonFile(manifestPath));
-    expect(interrupted.status).toBe("moved");
+    expect(interrupted.status).toBe("recovery-ref-created");
 
     const restored = await undoWorktreeQuarantine(interrupted, {
       manifestPath,

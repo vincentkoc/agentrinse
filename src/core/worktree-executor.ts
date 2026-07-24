@@ -24,7 +24,7 @@ import { measurePath, type Measurement, type MeasureOptions } from "./measure.js
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
-import { unlockOwnedWorktree } from "./worktree-lock.js";
+import { lockOwnedWorktree, unlockOwnedWorktree } from "./worktree-lock.js";
 
 const execFileAsync = promisify(execFile);
 const QUARANTINE_OWNER_DIRECTORY = ".agentrinse-owner";
@@ -710,6 +710,38 @@ export async function executeWorktreeQuarantine(
         { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
       );
     }
+    await lockOwnedWorktree({
+      worktreePath: action.target.path,
+      repositoryCommonDir: action.target.repositoryCommonDir,
+      expectedReason: worktreeLockReason(entryId),
+      claimId: entryId,
+      runGit,
+      platform,
+    });
+    locked = true;
+    const claimedRegistration = await runGit([
+      "--git-dir",
+      action.target.repositoryCommonDir,
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]);
+    if (
+      !targetRegistrationLockMatches(
+        claimedRegistration,
+        action,
+        action.target.path,
+        worktreeLockReason(entryId),
+      )
+    ) {
+      throw new WorktreeExecutionError(
+        "AgentRinse worktree lock claim could not be verified before quarantine",
+        "skipped-stale",
+        entry,
+        { diagnosticCode: "QUARANTINE_REGISTRATION_CHANGED" },
+      );
+    }
     try {
       await move(action.target.path, quarantinePath);
     } catch (error) {
@@ -766,7 +798,14 @@ export async function executeWorktreeQuarantine(
       "--porcelain",
       "-z",
     ]);
-    if (!targetRegistrationLockMatches(beforeRepair, action, action.target.path)) {
+    if (
+      !targetRegistrationLockMatches(
+        beforeRepair,
+        action,
+        action.target.path,
+        worktreeLockReason(entryId),
+      )
+    ) {
       throw new WorktreeExecutionError(
         "worktree registration or lock ownership changed before repair",
         "partially-applied",
@@ -782,16 +821,6 @@ export async function executeWorktreeQuarantine(
       quarantinePath,
     ]);
     repaired = true;
-    await runGit([
-      "--git-dir",
-      action.target.repositoryCommonDir,
-      "worktree",
-      "lock",
-      "--reason",
-      worktreeLockReason(entryId),
-      quarantinePath,
-    ]);
-    locked = true;
     const after = await runGit([
       "--git-dir",
       action.target.repositoryCommonDir,
@@ -934,7 +963,7 @@ export async function executeWorktreeQuarantine(
     try {
       if (locked) {
         await unlockOwnedWorktree({
-          worktreePath: quarantinePath,
+          worktreePath: moved ? quarantinePath : action.target.path,
           repositoryCommonDir: action.target.repositoryCommonDir,
           expectedReason: worktreeLockReason(entryId),
           claimId: entryId,

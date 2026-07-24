@@ -137,6 +137,26 @@ export async function reconcileOwnedWorktreeLockClaim(options: OwnedWorktreeLock
   await reconcilePaths(paths, options.expectedReason, options.platform ?? process.platform);
 }
 
+export async function lockOwnedWorktree(options: OwnedWorktreeLock): Promise<void> {
+  const platform = options.platform ?? process.platform;
+  const paths = await resolveLockPaths(options);
+  await reconcilePaths(paths, options.expectedReason, platform);
+  if (await pathExists(paths.lockPath)) {
+    await assertOwnedClaim(paths.lockPath, options.expectedReason);
+    return;
+  }
+  await options.runGit([
+    "--git-dir",
+    options.repositoryCommonDir,
+    "worktree",
+    "lock",
+    "--reason",
+    options.expectedReason,
+    options.worktreePath,
+  ]);
+  await assertOwnedClaim(paths.lockPath, options.expectedReason);
+}
+
 export async function unlockOwnedWorktree(options: OwnedWorktreeLock): Promise<void> {
   const platform = options.platform ?? process.platform;
   const paths = await resolveLockPaths(options);
