@@ -18,7 +18,6 @@ export async function syncDirectory(path: string): Promise<void> {
 export async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   const directory = dirname(path);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await chmod(directory, 0o700);
 
   const temporary = join(directory, `.${randomUUID()}.tmp`);
   const handle = await open(temporary, "wx", 0o600);
@@ -40,7 +39,6 @@ export async function writeJsonAtomic(path: string, value: unknown): Promise<voi
 export async function writeJsonExclusive(path: string, value: unknown): Promise<void> {
   const directory = dirname(path);
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await chmod(directory, 0o700);
 
   const handle = await open(path, "wx", 0o600);
   try {

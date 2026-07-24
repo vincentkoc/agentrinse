@@ -1,10 +1,10 @@
-import { mkdtemp, stat } from "node:fs/promises";
+import { chmod, mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { readJsonFile, writeJsonAtomic } from "../../src/state/json-file.js";
+import { readJsonFile, writeJsonAtomic, writeJsonExclusive } from "../../src/state/json-file.js";
 
 describe("atomic JSON files", () => {
   it("writes a complete owner-only document", async () => {
@@ -15,5 +15,16 @@ describe("atomic JSON files", () => {
 
     expect(await readJsonFile(path)).toEqual({ planId: "plan-1" });
     expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(join(root, "plans"))).mode & 0o777).toBe(0o700);
+  });
+
+  it("does not change permissions on an existing parent directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-parent-"));
+    await chmod(root, 0o755);
+
+    await writeJsonExclusive(join(root, "config.json"), { schemaVersion: 1 });
+
+    expect((await stat(root)).mode & 0o777).toBe(0o755);
+    expect((await stat(join(root, "config.json"))).mode & 0o777).toBe(0o600);
   });
 });

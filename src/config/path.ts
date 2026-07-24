@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 export type ConfigEnvironment = {
   XDG_CONFIG_HOME?: string;
@@ -12,7 +12,11 @@ export function resolveConfigPath(
   if (explicit !== undefined) {
     return resolve(explicit);
   }
-  if (environment.XDG_CONFIG_HOME !== undefined) {
+  if (
+    environment.XDG_CONFIG_HOME !== undefined &&
+    environment.XDG_CONFIG_HOME !== "" &&
+    isAbsolute(environment.XDG_CONFIG_HOME)
+  ) {
     return resolve(environment.XDG_CONFIG_HOME, "agentrinse", "config.json");
   }
   return resolve(home, ".config", "agentrinse", "config.json");

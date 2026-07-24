@@ -18,4 +18,13 @@ describe("resolveConfigPath", () => {
       "/tmp/home/.config/agentrinse/config.json",
     );
   });
+
+  it("ignores empty or relative XDG_CONFIG_HOME values", () => {
+    expect(resolveConfigPath("/tmp/home", undefined, { XDG_CONFIG_HOME: "" })).toBe(
+      "/tmp/home/.config/agentrinse/config.json",
+    );
+    expect(resolveConfigPath("/tmp/home", undefined, { XDG_CONFIG_HOME: "relative" })).toBe(
+      "/tmp/home/.config/agentrinse/config.json",
+    );
+  });
 });

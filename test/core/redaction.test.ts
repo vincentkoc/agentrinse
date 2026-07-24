@@ -122,6 +122,21 @@ describe("audit redaction", () => {
     expect(output).not.toContain("private/file");
   });
 
+  it("removes paths adjacent to diagnostic labels", () => {
+    const redacted = redactAuditValue(
+      {
+        message: "root:/Users/alice/private-project",
+      },
+      HOME,
+      "fixture-salt",
+    );
+    const output = JSON.stringify(redacted);
+
+    expect(output).not.toContain("/Users/alice");
+    expect(output).not.toContain("private-project");
+    expect(output).toContain("root:$PATH/<path:");
+  });
+
   it("redacts large path collections without scanning every path for every string", () => {
     const entries = Array.from({ length: 5_000 }, (_, index) => ({
       path: `${HOME}/projects/project-${index}/node_modules`,
