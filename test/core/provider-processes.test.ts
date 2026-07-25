@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { inspectProviderProcesses } from "../../src/core/provider-processes.js";
+import {
+  inspectProviderProcesses,
+  providerProcessListArguments,
+} from "../../src/core/provider-processes.js";
 
 describe("provider process inspection", () => {
+  it("requests untruncated process command lines", () => {
+    expect(providerProcessListArguments()).toContain("-ww");
+  });
+
   it("detects a provider launched through an interpreter", async () => {
     await expect(
       inspectProviderProcesses("claude", {

@@ -45,8 +45,12 @@ function commandMatches(provider: ProviderMutationId, commandLine: string): bool
   return COMMAND_PATTERNS[provider].some((pattern) => pattern.test(commandLine));
 }
 
+export function providerProcessListArguments(): string[] {
+  return ["-ww", "-axo", "pid=,args="];
+}
+
 async function defaultPs(): Promise<string> {
-  const result = await execFileAsync("ps", ["-axo", "pid=,args="], {
+  const result = await execFileAsync("ps", providerProcessListArguments(), {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
     timeout: 10_000,
