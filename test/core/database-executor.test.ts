@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -540,6 +540,8 @@ describe("database vacuum execution and recovery", () => {
     await rename(manifest.backupPath, manifest.temporaryPath);
     await rename(manifest.backupWalPath!, `${originalPath}-wal`);
     await rename(manifest.backupShmPath!, `${originalPath}-shm`);
+    await chmod(originalPath, 0o400);
+    await chmod(manifest.temporaryPath, 0o400);
 
     const restored = await undoDatabaseVacuum(
       {
@@ -549,12 +551,21 @@ describe("database vacuum execution and recovery", () => {
       {
         manifestPath,
         backupDirectory,
-        dependencies: dependencies(),
+        dependencies: {
+          ...baseDependencies,
+          async acquireExclusion(paths, _platform, restoreModes) {
+            for (const path of paths) {
+              await chmod(path, (restoreModes?.get(path) ?? 0o600) & 0o777);
+            }
+            return baseDependencies.acquireExclusion(paths);
+          },
+        },
       },
     );
 
     expect(restored.status).toBe("restored");
     expect(await readFile(originalPath, "utf8")).toBe("original");
+    expect((await lstat(originalPath)).mode & 0o777).toBe(0o600);
     expect(await readFile(`${originalPath}-shm`, "utf8")).toBe("synthetic shm");
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
