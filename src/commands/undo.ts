@@ -72,9 +72,15 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
   }
   const databaseEntries = databaseRecords.filter(
     ({ value }) =>
-      ["preparing", "vacuumed", "original-backed-up", "installed", "restoring", "partial"].includes(
-        value.status,
-      ) &&
+      [
+        "preparing",
+        "vacuumed",
+        "original-backed-up",
+        "installing",
+        "installed",
+        "restoring",
+        "partial",
+      ].includes(value.status) &&
       value.runId === options.runId &&
       (options.actionId === undefined || value.actionId === options.actionId),
   );

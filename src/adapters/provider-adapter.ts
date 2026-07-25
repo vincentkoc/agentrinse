@@ -187,7 +187,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
           continue;
         }
 
-        const isCodexDatabase = this.spec.id === "codex" && candidate.kind === "agent-database";
+        const isCodexDatabase =
+          this.spec.id === "codex" &&
+          candidate.kind === "agent-database" &&
+          this.options.allowOfflineVacuum === true;
         const databaseInspection = isCodexDatabase
           ? await (this.options.inspectDatabase ?? inspectCodexDatabase)(
               path,

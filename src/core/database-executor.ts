@@ -290,11 +290,49 @@ export async function executeDatabaseVacuum(
       options.backupDirectory,
     );
 
+    entry = await persist(
+      manifestPath,
+      {
+        ...entry,
+        status: "installing",
+      },
+      options.backupDirectory,
+    );
     try {
       await rename(temporaryPath, action.target.path);
       await syncDirectory(originalDirectory);
-    } catch (error) {
-      if (!(await pathExists(action.target.path)) && (await pathExists(backupPath))) {
+      await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
+        action.target.path,
+        dependencies,
+      );
+      const installed = await inspect(action.target.path, dependencies);
+      entry = await persist(
+        manifestPath,
+        {
+          ...entry,
+          status: "installed",
+          installedIdentity: installed.identity,
+        },
+        options.backupDirectory,
+      );
+      return {
+        backupEntryId: entry.entryId,
+        backupPath: entry.backupPath,
+        originalBytes: action.target.measuredBytes,
+        compactedBytes: installed.identity.measuredBytes,
+        reclaimedBytes: Math.max(0, action.target.measuredBytes - installed.identity.measuredBytes),
+      };
+    } catch (installError) {
+      try {
+        const sourceExists = await pathExists(action.target.path);
+        const backupExists = await pathExists(backupPath);
+        const temporaryExists = await pathExists(temporaryPath);
+        if (sourceExists && backupExists && !temporaryExists) {
+          await rename(action.target.path, temporaryPath);
+          await syncDirectory(originalDirectory);
+        } else if (!(!sourceExists && backupExists && temporaryExists)) {
+          throw new Error("database installation rollback paths are ambiguous");
+        }
         await rename(backupPath, action.target.path);
         if (backupWalPath !== undefined && (await pathExists(backupWalPath))) {
           await rename(backupWalPath, `${action.target.path}-wal`);
@@ -302,6 +340,16 @@ export async function executeDatabaseVacuum(
         if (backupShmPath !== undefined && (await pathExists(backupShmPath))) {
           await rename(backupShmPath, `${action.target.path}-shm`);
         }
+        await syncDirectory(originalDirectory);
+        await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
+          action.target.path,
+          dependencies,
+        );
+        const restored = await inspect(action.target.path, dependencies);
+        if (restored.identity.fingerprint !== action.target.fingerprint) {
+          throw new Error("restored database identity does not match the planned original");
+        }
+        await rm(temporaryPath, { force: true });
         await syncDirectory(originalDirectory);
         entry = await persist(
           manifestPath,
@@ -312,45 +360,50 @@ export async function executeDatabaseVacuum(
             diagnostic: {
               severity: "error",
               code: "DATABASE_INSTALL_ROLLED_BACK",
-              message: error instanceof Error ? error.message : String(error),
+              message: installError instanceof Error ? installError.message : String(installError),
               adapter: action.adapter,
               resourceId: action.resourceId,
             },
           },
           options.backupDirectory,
         );
-        await rm(temporaryPath, { force: true });
         throw new DatabaseExecutionError(
           "database installation failed and the original was restored",
           "rolled-back",
           "DATABASE_INSTALL_ROLLED_BACK",
           entry,
         );
+      } catch (rollbackError) {
+        if (rollbackError instanceof DatabaseExecutionError) {
+          throw rollbackError;
+        }
+        entry = await persist(
+          manifestPath,
+          {
+            ...entry,
+            status: "partial",
+            diagnostic: {
+              severity: "error",
+              code: "DATABASE_INSTALL_ROLLBACK_PARTIAL",
+              message: `install failed: ${
+                installError instanceof Error ? installError.message : String(installError)
+              }; rollback failed: ${
+                rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+              }`,
+              adapter: action.adapter,
+              resourceId: action.resourceId,
+            },
+          },
+          options.backupDirectory,
+        );
+        throw new DatabaseExecutionError(
+          "database installation and automatic rollback did not complete",
+          "partially-applied",
+          "DATABASE_INSTALL_ROLLBACK_PARTIAL",
+          entry,
+        );
       }
-      throw error;
     }
-
-    await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-      action.target.path,
-      dependencies,
-    );
-    const installed = await inspect(action.target.path, dependencies);
-    entry = await persist(
-      manifestPath,
-      {
-        ...entry,
-        status: "installed",
-        installedIdentity: installed.identity,
-      },
-      options.backupDirectory,
-    );
-    return {
-      backupEntryId: entry.entryId,
-      backupPath: entry.backupPath,
-      originalBytes: action.target.measuredBytes,
-      compactedBytes: installed.identity.measuredBytes,
-      reclaimedBytes: Math.max(0, action.target.measuredBytes - installed.identity.measuredBytes),
-    };
   } catch (error) {
     if (error instanceof DatabaseExecutionError) {
       throw error;

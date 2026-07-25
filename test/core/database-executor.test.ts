@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { lstat, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -310,6 +310,104 @@ describe("database vacuum execution and recovery", () => {
     expect(await readFile(originalPath, "utf8")).toBe("original");
   });
 
+  it("rolls back when post-install integrity verification fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-post-install-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-post-install",
+        entryId: "entry-post-install",
+        backupDirectory,
+        dependencies: {
+          ...dependencies(),
+          async verifyIntegrity(path) {
+            if (path === originalPath && (await readFile(path, "utf8")) === "compacted") {
+              throw new Error("injected installed integrity failure");
+            }
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      diagnosticCode: "DATABASE_INSTALL_ROLLED_BACK",
+    });
+
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    const manifest = databaseBackupEntrySchema.parse(
+      await readJsonFile(join(backupDirectory, "entry-post-install.json")),
+    );
+    expect(manifest.status).toBe("restored");
+  });
+
+  it("restores a moved original after a crash in the vacuumed state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-vacuumed-crash-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-vacuumed",
+      entryId: "entry-vacuumed",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-vacuumed.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await rename(originalPath, manifest.temporaryPath);
+
+    const restored = await undoDatabaseVacuum(
+      {
+        ...manifest,
+        status: "vacuumed",
+        backupIdentity: undefined,
+        installedIdentity: undefined,
+      },
+      {
+        manifestPath,
+        backupDirectory,
+        dependencies: dependencies(),
+      },
+    );
+
+    expect(restored.status).toBe("restored");
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("restores the original after a crash in the installing state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-installing-crash-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-installing",
+      entryId: "entry-installing",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-installing.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+
+    const restored = await undoDatabaseVacuum(
+      {
+        ...manifest,
+        status: "installing",
+        installedIdentity: undefined,
+      },
+      {
+        manifestPath,
+        backupDirectory,
+        dependencies: dependencies(),
+      },
+    );
+
+    expect(restored.status).toBe("restored");
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("refuses undo after the installed database changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-drift-"));
     const originalPath = join(root, "state_5.sqlite");
@@ -357,5 +455,36 @@ describe("database vacuum execution and recovery", () => {
     expect(purged.entry.status).toBe("purged");
     expect(purged.reclaimedBytes).toBe("original".length);
     await expect(lstat(result.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("finishes a purging manifest after the rollback file was already removed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-purge-resume-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const result = await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-purge-resume",
+      entryId: "entry-purge-resume",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-purge-resume.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await rm(result.backupPath);
+
+    const purged = await purgeDatabaseBackup(
+      {
+        ...manifest,
+        status: "purging",
+      },
+      {
+        manifestPath,
+        backupDirectory,
+        dependencies: dependencies(),
+      },
+    );
+
+    expect(purged.entry.status).toBe("purged");
+    expect(purged.reclaimedBytes).toBe(0);
   });
 });

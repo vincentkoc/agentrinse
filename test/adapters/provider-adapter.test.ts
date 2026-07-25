@@ -156,7 +156,31 @@ describe("ProviderAuditAdapter", () => {
 
     expect(finding.state).toBe("protected");
     expect(finding.candidateActions).toEqual([]);
-    expect(finding.roots.map((root) => root.code)).toContain("offline-vacuum-not-authorized");
+    expect(finding.roots.map((root) => root.code)).toContain("provider-owned-report-only");
+  });
+
+  it("keeps ordinary Codex database inventory independent of sqlite3", async () => {
+    const context = await fixtureContext();
+    const path = join(context.home, ".codex", "state_5.sqlite");
+    await mkdir(join(context.home, ".codex"), { recursive: true });
+    await writeFile(path, "synthetic");
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.codex, {
+      measureBytes: true,
+      maxEntries: 100,
+      inspectDatabase: async () => {
+        throw new Error("sqlite3 should not be required");
+      },
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const database = collection.resources.find(
+      (resource) => resource.resource.kind === "agent-database",
+    );
+
+    expect(database?.measuredBytes).toBe("synthetic".length);
+    expect(database?.facts.reportOnly).toBe(true);
+    expect(collection.diagnostics).toEqual([]);
   });
 
   it.each(["codex", "claude", "cursor", "copilot", "zed", "opencode", "grok"] as const)(

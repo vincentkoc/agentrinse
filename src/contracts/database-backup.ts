@@ -8,6 +8,7 @@ export const databaseBackupStatusSchema = z.enum([
   "preparing",
   "vacuumed",
   "original-backed-up",
+  "installing",
   "installed",
   "restoring",
   "restored",
@@ -54,7 +55,7 @@ export const databaseBackupEntrySchema = z
       });
     }
     if (
-      ["original-backed-up", "installed", "restoring", "purging", "purged"].includes(
+      ["original-backed-up", "installing", "installed", "restoring", "purging", "purged"].includes(
         entry.status,
       ) &&
       entry.backupIdentity === undefined
@@ -66,7 +67,7 @@ export const databaseBackupEntrySchema = z
       });
     }
     if (
-      ["installed", "restoring", "purging", "purged"].includes(entry.status) &&
+      ["installed", "purging", "purged"].includes(entry.status) &&
       entry.installedIdentity === undefined
     ) {
       context.addIssue({

@@ -12,6 +12,7 @@ import {
   databaseBackupEntrySchema,
   type DatabaseBackupEntry,
 } from "../contracts/database-backup.js";
+import type { DatabaseIdentity, DatabaseSidecarIdentity } from "../contracts/action.js";
 import { syncDirectory, writeJsonAtomic } from "../state/json-file.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
 
@@ -147,6 +148,107 @@ async function restoreSidecars(
   }
 }
 
+function movedSidecarMatches(
+  actual: DatabaseSidecarIdentity | undefined,
+  planned: DatabaseSidecarIdentity | undefined,
+): boolean {
+  return (
+    (actual === undefined && planned === undefined) ||
+    (actual !== undefined &&
+      planned !== undefined &&
+      actual.device === planned.device &&
+      actual.inode === planned.inode &&
+      actual.mode === planned.mode &&
+      actual.mtimeMs === planned.mtimeMs &&
+      actual.measuredBytes === planned.measuredBytes)
+  );
+}
+
+function movedOriginalMatches(actual: DatabaseIdentity, planned: DatabaseIdentity): boolean {
+  return (
+    actual.database === planned.database &&
+    actual.filename === planned.filename &&
+    actual.device === planned.device &&
+    actual.inode === planned.inode &&
+    actual.mode === planned.mode &&
+    actual.mtimeMs === planned.mtimeMs &&
+    actual.measuredBytes === planned.measuredBytes &&
+    actual.pageSize === planned.pageSize &&
+    actual.pageCount === planned.pageCount &&
+    actual.freelistCount === planned.freelistCount &&
+    actual.journalMode === planned.journalMode &&
+    actual.autoVacuum === planned.autoVacuum &&
+    actual.migrationVersion === planned.migrationVersion &&
+    actual.tables.join("\0") === planned.tables.join("\0") &&
+    actual.schemaDigest === planned.schemaDigest &&
+    movedSidecarMatches(actual.wal, planned.wal) &&
+    movedSidecarMatches(actual.shm, planned.shm)
+  );
+}
+
+async function verifyRetainedOriginal(
+  entry: DatabaseBackupEntry,
+  dependencies: DatabaseRecoveryDependencies,
+  inspect: typeof inspectCodexDatabase,
+): Promise<DatabaseIdentity> {
+  await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
+    entry.backupPath,
+    dependencies,
+  );
+  const backup = await inspect(entry.backupPath, dependencies, entry.originalPath);
+  const matches =
+    entry.backupIdentity === undefined
+      ? movedOriginalMatches(backup.identity, entry.target)
+      : backup.identity.fingerprint === entry.backupIdentity.fingerprint;
+  if (!matches || (backup.identity.wal?.measuredBytes ?? 0) > 0) {
+    throw new Error("the retained original database no longer matches its recovery manifest");
+  }
+  return backup.identity;
+}
+
+async function completeRestoredOriginal(
+  entry: DatabaseBackupEntry,
+  options: DatabaseRecoveryOptions,
+  dependencies: DatabaseRecoveryDependencies,
+  inspect: typeof inspectCodexDatabase,
+  rename: typeof renameNoReplace,
+  clock: () => Date,
+): Promise<DatabaseBackupEntry> {
+  await restoreSidecars(entry, rename);
+  await syncDirectory(dirname(entry.originalPath));
+  await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
+    entry.originalPath,
+    dependencies,
+  );
+  const restored = await inspect(entry.originalPath, dependencies);
+  if (restored.identity.fingerprint !== entry.target.fingerprint) {
+    throw new Error("restored database identity does not match the planned original");
+  }
+  if (await pathExists(entry.temporaryPath)) {
+    await rm(entry.temporaryPath);
+    await syncDirectory(dirname(entry.originalPath));
+  }
+  return markRestored(options, entry, clock);
+}
+
+async function restoreRetainedOriginal(
+  entry: DatabaseBackupEntry,
+  options: DatabaseRecoveryOptions,
+  dependencies: DatabaseRecoveryDependencies,
+  inspect: typeof inspectCodexDatabase,
+  rename: typeof renameNoReplace,
+  clock: () => Date,
+): Promise<DatabaseBackupEntry> {
+  const backupIdentity = await verifyRetainedOriginal(entry, dependencies, inspect);
+  const restoring = await persist(options, {
+    ...entry,
+    status: "restoring",
+    backupIdentity,
+  });
+  await rename(restoring.backupPath, restoring.originalPath);
+  return completeRestoredOriginal(restoring, options, dependencies, inspect, rename, clock);
+}
+
 export async function undoDatabaseVacuum(
   input: DatabaseBackupEntry,
   options: DatabaseRecoveryOptions,
@@ -163,7 +265,7 @@ export async function undoDatabaseVacuum(
   const backupExists = await pathExists(entry.backupPath);
   const temporaryExists = await pathExists(entry.temporaryPath);
 
-  if (["preparing", "vacuumed"].includes(entry.status)) {
+  if (entry.status === "preparing") {
     if (!originalExists || backupExists) {
       throw new Error("interrupted database preparation has ambiguous file state");
     }
@@ -175,24 +277,44 @@ export async function undoDatabaseVacuum(
     return markRestored(options, entry, clock);
   }
 
-  if (entry.status === "original-backed-up" || entry.status === "partial") {
-    if (!originalExists && backupExists) {
-      await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-        entry.backupPath,
-        dependencies,
-      );
-      entry = await persist(options, { ...entry, status: "restoring" });
-      await rename(entry.backupPath, entry.originalPath);
+  if (entry.status === "vacuumed") {
+    if (originalExists && !backupExists) {
       await restoreSidecars(entry, rename);
-      await syncDirectory(dirname(entry.originalPath));
       if (temporaryExists) {
         await rm(entry.temporaryPath);
+        await syncDirectory(dirname(entry.originalPath));
       }
       return markRestored(options, entry, clock);
+    }
+    if (!originalExists && backupExists) {
+      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
+    }
+    throw new Error("interrupted database vacuum has ambiguous file state");
+  }
+
+  if (entry.status === "original-backed-up" || entry.status === "partial") {
+    if (!originalExists && backupExists) {
+      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
     }
     if (!(originalExists && backupExists && !temporaryExists)) {
       throw new Error("partial database vacuum has ambiguous file state");
     }
+  }
+
+  if (entry.status === "installing") {
+    if (!originalExists && backupExists && temporaryExists) {
+      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
+    }
+    if (originalExists && backupExists && !temporaryExists) {
+      entry = await persist(options, { ...entry, status: "restoring" });
+      await rename(entry.originalPath, entry.temporaryPath);
+      await syncDirectory(dirname(entry.originalPath));
+      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
+    }
+    if (originalExists && !backupExists) {
+      return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
+    }
+    throw new Error("interrupted database installation has ambiguous file state");
   }
 
   if (!["installed", "restoring", "original-backed-up", "partial"].includes(entry.status)) {
@@ -205,24 +327,13 @@ export async function undoDatabaseVacuum(
 
   if (entry.status === "restoring") {
     if (!currentOriginalExists && currentBackupExists && currentTemporaryExists) {
-      await rename(entry.backupPath, entry.originalPath);
-      await restoreSidecars(entry, rename);
-      await syncDirectory(dirname(entry.originalPath));
-      await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-        entry.originalPath,
-        dependencies,
-      );
-      await rm(entry.temporaryPath);
-      return markRestored(options, entry, clock);
+      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
     }
     if (currentOriginalExists && !currentBackupExists && currentTemporaryExists) {
-      await restoreSidecars(entry, rename);
-      await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-        entry.originalPath,
-        dependencies,
-      );
-      await rm(entry.temporaryPath);
-      return markRestored(options, entry, clock);
+      return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
+    }
+    if (currentOriginalExists && !currentBackupExists && !currentTemporaryExists) {
+      return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
     }
     if (!(currentOriginalExists && currentBackupExists && !currentTemporaryExists)) {
       throw new Error("interrupted database restore has ambiguous file state");
@@ -242,18 +353,7 @@ export async function undoDatabaseVacuum(
       "the compacted database changed after installation; automatic undo is no longer safe",
     );
   }
-  const backup = await inspect(entry.backupPath, dependencies, entry.originalPath);
-  if (
-    entry.backupIdentity === undefined ||
-    backup.identity.fingerprint !== entry.backupIdentity.fingerprint ||
-    (backup.identity.wal?.measuredBytes ?? 0) > 0
-  ) {
-    throw new Error("the retained original database no longer matches its recovery manifest");
-  }
-  await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-    entry.backupPath,
-    dependencies,
-  );
+  await verifyRetainedOriginal(entry, dependencies, inspect);
   entry = await persist(options, { ...entry, status: "restoring" });
   await rename(entry.originalPath, entry.temporaryPath);
   await syncDirectory(dirname(entry.originalPath));
@@ -328,7 +428,9 @@ export async function purgeDatabaseBackup(
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
   await assertOffline(entry, dependencies);
-  if (!(await pathExists(entry.originalPath)) || !(await pathExists(entry.backupPath))) {
+  const originalExists = await pathExists(entry.originalPath);
+  const backupExists = await pathExists(entry.backupPath);
+  if (!originalExists || (entry.status === "installed" && !backupExists)) {
     throw new Error("database purge paths do not match the recovery manifest");
   }
   const current = await (dependencies.inspectDatabase ?? inspectCodexDatabase)(
@@ -342,16 +444,19 @@ export async function purgeDatabaseBackup(
     entry.originalPath,
     dependencies,
   );
-  await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-    entry.backupPath,
-    dependencies,
-  );
-  const backupStats = await lstat(entry.backupPath);
-  if (!backupStats.isFile() || backupStats.isSymbolicLink()) {
-    throw new Error("database rollback copy is not a regular file");
+  let reclaimedBytes = 0;
+  if (backupExists) {
+    await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
+      entry.backupPath,
+      dependencies,
+    );
+    const backupStats = await lstat(entry.backupPath);
+    if (!backupStats.isFile() || backupStats.isSymbolicLink()) {
+      throw new Error("database rollback copy is not a regular file");
+    }
+    reclaimedBytes += backupStats.size;
   }
   entry = await persist(options, { ...entry, status: "purging" });
-  let reclaimedBytes = backupStats.size;
   for (const sidecar of backupSidecars(entry)) {
     if (await pathExists(sidecar.backup)) {
       const stats = await lstat(sidecar.backup);
@@ -362,7 +467,9 @@ export async function purgeDatabaseBackup(
       await rm(sidecar.backup);
     }
   }
-  await rm(entry.backupPath);
+  if (await pathExists(entry.backupPath)) {
+    await rm(entry.backupPath);
+  }
   await syncDirectory(options.backupDirectory);
   entry = await persist(options, {
     ...entry,
