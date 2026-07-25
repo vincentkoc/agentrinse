@@ -48,9 +48,12 @@ file with `O_NOFOLLOW`, ties permission sealing to the validated inode,
 temporarily removes write bits while repeating identity and liveness checks,
 atomically moves the same inode into owner-only state, restores the recorded
 mode, fsyncs both directories, and persists the moved identity.
-The descriptor scan excludes only AgentRinse's own validated file handle. If
-the pathname names a different inode at rename time, AgentRinse atomically
-moves that unexpected inode back and records a rolled-back action.
+Provider liveness matches provider-specific native executables, application
+helpers, package markers, and interpreted or wrapped command lines. Incomplete
+or unparseable process evidence fails closed. The descriptor scan excludes
+only AgentRinse's own validated file handle. If the pathname names a different
+inode at rename time, AgentRinse atomically moves that unexpected inode back
+and records a rolled-back action.
 Undo and purge use only the durable manifest and refuse ambiguous paths,
 changed content, active providers, open descriptors, or cross-owned paths.
 Directories, sessions, transcripts, databases, credentials, configuration,

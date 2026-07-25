@@ -166,7 +166,8 @@ reclaimed.
 `agentrinse undo <run-id>` also selects live `provider.file-quarantine`
 entries. Undo requires the provider to be stopped, proves that no process has
 the payload open, refuses an occupied original path, atomically restores the
-same inode, restores the recorded mode, and verifies the full content identity.
+same inode, restores the recorded mode through an `O_NOFOLLOW` descriptor tied
+to that inode, and verifies the full content identity.
 
 Interrupted entries are reconciled from the two exact paths. If the original
 matches and the payload is absent, recovery records `restored`. If the

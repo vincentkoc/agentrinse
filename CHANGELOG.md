@@ -14,6 +14,8 @@ The project follows semantic versioning after its first supported release.
   single-link inode enforcement, same-filesystem atomic moves, unexpected-inode
   rollback, crash reconciliation, and permission preservation for
   provider-file recovery
+- provider liveness detection for native, helper, interpreted, and wrapped
+  command lines, with fail-closed incomplete process evidence
 
 ### Safety
 
