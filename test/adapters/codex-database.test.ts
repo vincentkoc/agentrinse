@@ -50,9 +50,12 @@ describe("Codex database inspection", () => {
   });
 
   it("parses exact database descriptors and Codex owner processes", async () => {
-    const handles = await inspectDatabaseOpenHandles("/tmp/state_5.sqlite", {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-handles-"));
+    const path = join(root, "state_5.sqlite");
+    await writeFile(path, "synthetic");
+    const handles = await inspectDatabaseOpenHandles(path, {
       async runLsof() {
-        return { stdout: "p42\nccodex\nn/tmp/state_5.sqlite\n", stderr: "" };
+        return { stdout: `p42\nccodex\nn${path}\n`, stderr: "" };
       },
     });
     const processes = await inspectCodexProcesses({

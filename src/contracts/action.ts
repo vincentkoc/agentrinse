@@ -73,6 +73,15 @@ export const codexDatabaseFilenameSchema = z.enum([
   "memories_1.sqlite",
 ]);
 
+export const databaseSidecarIdentitySchema = z.object({
+  path: z.string().min(1),
+  device: z.number().int().nonnegative(),
+  inode: z.number().int().nonnegative(),
+  mode: z.number().int().nonnegative(),
+  mtimeMs: z.number().finite(),
+  measuredBytes: z.number().int().nonnegative(),
+});
+
 export const databaseIdentitySchema = z.object({
   path: z.string().min(1),
   database: codexDatabaseNameSchema,
@@ -88,6 +97,8 @@ export const databaseIdentitySchema = z.object({
   autoVacuum: z.number().int().min(0).max(2),
   migrationVersion: z.number().int().nonnegative(),
   tables: z.array(z.string().min(1)),
+  wal: databaseSidecarIdentitySchema.optional(),
+  shm: databaseSidecarIdentitySchema.optional(),
   schemaDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
 });
@@ -119,5 +130,6 @@ export type WorktreeQuarantineAction = z.infer<typeof worktreeQuarantineActionSc
 export type CodexDatabaseName = z.infer<typeof codexDatabaseNameSchema>;
 export type CodexDatabaseFilename = z.infer<typeof codexDatabaseFilenameSchema>;
 export type DatabaseIdentity = z.infer<typeof databaseIdentitySchema>;
+export type DatabaseSidecarIdentity = z.infer<typeof databaseSidecarIdentitySchema>;
 export type DatabaseVacuumAction = z.infer<typeof databaseVacuumActionSchema>;
 export type PlannedAction = z.infer<typeof plannedActionSchema>;

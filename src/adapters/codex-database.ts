@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { lstat } from "node:fs/promises";
 import { basename } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import {
@@ -9,6 +10,7 @@ import {
   type CodexDatabaseName,
   databaseIdentitySchema,
   type DatabaseIdentity,
+  type DatabaseSidecarIdentity,
 } from "../contracts/action.js";
 import { sha256, sha256Json } from "../core/digest.js";
 
@@ -113,7 +115,9 @@ async function querySqlite(
     "-noheader",
     "-separator",
     SQLITE_SEPARATOR,
-    path,
+    "-cmd",
+    ".timeout 1000",
+    `${pathToFileURL(path).href}?immutable=1`,
     sql,
   ]);
   if (result.stderr.trim() !== "") {
@@ -125,20 +129,27 @@ async function querySqlite(
     .filter((line) => line !== "");
 }
 
-async function optionalFileBytes(path: string): Promise<number> {
+async function optionalFile(path: string): Promise<DatabaseSidecarIdentity | undefined> {
   try {
     const stats = await lstat(path);
     if (stats.isSymbolicLink() || !stats.isFile()) {
       throw new Error(`SQLite sidecar is not a regular file: ${path}`);
     }
-    return stats.size;
+    return {
+      path,
+      device: stats.dev,
+      inode: stats.ino,
+      mode: stats.mode,
+      mtimeMs: stats.mtimeMs,
+      measuredBytes: stats.size,
+    };
   } catch (error) {
     if (
       error instanceof Error &&
       "code" in error &&
       (error as NodeJS.ErrnoException).code === "ENOENT"
     ) {
-      return 0;
+      return undefined;
     }
     throw error;
   }
@@ -175,7 +186,6 @@ export async function inspectCodexDatabase(
     path,
     [
       "PRAGMA query_only=ON;",
-      "PRAGMA busy_timeout=1000;",
       "SELECT page_size FROM pragma_page_size;",
       "SELECT page_count FROM pragma_page_count;",
       "SELECT freelist_count FROM pragma_freelist_count;",
@@ -214,8 +224,8 @@ export async function inspectCodexDatabase(
   const pageCount = parseInteger(values[1], "page count");
   const freelistCount = parseInteger(values[2], "freelist count");
   const autoVacuum = parseInteger(values[3], "auto-vacuum mode");
-  const walBytes = await optionalFileBytes(`${path}-wal`);
-  const shmBytes = await optionalFileBytes(`${path}-shm`);
+  const wal = await optionalFile(`${path}-wal`);
+  const shm = await optionalFile(`${path}-shm`);
   const identity = databaseIdentitySchema.parse({
     path,
     database: contract.database,
@@ -231,6 +241,8 @@ export async function inspectCodexDatabase(
     autoVacuum,
     migrationVersion,
     tables,
+    ...(wal === undefined ? {} : { wal }),
+    ...(shm === undefined ? {} : { shm }),
     schemaDigest: sha256(schemaRows.join("\n")),
     fingerprint: sha256Json({
       path,
@@ -247,6 +259,8 @@ export async function inspectCodexDatabase(
       autoVacuum,
       migrationVersion,
       tables,
+      wal,
+      shm,
       schemaRows,
     }),
   });
@@ -255,9 +269,9 @@ export async function inspectCodexDatabase(
     estimatedReclaimBytes: pageSize * freelistCount,
     freePageRatio: pageCount === 0 ? 0 : freelistCount / pageCount,
     quickCheck: "ok",
-    walBytes,
-    shmBytes,
-    sidecarsPresent: walBytes > 0 || shmBytes > 0,
+    walBytes: wal?.measuredBytes ?? 0,
+    shmBytes: shm?.measuredBytes ?? 0,
+    sidecarsPresent: wal !== undefined || shm !== undefined,
   };
 }
 
@@ -273,16 +287,25 @@ export async function vacuumCodexDatabaseInto(
   const result = await (dependencies.runSqlite ?? defaultSqliteRunner)([
     "-batch",
     "-readonly",
-    sourcePath,
-    [
-      "PRAGMA busy_timeout=1000;",
-      "PRAGMA synchronous=FULL;",
-      "PRAGMA auto_vacuum=INCREMENTAL;",
-      `VACUUM INTO ${sqliteString(destinationPath)};`,
-    ].join(" "),
+    "-cmd",
+    ".timeout 1000",
+    `${pathToFileURL(sourcePath).href}?immutable=1`,
+    `VACUUM INTO ${sqliteString(destinationPath)};`,
   ]);
   if (result.stderr.trim() !== "") {
     throw new Error(`sqlite3 VACUUM INTO failed: ${result.stderr.trim()}`);
+  }
+  const normalize = await (dependencies.runSqlite ?? defaultSqliteRunner)([
+    "-batch",
+    "-cmd",
+    ".timeout 1000",
+    destinationPath,
+    "PRAGMA synchronous=FULL; PRAGMA auto_vacuum=INCREMENTAL; VACUUM;",
+  ]);
+  if (normalize.stderr.trim() !== "") {
+    throw new Error(
+      `sqlite3 could not enable incremental auto-vacuum on the compacted copy: ${normalize.stderr.trim()}`,
+    );
   }
 }
 
@@ -325,11 +348,29 @@ export async function inspectDatabaseOpenHandles(
     };
   }
   try {
-    const result = await (dependencies.runLsof ?? defaultLsofRunner)([
-      path,
-      `${path}-wal`,
-      `${path}-shm`,
-    ]);
+    const paths = (
+      await Promise.all(
+        [path, `${path}-wal`, `${path}-shm`].map(async (candidate) => {
+          try {
+            await lstat(candidate);
+            return candidate;
+          } catch (error) {
+            if (
+              error instanceof Error &&
+              "code" in error &&
+              (error as NodeJS.ErrnoException).code === "ENOENT"
+            ) {
+              return undefined;
+            }
+            throw error;
+          }
+        }),
+      )
+    ).filter((candidate): candidate is string => candidate !== undefined);
+    if (paths.length === 0) {
+      return { status: "idle", pids: [] };
+    }
+    const result = await (dependencies.runLsof ?? defaultLsofRunner)(paths);
     if (result.stderr.trim() !== "") {
       return {
         status: "unknown",

@@ -1,6 +1,8 @@
+import { execFile, execFileSync } from "node:child_process";
 import { lstat, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +11,17 @@ import { databaseBackupEntrySchema } from "../../src/contracts/database-backup.j
 import { executeDatabaseVacuum } from "../../src/core/database-executor.js";
 import { purgeDatabaseBackup, undoDatabaseVacuum } from "../../src/core/database-recovery.js";
 import { readJsonFile } from "../../src/state/json-file.js";
+import { inspectCodexDatabase } from "../../src/adapters/codex-database.js";
+
+const execFileAsync = promisify(execFile);
+const hasSqlite = (() => {
+  try {
+    execFileSync("sqlite3", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 function identity(path: string, content: "original" | "compacted"): DatabaseIdentity {
   return {
@@ -56,20 +69,106 @@ function dependencies() {
     },
     inspectDatabase: async (path: string) => {
       const content = (await readFile(path, "utf8")) as "original" | "compacted";
+      const sidecars = await Promise.all(
+        (["wal", "shm"] as const).map(async (suffix) => {
+          const sidecarPath = `${path}-${suffix}`;
+          try {
+            const stats = await lstat(sidecarPath);
+            return {
+              suffix,
+              identity: {
+                path: sidecarPath,
+                device: stats.dev,
+                inode: stats.ino,
+                mode: stats.mode,
+                mtimeMs: stats.mtimeMs,
+                measuredBytes: stats.size,
+              },
+            };
+          } catch (error) {
+            if (
+              error instanceof Error &&
+              "code" in error &&
+              (error as NodeJS.ErrnoException).code === "ENOENT"
+            ) {
+              return undefined;
+            }
+            throw error;
+          }
+        }),
+      );
+      const wal = sidecars.find((sidecar) => sidecar?.suffix === "wal")?.identity;
+      const shm = sidecars.find((sidecar) => sidecar?.suffix === "shm")?.identity;
       return {
-        identity: identity(path, content),
+        identity: {
+          ...identity(path, content),
+          ...(wal === undefined ? {} : { wal }),
+          ...(shm === undefined ? {} : { shm }),
+        },
         estimatedReclaimBytes: content === "original" ? 768 : 0,
         freePageRatio: content === "original" ? 0.75 : 0,
         quickCheck: "ok" as const,
-        walBytes: 0,
-        shmBytes: 0,
-        sidecarsPresent: false,
+        walBytes: wal?.measuredBytes ?? 0,
+        shmBytes: shm?.measuredBytes ?? 0,
+        sidecarsPresent: wal !== undefined || shm !== undefined,
       };
     },
   };
 }
 
 describe("database vacuum execution and recovery", () => {
+  it.runIf(hasSqlite)("compacts and restores a real synthetic SQLite state database", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-sqlite-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await execFileAsync("sqlite3", [
+      originalPath,
+      [
+        "PRAGMA journal_mode=WAL;",
+        "CREATE TABLE _sqlx_migrations(version INTEGER NOT NULL, success INTEGER NOT NULL);",
+        "INSERT INTO _sqlx_migrations VALUES(39, 1);",
+        "CREATE TABLE threads(id INTEGER PRIMARY KEY, payload BLOB);",
+        "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1024)",
+        "INSERT INTO threads(payload) SELECT zeroblob(4096) FROM n;",
+        "DELETE FROM threads WHERE id <= 900;",
+        "PRAGMA wal_checkpoint(TRUNCATE);",
+      ].join(" "),
+    ]);
+    const before = await inspectCodexDatabase(originalPath);
+    expect(before.estimatedReclaimBytes).toBeGreaterThan(0);
+    const selectedAction: DatabaseVacuumAction = {
+      ...action(originalPath),
+      expectedReclaimBytes: before.estimatedReclaimBytes,
+      target: before.identity,
+    };
+    const offline = {
+      inspectProcesses: async () => ({ status: "idle" as const, pids: [] as [] }),
+      inspectOpenHandles: async () => ({ status: "idle" as const, pids: [] as [] }),
+    };
+
+    const result = await executeDatabaseVacuum(selectedAction, {
+      runId: "run-sqlite",
+      entryId: "entry-sqlite",
+      backupDirectory,
+      dependencies: offline,
+    });
+    const after = await inspectCodexDatabase(originalPath);
+    expect(after.identity.measuredBytes).toBeLessThan(before.identity.measuredBytes);
+    expect(after.identity.autoVacuum).toBe(2);
+
+    const manifestPath = join(backupDirectory, "entry-sqlite.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await undoDatabaseVacuum(manifest, {
+      manifestPath,
+      backupDirectory,
+      dependencies: offline,
+    });
+    expect((await inspectCodexDatabase(originalPath)).identity.fingerprint).toBe(
+      before.identity.fingerprint,
+    );
+    expect(result.reclaimedBytes).toBeGreaterThan(0);
+  });
+
   it("retains the original, installs the compacted copy, and restores through undo", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-executor-"));
     const originalPath = join(root, "state_5.sqlite");
@@ -99,6 +198,84 @@ describe("database vacuum execution and recovery", () => {
     expect(restored.status).toBe("restored");
     expect(await readFile(originalPath, "utf8")).toBe("original");
     await expect(lstat(result.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("resumes an interrupted sidecar restore without losing either database", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-resume-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await writeFile(`${originalPath}-wal`, "");
+    await writeFile(`${originalPath}-shm`, "synthetic shm");
+    const selectedAction = {
+      ...action(originalPath),
+      target: (await dependencies().inspectDatabase(originalPath)).identity,
+    };
+    await executeDatabaseVacuum(selectedAction, {
+      runId: "run-resume",
+      entryId: "entry-resume",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-resume.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+
+    await expect(
+      undoDatabaseVacuum(manifest, {
+        manifestPath,
+        backupDirectory,
+        dependencies: {
+          ...dependencies(),
+          async rename(source, destination) {
+            if (source.endsWith("-shm")) {
+              throw new Error("injected SHM restore failure");
+            }
+            await rename(source, destination);
+          },
+        },
+      }),
+    ).rejects.toThrow("injected SHM restore failure");
+    const interrupted = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    expect(interrupted.status).toBe("restoring");
+
+    const restored = await undoDatabaseVacuum(interrupted, {
+      manifestPath,
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    expect(restored.status).toBe("restored");
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    expect(await readFile(`${originalPath}-shm`, "utf8")).toBe("synthetic shm");
+    await expect(lstat(`${originalPath}-wal`)).resolves.toBeDefined();
+  });
+
+  it("rejects recovery manifests that escape their owned backup paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-paths-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-paths",
+      entryId: "entry-paths",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-paths.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+
+    await expect(
+      undoDatabaseVacuum(
+        {
+          ...manifest,
+          backupPath: join(root, "unowned.sqlite"),
+        },
+        {
+          manifestPath,
+          backupDirectory,
+          dependencies: dependencies(),
+        },
+      ),
+    ).rejects.toThrow("outside its owned backup set");
   });
 
   it("rolls back when the compacted copy cannot be installed", async () => {

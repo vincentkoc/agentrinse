@@ -37,6 +37,9 @@ export function renderRunDetails(run: CleanupRun): string {
         lines.push(`  recovery ref: ${action.recoveryRef}`);
       }
     }
+    if (action.type === "database.vacuum" && action.backupPath !== undefined) {
+      lines.push(`  rollback copy: ${action.backupPath}`);
+    }
   }
 
   if (run.status === "partial" || run.status === "failed" || run.status === "interrupted") {

@@ -13,6 +13,7 @@ import { cleanupPlanSchema } from "../contracts/plan.js";
 import { auditReportSchema } from "../contracts/report.js";
 import { cleanupRunSchema } from "../contracts/run.js";
 import { quarantineEntrySchema } from "../contracts/quarantine.js";
+import { databaseBackupEntrySchema } from "../contracts/database-backup.js";
 import { doctorReportSchema, type DoctorCheck, type DoctorReport } from "../contracts/doctor.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
@@ -502,6 +503,37 @@ async function providerChecks(
   return checks;
 }
 
+async function databaseMaintenanceCheck(
+  runCommand: (command: string, args: string[]) => Promise<CommandResult>,
+): Promise<DoctorCheck> {
+  const available: string[] = [];
+  const missing: string[] = [];
+  for (const [command, args] of [
+    ["sqlite3", ["--version"]],
+    ["lsof", ["-v"]],
+  ] as const) {
+    try {
+      const result = await runCommand(command, [...args]);
+      available.push(result.stdout.trim().split(/\s+/u)[0] || command);
+    } catch {
+      missing.push(command);
+    }
+  }
+  return missing.length === 0
+    ? {
+        id: "database-maintenance",
+        status: "pass",
+        summary: "offline database maintenance tools are available",
+        detail: available.join(", "),
+      }
+    : {
+        id: "database-maintenance",
+        status: "pass",
+        summary: `offline database maintenance is unavailable (${missing.join(", ")})`,
+        remediation: "Install sqlite3 and lsof before using audit --allow-offline-vacuum.",
+      };
+}
+
 async function artifactChecks(config: AgentRinseConfig): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   for (const [index, project] of config.artifacts.projects.entries()) {
@@ -644,6 +676,7 @@ export async function executeDoctorCommand(
     ...(await gitChecks(loaded.config, runCommand)),
     await dockerCheck(loaded.config.adapters.docker?.enabled === true, runCommand),
     await moleCheck(platform, runCommand),
+    await databaseMaintenanceCheck(runCommand),
     ...(await providerChecks(options.home, loaded.config, platform)),
     ...(await artifactChecks(loaded.config)),
     await lockCheck(layout.locks, dependencies.lock),
@@ -651,6 +684,11 @@ export async function executeDoctorCommand(
     await schemaDirectoryCheck("schema:plans", layout.plans, cleanupPlanSchema),
     await schemaDirectoryCheck("schema:runs", layout.runs, cleanupRunSchema),
     await schemaDirectoryCheck("schema:quarantine", layout.quarantine, quarantineEntrySchema),
+    await schemaDirectoryCheck(
+      "schema:database-backups",
+      layout.databaseBackups,
+      databaseBackupEntrySchema,
+    ),
   ];
   const report = doctorReportSchema.parse({
     schemaVersion: 1,

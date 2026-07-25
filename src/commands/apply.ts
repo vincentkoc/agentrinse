@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import { loadConfigForHome } from "../config/load.js";
 import { cleanupPlanSchema } from "../contracts/plan.js";
+import { actionRiskSchema, type ActionRisk } from "../contracts/action.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { applyCleanupPlan } from "../core/apply.js";
 import { CommandInterruptedError } from "../core/interruption.js";
@@ -16,6 +17,7 @@ export type ApplyCommandOptions = {
   yes: boolean;
   json: boolean;
   signal?: AbortSignal;
+  maxRisk?: ActionRisk;
 };
 
 export type ApplyCommandResult = {
@@ -67,7 +69,7 @@ export async function confirmApply(
 
   try {
     const answer = await (dependencies.question ?? defaultQuestion)(
-      `Apply ${actionCount} safe cleanup action(s)? [y/N] `,
+      `Apply ${actionCount} reviewed cleanup action(s)? [y/N] `,
       signal,
     );
     return ["y", "yes"].includes(answer.trim().toLowerCase());
@@ -102,7 +104,17 @@ export async function executeApplyCommand(
   }
   const input = await readJsonFile(resolve(options.plan));
   const plan = cleanupPlanSchema.parse(input);
-  const { config } = await loadConfigForHome(plan.home, options.config);
+  const { config: loadedConfig } = await loadConfigForHome(plan.home, options.config);
+  const config =
+    options.maxRisk === undefined
+      ? loadedConfig
+      : {
+          ...loadedConfig,
+          plan: {
+            ...loadedConfig.plan,
+            maxRisk: actionRiskSchema.parse(options.maxRisk),
+          },
+        };
 
   if (!options.yes && !(await confirmApply(plan.actions.length, options.signal))) {
     throw new Error("apply cancelled");
@@ -114,7 +126,18 @@ export async function executeApplyCommand(
     stateRoot: resolveStateRoot(plan.home, options.stateDir),
     ...(options.signal === undefined ? {} : { signal: options.signal }),
     dependencies: {
-      loadCurrentConfig: async () => (await loadConfigForHome(plan.home, options.config)).config,
+      loadCurrentConfig: async () => {
+        const current = (await loadConfigForHome(plan.home, options.config)).config;
+        return options.maxRisk === undefined
+          ? current
+          : {
+              ...current,
+              plan: {
+                ...current.plan,
+                maxRisk: actionRiskSchema.parse(options.maxRisk),
+              },
+            };
+      },
     },
   });
   return {

@@ -1,5 +1,5 @@
 import { lstat, rm } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import {
   inspectCodexDatabase,
@@ -57,6 +57,31 @@ async function persist(
   return parsed;
 }
 
+function assertRecoveryPaths(entry: DatabaseBackupEntry, options: DatabaseRecoveryOptions): void {
+  const backupDirectory = resolve(options.backupDirectory);
+  const expectedBackupPath = join(
+    backupDirectory,
+    `${entry.entryId}-${entry.target.filename}.original`,
+  );
+  const expectedTemporaryPath = join(
+    dirname(entry.originalPath),
+    `.${entry.target.filename}.${entry.entryId}.vacuum`,
+  );
+  const expectedManifestPath = join(backupDirectory, `${entry.entryId}.json`);
+  if (
+    resolve(entry.originalPath) !== resolve(entry.target.path) ||
+    resolve(entry.backupPath) !== expectedBackupPath ||
+    resolve(entry.temporaryPath) !== resolve(expectedTemporaryPath) ||
+    resolve(options.manifestPath) !== expectedManifestPath ||
+    (entry.backupWalPath !== undefined &&
+      resolve(entry.backupWalPath) !== `${expectedBackupPath}-wal`) ||
+    (entry.backupShmPath !== undefined &&
+      resolve(entry.backupShmPath) !== `${expectedBackupPath}-shm`)
+  ) {
+    throw new Error("database recovery manifest contains paths outside its owned backup set");
+  }
+}
+
 async function assertOffline(
   entry: DatabaseBackupEntry,
   dependencies: DatabaseRecoveryDependencies,
@@ -97,11 +122,37 @@ async function markRestored(
   });
 }
 
+function backupSidecars(entry: DatabaseBackupEntry): Array<{ backup: string; original: string }> {
+  return [
+    ...(entry.backupWalPath === undefined
+      ? []
+      : [{ backup: entry.backupWalPath, original: `${entry.originalPath}-wal` }]),
+    ...(entry.backupShmPath === undefined
+      ? []
+      : [{ backup: entry.backupShmPath, original: `${entry.originalPath}-shm` }]),
+  ];
+}
+
+async function restoreSidecars(
+  entry: DatabaseBackupEntry,
+  rename: typeof renameNoReplace,
+): Promise<void> {
+  for (const sidecar of backupSidecars(entry)) {
+    if (await pathExists(sidecar.backup)) {
+      if (await pathExists(sidecar.original)) {
+        throw new Error(`database sidecar restore destination is occupied: ${sidecar.original}`);
+      }
+      await rename(sidecar.backup, sidecar.original);
+    }
+  }
+}
+
 export async function undoDatabaseVacuum(
   input: DatabaseBackupEntry,
   options: DatabaseRecoveryOptions,
 ): Promise<DatabaseBackupEntry> {
   let entry = databaseBackupEntrySchema.parse(input);
+  assertRecoveryPaths(entry, options);
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
   const rename = dependencies.rename ?? renameNoReplace;
@@ -116,6 +167,7 @@ export async function undoDatabaseVacuum(
     if (!originalExists || backupExists) {
       throw new Error("interrupted database preparation has ambiguous file state");
     }
+    await restoreSidecars(entry, rename);
     if (temporaryExists) {
       await rm(entry.temporaryPath);
       await syncDirectory(dirname(entry.originalPath));
@@ -129,7 +181,9 @@ export async function undoDatabaseVacuum(
         entry.backupPath,
         dependencies,
       );
+      entry = await persist(options, { ...entry, status: "restoring" });
       await rename(entry.backupPath, entry.originalPath);
+      await restoreSidecars(entry, rename);
       await syncDirectory(dirname(entry.originalPath));
       if (temporaryExists) {
         await rm(entry.temporaryPath);
@@ -152,6 +206,7 @@ export async function undoDatabaseVacuum(
   if (entry.status === "restoring") {
     if (!currentOriginalExists && currentBackupExists && currentTemporaryExists) {
       await rename(entry.backupPath, entry.originalPath);
+      await restoreSidecars(entry, rename);
       await syncDirectory(dirname(entry.originalPath));
       await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
         entry.originalPath,
@@ -161,6 +216,7 @@ export async function undoDatabaseVacuum(
       return markRestored(options, entry, clock);
     }
     if (currentOriginalExists && !currentBackupExists && currentTemporaryExists) {
+      await restoreSidecars(entry, rename);
       await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
         entry.originalPath,
         dependencies,
@@ -190,7 +246,7 @@ export async function undoDatabaseVacuum(
   if (
     entry.backupIdentity === undefined ||
     backup.identity.fingerprint !== entry.backupIdentity.fingerprint ||
-    backup.sidecarsPresent
+    (backup.identity.wal?.measuredBytes ?? 0) > 0
   ) {
     throw new Error("the retained original database no longer matches its recovery manifest");
   }
@@ -203,6 +259,7 @@ export async function undoDatabaseVacuum(
   await syncDirectory(dirname(entry.originalPath));
   try {
     await rename(entry.backupPath, entry.originalPath);
+    await restoreSidecars(entry, rename);
     await syncDirectory(dirname(entry.originalPath));
     await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
       entry.originalPath,
@@ -227,17 +284,34 @@ export async function undoDatabaseVacuum(
       });
       throw new Error("database undo failed and the compacted database was restored");
     }
-    await persist(options, {
-      ...entry,
-      status: "partial",
-      diagnostic: {
-        severity: "error",
-        code: "DATABASE_UNDO_PARTIAL",
-        message: error instanceof Error ? error.message : String(error),
-        adapter: "codex",
-        resourceId: entry.resourceId,
-      },
-    });
+    const originalRestored =
+      (await pathExists(entry.originalPath)) && !(await pathExists(entry.backupPath));
+    await persist(
+      options,
+      originalRestored
+        ? {
+            ...entry,
+            status: "restoring",
+            diagnostic: {
+              severity: "error",
+              code: "DATABASE_UNDO_RESUMABLE",
+              message: error instanceof Error ? error.message : String(error),
+              adapter: "codex",
+              resourceId: entry.resourceId,
+            },
+          }
+        : {
+            ...entry,
+            status: "partial",
+            diagnostic: {
+              severity: "error",
+              code: "DATABASE_UNDO_PARTIAL",
+              message: error instanceof Error ? error.message : String(error),
+              adapter: "codex",
+              resourceId: entry.resourceId,
+            },
+          },
+    );
     throw error;
   }
 }
@@ -247,6 +321,7 @@ export async function purgeDatabaseBackup(
   options: DatabaseRecoveryOptions,
 ): Promise<{ entry: DatabaseBackupEntry; reclaimedBytes: number }> {
   let entry = databaseBackupEntrySchema.parse(input);
+  assertRecoveryPaths(entry, options);
   if (!["installed", "purging"].includes(entry.status)) {
     throw new Error(`database backup entry cannot be purged from ${entry.status}`);
   }
@@ -276,6 +351,17 @@ export async function purgeDatabaseBackup(
     throw new Error("database rollback copy is not a regular file");
   }
   entry = await persist(options, { ...entry, status: "purging" });
+  let reclaimedBytes = backupStats.size;
+  for (const sidecar of backupSidecars(entry)) {
+    if (await pathExists(sidecar.backup)) {
+      const stats = await lstat(sidecar.backup);
+      if (!stats.isFile() || stats.isSymbolicLink()) {
+        throw new Error("database rollback sidecar is not a regular file");
+      }
+      reclaimedBytes += stats.size;
+      await rm(sidecar.backup);
+    }
+  }
   await rm(entry.backupPath);
   await syncDirectory(options.backupDirectory);
   entry = await persist(options, {
@@ -284,5 +370,5 @@ export async function purgeDatabaseBackup(
     purgedAt: clock().toISOString(),
     diagnostic: undefined,
   });
-  return { entry, reclaimedBytes: backupStats.size };
+  return { entry, reclaimedBytes };
 }

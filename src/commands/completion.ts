@@ -41,7 +41,7 @@ _agentrinse_completion() {
     config) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.config.join(" ")}" -- "\${current}") ) ;;
     lock) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.lock.join(" ")}" -- "\${current}") ) ;;
     show) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.show.join(" ")}" -- "\${current}") ) ;;
-    *) COMPREPLY=( $(compgen -W "--help --version --home --config --state-dir --json --ndjson --redact --yes --output --audit --plan --since --profile --apply --max-risk --expired --run --action" -- "\${current}") ) ;;
+    *) COMPREPLY=( $(compgen -W "--help --version --home --config --state-dir --json --ndjson --redact --yes --output --audit --plan --since --profile --apply --max-risk --expired --run --action --allow-offline-vacuum" -- "\${current}") ) ;;
   esac
 }
 complete -F _agentrinse_completion agentrinse

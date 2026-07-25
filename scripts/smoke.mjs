@@ -32,6 +32,17 @@ const worktreeMain = join(home, "worktree-repo");
 const worktreeLinked = join(home, "worktree-task");
 const worktreeRemote = join(home, "worktree-remote.git");
 
+for (const [command, option] of [
+  ["audit", "--allow-offline-vacuum"],
+  ["plan", "--max-risk"],
+  ["apply", "--max-risk"],
+]) {
+  const help = await runCli([command, "--help"]);
+  if (!help.stdout.includes(option)) {
+    throw new Error(`${command} help does not expose ${option}`);
+  }
+}
+
 await mkdir(join(home, ".codex", "sessions"), { recursive: true });
 await mkdir(join(home, ".local", "share", "opencode", "snapshot"), {
   recursive: true,

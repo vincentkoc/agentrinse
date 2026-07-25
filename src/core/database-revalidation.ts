@@ -87,11 +87,11 @@ export async function revalidateDatabaseVacuum(
         "The Codex database identity or supported schema changed after planning.",
       );
     }
-    if (inspection.sidecarsPresent) {
+    if ((inspection.identity.wal?.measuredBytes ?? 0) > 0) {
       return stale(
         action,
-        "DATABASE_SIDECARS_PRESENT",
-        "A Codex database WAL or SHM companion exists.",
+        "DATABASE_WAL_NOT_EMPTY",
+        "The Codex database WAL contains uncheckpointed data.",
       );
     }
     const processes = await (dependencies.inspectProcesses ?? inspectCodexProcesses)(dependencies);

@@ -6,7 +6,11 @@ export function renderAdapters(): string {
     "",
     ...Object.values(PROVIDER_SPECS)
       .sort((left, right) => left.id.localeCompare(right.id))
-      .map((spec) => `${spec.id.padEnd(10)} audit-only  ${spec.displayName}`),
+      .map((spec) =>
+        spec.id === "codex"
+          ? `${spec.id.padEnd(10)} experimental ${spec.displayName} (offline DB vacuum)`
+          : `${spec.id.padEnd(10)} audit-only   ${spec.displayName}`,
+      ),
     "",
     "git        audit-only  Git worktrees (explicit root)",
     "runtime    audit-only  Installed agent runtimes",

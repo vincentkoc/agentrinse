@@ -44,6 +44,14 @@
       "type": "string",
       "minLength": 1
     },
+    "backupWalPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "backupShmPath": {
+      "type": "string",
+      "minLength": 1
+    },
     "temporaryPath": {
       "type": "string",
       "minLength": 1
@@ -127,6 +135,72 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "wal": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mtimeMs": {
+              "type": "number"
+            },
+            "measuredBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["path", "device", "inode", "mode", "mtimeMs", "measuredBytes"]
+        },
+        "shm": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mtimeMs": {
+              "type": "number"
+            },
+            "measuredBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["path", "device", "inode", "mode", "mtimeMs", "measuredBytes"]
         },
         "schemaDigest": {
           "type": "string",
@@ -226,6 +300,72 @@
             "minLength": 1
           }
         },
+        "wal": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mtimeMs": {
+              "type": "number"
+            },
+            "measuredBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["path", "device", "inode", "mode", "mtimeMs", "measuredBytes"]
+        },
+        "shm": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mtimeMs": {
+              "type": "number"
+            },
+            "measuredBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["path", "device", "inode", "mode", "mtimeMs", "measuredBytes"]
+        },
         "schemaDigest": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
@@ -323,6 +463,72 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "wal": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mtimeMs": {
+              "type": "number"
+            },
+            "measuredBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["path", "device", "inode", "mode", "mtimeMs", "measuredBytes"]
+        },
+        "shm": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mtimeMs": {
+              "type": "number"
+            },
+            "measuredBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": ["path", "device", "inode", "mode", "mtimeMs", "measuredBytes"]
         },
         "schemaDigest": {
           "type": "string",

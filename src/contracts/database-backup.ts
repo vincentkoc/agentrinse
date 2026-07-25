@@ -26,6 +26,8 @@ export const databaseBackupEntrySchema = z
     status: databaseBackupStatusSchema,
     originalPath: z.string().min(1),
     backupPath: z.string().min(1),
+    backupWalPath: z.string().min(1).optional(),
+    backupShmPath: z.string().min(1).optional(),
     temporaryPath: z.string().min(1),
     createdAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
@@ -37,6 +39,20 @@ export const databaseBackupEntrySchema = z
     diagnostic: diagnosticSchema.optional(),
   })
   .superRefine((entry, context) => {
+    if ((entry.target.wal === undefined) !== (entry.backupWalPath === undefined)) {
+      context.addIssue({
+        code: "custom",
+        message: "database WAL backup path must match the planned sidecar",
+        path: ["backupWalPath"],
+      });
+    }
+    if ((entry.target.shm === undefined) !== (entry.backupShmPath === undefined)) {
+      context.addIssue({
+        code: "custom",
+        message: "database SHM backup path must match the planned sidecar",
+        path: ["backupShmPath"],
+      });
+    }
     if (
       ["original-backed-up", "installed", "restoring", "purging", "purged"].includes(
         entry.status,

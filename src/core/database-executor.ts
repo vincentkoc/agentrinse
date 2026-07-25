@@ -159,14 +159,27 @@ export async function executeDatabaseVacuum(
     options.backupDirectory,
     `${options.entryId}-${action.target.filename}.original`,
   );
+  const backupWalPath = action.target.wal === undefined ? undefined : `${backupPath}-wal`;
+  const backupShmPath = action.target.shm === undefined ? undefined : `${backupPath}-shm`;
   const temporaryPath = join(
     originalDirectory,
     `.${action.target.filename}.${options.entryId}.vacuum`,
   );
   const manifestPath = join(options.backupDirectory, `${options.entryId}.json`);
   await ensurePrivateDirectory(options.backupDirectory);
+  const backupDirectoryStats = await lstat(options.backupDirectory);
+  const sourceStats = await lstat(action.target.path);
+  if (backupDirectoryStats.dev !== sourceStats.dev) {
+    throw new DatabaseExecutionError(
+      "database rollback storage is on a different filesystem",
+      "skipped-stale",
+      "DATABASE_BACKUP_CROSS_DEVICE",
+    );
+  }
   if (
     (await pathExists(backupPath)) ||
+    (backupWalPath !== undefined && (await pathExists(backupWalPath))) ||
+    (backupShmPath !== undefined && (await pathExists(backupShmPath))) ||
     (await pathExists(temporaryPath)) ||
     (await pathExists(manifestPath))
   ) {
@@ -188,6 +201,8 @@ export async function executeDatabaseVacuum(
       status: "preparing",
       originalPath: action.target.path,
       backupPath,
+      ...(backupWalPath === undefined ? {} : { backupWalPath }),
+      ...(backupShmPath === undefined ? {} : { backupShmPath }),
       temporaryPath,
       createdAt: clock().toISOString(),
       expiresAt: new Date(clock().getTime() + action.backupTtlMinutes * 60_000).toISOString(),
@@ -214,7 +229,8 @@ export async function executeDatabaseVacuum(
       compacted.identity.schemaDigest !== action.target.schemaDigest ||
       compacted.identity.migrationVersion !== action.target.migrationVersion ||
       compacted.identity.tables.join("\0") !== action.target.tables.join("\0") ||
-      compacted.identity.autoVacuum !== 2
+      compacted.identity.autoVacuum !== 2 ||
+      compacted.sidecarsPresent
     ) {
       throw new DatabaseExecutionError(
         "compacted database does not match the planned Codex contract",
@@ -229,7 +245,10 @@ export async function executeDatabaseVacuum(
     await assertOffline(action.target.path, dependencies);
     assertAuthorized(dependencies);
     const current = await inspect(action.target.path, dependencies);
-    if (current.identity.fingerprint !== action.target.fingerprint || current.sidecarsPresent) {
+    if (
+      current.identity.fingerprint !== action.target.fingerprint ||
+      (current.identity.wal?.measuredBytes ?? 0) > 0
+    ) {
       throw new DatabaseExecutionError(
         "database identity changed before the atomic swap",
         "skipped-stale",
@@ -238,8 +257,28 @@ export async function executeDatabaseVacuum(
       );
     }
 
-    await rename(action.target.path, backupPath);
+    const movedSidecars: Array<{ source: string; destination: string }> = [];
+    try {
+      if (action.target.wal !== undefined && backupWalPath !== undefined) {
+        await rename(action.target.wal.path, backupWalPath);
+        movedSidecars.push({ source: action.target.wal.path, destination: backupWalPath });
+      }
+      if (action.target.shm !== undefined && backupShmPath !== undefined) {
+        await rename(action.target.shm.path, backupShmPath);
+        movedSidecars.push({ source: action.target.shm.path, destination: backupShmPath });
+      }
+      await rename(action.target.path, backupPath);
+    } catch (error) {
+      for (const sidecar of movedSidecars.reverse()) {
+        if (!(await pathExists(sidecar.source)) && (await pathExists(sidecar.destination))) {
+          await rename(sidecar.destination, sidecar.source);
+        }
+      }
+      await syncDirectory(originalDirectory);
+      throw error;
+    }
     await syncDirectory(originalDirectory);
+    await syncDirectory(options.backupDirectory);
     const backup = await inspect(backupPath, dependencies, action.target.path);
     entry = await persist(
       manifestPath,
@@ -257,6 +296,12 @@ export async function executeDatabaseVacuum(
     } catch (error) {
       if (!(await pathExists(action.target.path)) && (await pathExists(backupPath))) {
         await rename(backupPath, action.target.path);
+        if (backupWalPath !== undefined && (await pathExists(backupWalPath))) {
+          await rename(backupWalPath, `${action.target.path}-wal`);
+        }
+        if (backupShmPath !== undefined && (await pathExists(backupShmPath))) {
+          await rename(backupShmPath, `${action.target.path}-shm`);
+        }
         await syncDirectory(originalDirectory);
         entry = await persist(
           manifestPath,

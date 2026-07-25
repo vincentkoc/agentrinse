@@ -288,11 +288,12 @@ export class ProviderAuditAdapter implements AuditAdapter {
         estimatedReclaimBytes >= DATABASE_RECLAIM_THRESHOLD_BYTES &&
         freePageRatio >= DATABASE_RECLAIM_RATIO;
       const allowed = resource.facts.offlineVacuumAllowed === true;
-      const sidecarsAbsent = resource.facts.sidecarsPresent === false;
+      const walSafe =
+        databaseIdentity.data.wal?.measuredBytes === undefined ||
+        databaseIdentity.data.wal.measuredBytes === 0;
       const ownerIdle = ownerProcesses?.status === "idle";
       const handlesIdle = openHandles?.status === "idle";
-      const eligible =
-        supported && worthwhile && allowed && sidecarsAbsent && ownerIdle && handlesIdle;
+      const eligible = supported && worthwhile && allowed && walSafe && ownerIdle && handlesIdle;
       const roots = [];
       if (!supported) {
         roots.push({
@@ -318,12 +319,12 @@ export class ProviderAuditAdapter implements AuditAdapter {
           detail: "Re-run the audit with --allow-offline-vacuum to propose this action.",
         });
       }
-      if (!sidecarsAbsent) {
+      if (!walSafe) {
         roots.push({
-          code: "database-sidecars-present",
+          code: "database-wal-not-empty",
           source: this.id,
           observedAt,
-          detail: "A WAL or SHM companion exists; AgentRinse will not remove SQLite sidecars.",
+          detail: "The WAL contains data and must be checkpointed by Codex before compaction.",
         });
       }
       if (!ownerIdle) {

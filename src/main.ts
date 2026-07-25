@@ -76,8 +76,15 @@ export function buildProgram(): Command {
     .option("--config <path>", "explicit JSON config")
     .option("--output <path>", "write the plan atomically")
     .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option("--max-risk <risk>", "safe, recoverable, destructive, or experimental")
     .action(
-      async (options: { audit: string; config?: string; output?: string; stateDir?: string }) => {
+      async (options: {
+        audit: string;
+        config?: string;
+        output?: string;
+        stateDir?: string;
+        maxRisk?: "safe" | "recoverable" | "destructive" | "experimental";
+      }) => {
         const result = await executePlanCommand(options);
         process.stdout.write(result.output);
       },
@@ -139,6 +146,7 @@ export function buildProgram(): Command {
     .option("--state-dir <path>", "override the AgentRinse state directory")
     .option("--yes", "authorize non-interactive apply", false)
     .option("--json", "emit the versioned run journal", false)
+    .option("--max-risk <risk>", "must match the risk ceiling used to create the plan")
     .action(
       async (options: {
         plan: string;
@@ -146,6 +154,7 @@ export function buildProgram(): Command {
         stateDir?: string;
         yes: boolean;
         json: boolean;
+        maxRisk?: "safe" | "recoverable" | "destructive" | "experimental";
       }) => {
         const controller = new AbortController();
         const interrupt = () => {
@@ -311,7 +320,7 @@ export function buildProgram(): Command {
 
   program
     .command("purge")
-    .description("Preview or permanently remove quarantined worktrees.")
+    .description("Preview or permanently remove expired recovery backups.")
     .option("--expired", "select expired live quarantine entries", false)
     .option("--run <run-id>", "select live quarantine entries from one run")
     .option("--apply", "perform the destructive purge", false)

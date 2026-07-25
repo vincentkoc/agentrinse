@@ -18,6 +18,7 @@ function healthyRunner(command: string, args: string[]): Promise<CommandResult> 
   const key = `${command} ${args.join(" ")}`;
   const output: Record<string, string> = {
     "lsof -v": "lsof 4.99",
+    "sqlite3 --version": "3.51.0",
     "git --version": "git version 2.50.1",
     "docker --version": "Docker version 28.3.0",
     "docker context show": "desktop-linux",
@@ -69,6 +70,9 @@ describe("doctor command", () => {
     );
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "docker", status: "pass" }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({ id: "database-maintenance", status: "pass" }),
     );
   });
 
