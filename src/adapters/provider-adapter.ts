@@ -1,5 +1,5 @@
 import { lstat } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { AuditAdapter, AuditContext, CollectionResult } from "../contracts/adapter.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
@@ -19,6 +19,7 @@ import {
   type CodexDatabaseInspection,
 } from "./codex-database.js";
 import { collectProviderReachability } from "./provider-reachability.js";
+import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
 
 export type ProviderAdapterOptions = {
@@ -58,19 +59,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
   }
 
   private root(context: AuditContext): string {
-    if (this.options.root !== undefined) {
-      return resolve(this.options.root);
-    }
-    if (this.spec.id === "claude") {
-      const configuredRoot = this.options.environment?.CLAUDE_CONFIG_DIR;
-      if (configuredRoot !== undefined && configuredRoot !== "") {
-        if (!isAbsolute(configuredRoot)) {
-          throw new Error("CLAUDE_CONFIG_DIR must be an absolute path");
-        }
-        return resolve(configuredRoot);
-      }
-    }
-    return resolve(this.spec.defaultRoot(context.home, this.options.platform ?? process.platform));
+    return resolveProviderRoot(this.spec, context.home, this.options);
   }
 
   async probe(context: AuditContext): Promise<AdapterProbe> {
