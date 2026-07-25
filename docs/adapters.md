@@ -1,14 +1,14 @@
 # Adapter Matrix
 
-Provider and Docker adapters are read-only except for one versioned Codex
-maintenance action. Artifact cleanup is scoped to explicitly configured
-rebuildable directories. The Git adapter can emit one recoverable
-whole-worktree action when every safety gate is proven.
+Provider and Docker adapters are read-only except for versioned Codex database
+maintenance and exact Claude debug-log quarantine. Artifact cleanup is scoped
+to explicitly configured rebuildable directories. The Git adapter can emit one
+recoverable whole-worktree action when every safety gate is proven.
 
 | Adapter        | Current capability                                        | Protected state |
 | -------------- | --------------------------------------------------------- | --------------- |
 | Codex          | sessions, worktrees, four SQLite DBs, offline compaction  | conditional     |
-| Claude         | project sessions, debug logs, managed worktrees           | all             |
+| Claude         | sessions, worktrees, recoverable old debug-log quarantine | conditional     |
 | Cursor         | workspace state, global state, logs                       | all             |
 | GitHub Copilot | CLI sessions and logs                                     | all             |
 | Zed            | user-data root                                            | all             |
@@ -53,7 +53,15 @@ descriptors.
 
 ### Claude
 
-Native retention and orphaned-worktree behavior stays provider-owned.
+Transcripts, prompt history, checkpoint files, task state, settings,
+credentials, plugins, caches, and native orphaned-worktree cleanup stay
+provider-owned.
+
+Direct regular files matching `debug/*.txt` may produce
+`provider.file-quarantine` after 30 days. The action is `recoverable`, excluded
+by the default `safe` ceiling, retains the exact file for seven days, and
+requires Claude to be stopped with no open descriptor. JSONL and nested paths
+never match this policy.
 
 ### Cursor
 

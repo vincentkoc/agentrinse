@@ -23,6 +23,8 @@ The project follows semantic versioning after its first supported release.
   JSON Schema branches that bind every action adapter to its target provider
 - provider liveness detection for native, helper, interpreted, and wrapped
   command lines, with fail-closed incomplete process evidence
+- recoverable quarantine for direct Claude `debug/*.txt` files older than 30
+  days, with a seven-day undo window before purge
 
 ### Fixed
 
@@ -37,6 +39,8 @@ The project follows semantic versioning after its first supported release.
   path contract for disposable log or cache files
 - directories, symlinks, sessions, transcripts, databases, credentials,
   configuration, and ambiguous recovery state remain outside this boundary
+- Claude cleanup excludes JSONL, nested paths, recent logs, active Claude
+  processes, open descriptors, and incomplete directory enumeration
 
 ## [0.4.0] - 2026-07-25
 
