@@ -99,11 +99,14 @@ describe("Codex database inspection", () => {
 
   it("uses long operation-specific timeouts for compaction and integrity checks", async () => {
     const timeouts: number[] = [];
+    const signals: Array<AbortSignal | undefined> = [];
+    const controller = new AbortController();
     const runSqlite = async (
       args: string[],
-      options?: { timeoutMs: number },
+      options?: { timeoutMs: number; signal?: AbortSignal },
     ): Promise<{ stdout: string; stderr: string }> => {
       timeouts.push(options?.timeoutMs ?? 0);
+      signals.push(options?.signal);
       return {
         stdout: (args.at(-1) ?? "").includes("integrity_check") ? "ok\n" : "",
         stderr: "",
@@ -112,10 +115,15 @@ describe("Codex database inspection", () => {
 
     await vacuumCodexDatabaseInto("/fixture/state_5.sqlite", "/fixture/output.sqlite", {
       runSqlite,
+      signal: controller.signal,
     });
-    await verifyCodexDatabaseIntegrity("/fixture/output.sqlite", { runSqlite });
+    await verifyCodexDatabaseIntegrity("/fixture/output.sqlite", {
+      runSqlite,
+      signal: controller.signal,
+    });
 
     expect(timeouts).toEqual([2 * 60 * 60_000, 2 * 60 * 60_000, 30 * 60_000]);
+    expect(signals).toEqual([controller.signal, controller.signal, controller.signal]);
   });
 
   it("parses exact database descriptors and Codex owner processes", async () => {

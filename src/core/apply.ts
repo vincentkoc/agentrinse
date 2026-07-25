@@ -376,6 +376,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             runId,
             entryId: isolationId,
             backupDirectory: layout.databaseBackups,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
             dependencies: {
               clock,
               authorization: {

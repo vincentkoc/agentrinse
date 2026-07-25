@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { lstat, mkdtemp } from "node:fs/promises";
+import { chmod, lstat, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -26,6 +26,8 @@ describe("database exclusion", () => {
       path,
       "PRAGMA journal_mode=WAL; CREATE TABLE values_table(value INTEGER); INSERT INTO values_table VALUES(1); PRAGMA wal_checkpoint(TRUNCATE);",
     ]);
+    await chmod(path, 0o7600);
+    const originalMode = (await lstat(path)).mode & 0o7777;
 
     const exclusion = await acquireDatabaseExclusion([path]);
     expect((await lstat(path)).mode & 0o222).toBe(0);
@@ -49,7 +51,7 @@ describe("database exclusion", () => {
 
     await exclusion.release();
     await expect(waitingWrite).rejects.toBeDefined();
-    expect((await lstat(path)).mode & 0o200).toBe(0o200);
+    expect((await lstat(path)).mode & 0o7777).toBe(originalMode);
     await expect(
       execFileAsync("sqlite3", ["-batch", path, "SELECT count(*) FROM values_table;"]),
     ).resolves.toMatchObject({ stdout: "1\n" });

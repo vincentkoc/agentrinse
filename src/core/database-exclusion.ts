@@ -106,7 +106,7 @@ async function releaseHandles(
   }
   for (const file of files) {
     try {
-      await file.handle.chmod((restoreInitialModes ? file.initialMode : file.restoreMode) & 0o777);
+      await file.handle.chmod((restoreInitialModes ? file.initialMode : file.restoreMode) & 0o7777);
     } catch (error) {
       firstError ??= error;
     }
@@ -141,13 +141,13 @@ export async function acquireDatabaseExclusion(
       const initialStats = await inspectionHandle.stat();
       const restoreMode = restoreModes.get(path) ?? initialStats.mode;
       if ((initialStats.mode & 0o200) === 0 && (restoreMode & 0o200) !== 0) {
-        await inspectionHandle.chmod(restoreMode & 0o777);
+        await inspectionHandle.chmod(restoreMode & 0o7777);
       }
       let handle: FileHandle;
       try {
         handle = await open(path, "r+");
       } catch (error) {
-        await inspectionHandle.chmod(initialStats.mode & 0o777);
+        await inspectionHandle.chmod(initialStats.mode & 0o7777);
         await inspectionHandle.close();
         throw error;
       }

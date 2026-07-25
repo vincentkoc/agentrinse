@@ -43,6 +43,14 @@ describe("database vacuum revalidation", () => {
         migrationVersion: 39,
         migrationDigest: contract.migrationDigest,
         tables: ["_sqlx_migrations", "threads"],
+        wal: {
+          path: `${path}-wal`,
+          device: 1,
+          inode: 3,
+          mode: 0o100600,
+          mtimeMs: 4,
+          measuredBytes: 0,
+        },
         schemaDigest: contract.schemaDigest,
         fingerprint: "b".repeat(64),
       },
@@ -78,5 +86,28 @@ describe("database vacuum revalidation", () => {
         availableBytes: async () => peakBytes,
       }),
     ).resolves.toEqual({ status: "eligible" });
+
+    const editedSidecarPath = await revalidateDatabaseVacuum(
+      {
+        ...action,
+        target: {
+          ...action.target,
+          wal: {
+            ...action.target.wal!,
+            path: join(home, "unrelated.sqlite"),
+          },
+        },
+      },
+      home,
+      config,
+      {
+        ...dependencies,
+        availableBytes: async () => peakBytes,
+      },
+    );
+    expect(editedSidecarPath).toMatchObject({
+      status: "stale",
+      diagnostic: { code: "DATABASE_IDENTITY_CHANGED" },
+    });
   });
 });

@@ -20,6 +20,7 @@ import {
   lockedFileIdentityMatches,
   type DatabaseExclusion,
 } from "./database-exclusion.js";
+import { CommandInterruptedError } from "./interruption.js";
 import { exchangePaths, renameNoReplace } from "./no-clobber-rename.js";
 
 export type DatabaseExecutionOutcome =
@@ -61,6 +62,7 @@ export type ExecuteDatabaseVacuumOptions = {
   runId: string;
   entryId: string;
   backupDirectory: string;
+  signal?: AbortSignal;
   dependencies?: DatabaseExecutionDependencies;
 };
 
@@ -84,6 +86,30 @@ function assertAuthorized(dependencies: DatabaseExecutionDependencies): void {
       "PLAN_EXPIRED_DURING_DATABASE_VACUUM",
     );
   }
+}
+
+function interruptionFrom(signal?: AbortSignal): CommandInterruptedError | undefined {
+  if (signal?.aborted !== true) {
+    return undefined;
+  }
+  return signal.reason instanceof CommandInterruptedError
+    ? signal.reason
+    : new CommandInterruptedError("database vacuum interrupted");
+}
+
+function throwIfInterrupted(signal?: AbortSignal): void {
+  const interruption = interruptionFrom(signal);
+  if (interruption !== undefined) {
+    throw interruption;
+  }
+}
+
+function isInterruptionError(error: unknown, signal?: AbortSignal): boolean {
+  return (
+    error instanceof CommandInterruptedError ||
+    (signal?.aborted === true &&
+      (error === signal.reason || (error instanceof Error && error.name === "AbortError")))
+  );
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -222,7 +248,11 @@ export async function executeDatabaseVacuum(
   action: DatabaseVacuumAction,
   options: ExecuteDatabaseVacuumOptions,
 ): Promise<DatabaseExecutionResult> {
-  const dependencies = options.dependencies ?? {};
+  throwIfInterrupted(options.signal);
+  const dependencies: DatabaseExecutionDependencies =
+    options.signal === undefined
+      ? (options.dependencies ?? {})
+      : { ...options.dependencies, signal: options.signal };
   const clock = dependencies.clock ?? (() => new Date());
   const rename = dependencies.rename ?? renameNoReplace;
   const exchange = dependencies.exchange ?? exchangePaths;
@@ -302,7 +332,8 @@ export async function executeDatabaseVacuum(
       temporaryPath,
       dependencies,
     );
-    await chmod(temporaryPath, action.target.mode & 0o777);
+    throwIfInterrupted(options.signal);
+    await chmod(temporaryPath, action.target.mode & 0o7777);
     await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
       temporaryPath,
       dependencies,
@@ -388,16 +419,19 @@ export async function executeDatabaseVacuum(
       await assertOffline(action.target.path, dependencies, new Set([process.pid]));
       await assertSidecarsStable(action);
       assertAuthorized(dependencies);
+      throwIfInterrupted(options.signal);
 
       await exchange(action.target.path, temporaryPath);
       exchanged = true;
       if (action.target.wal !== undefined && backupWalPath !== undefined) {
-        await rename(action.target.wal.path, backupWalPath);
-        movedSidecars.push({ source: action.target.wal.path, destination: backupWalPath });
+        const source = `${action.target.path}-wal`;
+        await rename(source, backupWalPath);
+        movedSidecars.push({ source, destination: backupWalPath });
       }
       if (action.target.shm !== undefined && backupShmPath !== undefined) {
-        await rename(action.target.shm.path, backupShmPath);
-        movedSidecars.push({ source: action.target.shm.path, destination: backupShmPath });
+        const source = `${action.target.path}-shm`;
+        await rename(source, backupShmPath);
+        movedSidecars.push({ source, destination: backupShmPath });
       }
       await rename(temporaryPath, backupPath);
       archived = true;
@@ -425,6 +459,9 @@ export async function executeDatabaseVacuum(
         reclaimedBytes: 0,
       };
     } catch (installError) {
+      if (isInterruptionError(installError, options.signal) && !exchanged) {
+        throw interruptionFrom(options.signal) ?? installError;
+      }
       if (
         installError instanceof DatabaseExecutionError &&
         installError.outcome === "skipped-stale" &&
@@ -504,6 +541,31 @@ export async function executeDatabaseVacuum(
       await exclusion.release();
     }
   } catch (error) {
+    if (isInterruptionError(error, options.signal)) {
+      const sourceExists = await pathExists(action.target.path).catch(() => false);
+      const backupExists = await pathExists(backupPath).catch(() => false);
+      if (sourceExists && !backupExists) {
+        await rm(temporaryDirectory, { recursive: true, force: true });
+        await syncDirectory(originalDirectory);
+        entry = await persist(
+          manifestPath,
+          {
+            ...entry,
+            status: "restored",
+            restoredAt: clock().toISOString(),
+            diagnostic: {
+              severity: "warning",
+              code: "COMMAND_INTERRUPTED",
+              message: "database vacuum was interrupted before the atomic swap",
+              adapter: action.adapter,
+              resourceId: action.resourceId,
+            },
+          },
+          options.backupDirectory,
+        );
+      }
+      throw interruptionFrom(options.signal) ?? error;
+    }
     if (error instanceof DatabaseExecutionError) {
       const sourceExists = await pathExists(action.target.path).catch(() => false);
       const backupExists = await pathExists(backupPath).catch(() => false);

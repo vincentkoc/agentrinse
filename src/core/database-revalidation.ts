@@ -1,5 +1,6 @@
 import { lstat, statfs } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   codexDatabaseContractMatches,
@@ -78,7 +79,7 @@ export async function revalidateDatabaseVacuum(
       dependencies,
     );
     if (
-      inspection.identity.fingerprint !== action.target.fingerprint ||
+      !isDeepStrictEqual(inspection.identity, action.target) ||
       !codexDatabaseContractMatches(inspection.identity)
     ) {
       return stale(

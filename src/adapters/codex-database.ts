@@ -71,9 +71,11 @@ export type CommandResult = {
 
 export type SqliteRunOptions = {
   timeoutMs: number;
+  signal?: AbortSignal;
 };
 
 export type CodexDatabaseDependencies = {
+  signal?: AbortSignal;
   runSqlite?: (args: string[], options?: SqliteRunOptions) => Promise<CommandResult>;
   runLsof?: (paths: string[]) => Promise<CommandResult>;
   runPs?: () => Promise<CommandResult>;
@@ -120,8 +122,18 @@ async function defaultSqliteRunner(
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
     timeout: options.timeoutMs,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
   return { stdout: result.stdout, stderr: result.stderr };
+}
+
+function sqliteRunOptions(
+  timeoutMs: number,
+  dependencies: CodexDatabaseDependencies,
+): SqliteRunOptions {
+  return dependencies.signal === undefined
+    ? { timeoutMs }
+    : { timeoutMs, signal: dependencies.signal };
 }
 
 async function querySqlite(
@@ -142,7 +154,7 @@ async function querySqlite(
       `${pathToFileURL(path).href}?immutable=1`,
       sql,
     ],
-    { timeoutMs },
+    sqliteRunOptions(timeoutMs, dependencies),
   );
   if (result.stderr.trim() !== "") {
     throw new Error(`sqlite3 could not inspect ${path}: ${result.stderr.trim()}`);
@@ -355,7 +367,7 @@ export async function vacuumCodexDatabaseInto(
       `${pathToFileURL(sourcePath).href}?immutable=1`,
       `VACUUM INTO ${sqliteString(destinationPath)};`,
     ],
-    { timeoutMs: SQLITE_MAINTENANCE_TIMEOUT_MS },
+    sqliteRunOptions(SQLITE_MAINTENANCE_TIMEOUT_MS, dependencies),
   );
   if (result.stderr.trim() !== "") {
     throw new Error(`sqlite3 VACUUM INTO failed: ${result.stderr.trim()}`);
@@ -368,7 +380,7 @@ export async function vacuumCodexDatabaseInto(
       destinationPath,
       "PRAGMA synchronous=FULL; PRAGMA auto_vacuum=INCREMENTAL; VACUUM; PRAGMA journal_mode=WAL;",
     ],
-    { timeoutMs: SQLITE_MAINTENANCE_TIMEOUT_MS },
+    sqliteRunOptions(SQLITE_MAINTENANCE_TIMEOUT_MS, dependencies),
   );
   if (normalize.stderr.trim() !== "") {
     throw new Error(

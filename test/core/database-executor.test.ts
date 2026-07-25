@@ -10,6 +10,7 @@ import type { DatabaseIdentity, DatabaseVacuumAction } from "../../src/contracts
 import { databaseBackupEntrySchema } from "../../src/contracts/database-backup.js";
 import { executeDatabaseVacuum } from "../../src/core/database-executor.js";
 import { purgeDatabaseBackup, undoDatabaseVacuum } from "../../src/core/database-recovery.js";
+import { CommandInterruptedError } from "../../src/core/interruption.js";
 import { exchangePaths } from "../../src/core/no-clobber-rename.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import {
@@ -607,6 +608,39 @@ describe("database vacuum execution and recovery", () => {
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("distinguishes a completed two-file rollback from a completed installation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-two-file-rollback-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const baseDependencies = dependencies();
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-two-file-rollback",
+      entryId: "entry-two-file-rollback",
+      backupDirectory,
+      dependencies: baseDependencies,
+    });
+    const manifestPath = join(backupDirectory, "entry-two-file-rollback.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await exchangePaths(originalPath, manifest.backupPath);
+
+    const restored = await undoDatabaseVacuum(
+      {
+        ...manifest,
+        status: "installing",
+      },
+      {
+        manifestPath,
+        backupDirectory,
+        dependencies: baseDependencies,
+      },
+    );
+
+    expect(restored.status).toBe("restored");
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    await expect(lstat(manifest.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("finishes an original-only rollback after an interrupted sidecar restore", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-original-only-"));
     const originalPath = join(root, "state_5.sqlite");
@@ -674,7 +708,7 @@ describe("database vacuum execution and recovery", () => {
           dependencies: dependencies(),
         },
       ),
-    ).rejects.toThrow("changed after installation");
+    ).rejects.toThrow("ambiguous file identities");
     expect(await readFile(originalPath, "utf8")).toBe("original");
   });
 
@@ -704,6 +738,45 @@ describe("database vacuum execution and recovery", () => {
     });
     const manifest = databaseBackupEntrySchema.parse(
       await readJsonFile(join(backupDirectory, "entry-expiry.json")),
+    );
+    expect(manifest.status).toBe("restored");
+    await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("honors cancellation immediately before the database exchange", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-cancel-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const baseDependencies = dependencies();
+    const controller = new AbortController();
+    let exchangeCalled = false;
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-cancel",
+        entryId: "entry-cancel",
+        backupDirectory,
+        signal: controller.signal,
+        dependencies: {
+          ...baseDependencies,
+          async acquireExclusion(paths) {
+            const exclusion = await baseDependencies.acquireExclusion(paths);
+            controller.abort(new CommandInterruptedError("test interruption"));
+            return exclusion;
+          },
+          async exchange(source, destination) {
+            exchangeCalled = true;
+            await exchangePaths(source, destination);
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(CommandInterruptedError);
+
+    expect(exchangeCalled).toBe(false);
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    const manifest = databaseBackupEntrySchema.parse(
+      await readJsonFile(join(backupDirectory, "entry-cancel.json")),
     );
     expect(manifest.status).toBe("restored");
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });

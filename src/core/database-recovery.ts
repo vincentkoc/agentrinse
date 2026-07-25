@@ -388,7 +388,55 @@ export async function undoDatabaseVacuum(
 
   if (entry.status === "installing" || entry.status === "partial") {
     if (originalExists && backupExists && !temporaryExists) {
-      entry = await persist(options, { ...entry, status: "installed" });
+      const original = await inspect(entry.originalPath, dependencies);
+      const backup = await inspect(
+        entry.backupPath,
+        dependencies,
+        entry.originalPath,
+        entry.originalPath,
+      );
+      const retainedOriginal = entry.backupIdentity ?? entry.target;
+      if (
+        entry.installedIdentity !== undefined &&
+        databaseMainIdentityMatches(original.identity, entry.installedIdentity, true) &&
+        movedOriginalMatches(backup.identity, retainedOriginal, true)
+      ) {
+        entry = await persist(options, { ...entry, status: "installed" });
+      } else if (
+        entry.installedIdentity !== undefined &&
+        databaseMainIdentityMatches(original.identity, entry.target, true) &&
+        databaseMainIdentityMatches(backup.identity, entry.installedIdentity, true)
+      ) {
+        const exclusion = await acquireExclusion(
+          [entry.originalPath, entry.backupPath],
+          process.platform,
+          new Map([
+            [entry.originalPath, entry.target.mode],
+            [entry.backupPath, entry.installedIdentity.mode],
+          ]),
+        );
+        try {
+          assertLockedIdentity(exclusion, entry.originalPath, {
+            ...original.identity,
+            mode: entry.target.mode,
+          });
+          assertLockedIdentity(exclusion, entry.backupPath, {
+            ...backup.identity,
+            mode: entry.installedIdentity.mode,
+          });
+          await assertOffline(entry, dependencies, new Set([process.pid]));
+          await assertRecoverableSidecars(entry);
+          await restoreSidecars(entry, rename);
+          await rm(entry.backupPath);
+          await syncDirectory(options.backupDirectory);
+          await removeTemporaryWorkspace(entry);
+          return markRestored(options, entry, clock);
+        } finally {
+          await exclusion.release();
+        }
+      } else {
+        throw new Error("interrupted database installation has ambiguous file identities");
+      }
     }
     if (originalExists && !backupExists && !temporaryExists) {
       const original = await inspect(entry.originalPath, dependencies);
