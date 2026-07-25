@@ -1,4 +1,5 @@
-import { chmod, lstat, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, rm, type FileHandle } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -7,7 +8,11 @@ import {
 } from "../contracts/provider-file-quarantine.js";
 import { syncDirectory, writeJsonAtomic } from "../state/json-file.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
-import { inspectProviderFile, providerFileIdentityMatches } from "./provider-file-identity.js";
+import {
+  inspectProviderFile,
+  providerFileIdentityMatches,
+  providerFileStatsMatch,
+} from "./provider-file-identity.js";
 import { providerFileQuarantinePath } from "./provider-file-executor.js";
 import { inspectProviderProcesses, type ProviderProcessResult } from "./provider-processes.js";
 import { findProcessesUsingFile, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -44,6 +49,36 @@ async function pathExists(path: string): Promise<boolean> {
       return false;
     }
     throw error;
+  }
+}
+
+async function openValidatedFile(
+  path: string,
+  identity: ProviderFileQuarantineEntry["target"],
+  allowSealedMode = false,
+): Promise<FileHandle> {
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    if (!providerFileStatsMatch(await handle.stat(), identity, allowSealedMode)) {
+      throw new Error(`provider-file descriptor identity changed: ${path}`);
+    }
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function restoreValidatedMode(
+  path: string,
+  identity: ProviderFileQuarantineEntry["target"],
+): Promise<void> {
+  const handle = await openValidatedFile(path, identity, true);
+  try {
+    await handle.chmod(identity.mode & 0o7777);
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
 }
 
@@ -144,7 +179,8 @@ async function reconcile(
     if (!providerFileIdentityMatches(original, entry.target, true)) {
       throw new Error("provider-file original path no longer matches the recovery manifest");
     }
-    await chmod(entry.originalPath, entry.target.mode & 0o7777);
+    await assertOffline(entry, entry.originalPath, options.dependencies ?? {});
+    await restoreValidatedMode(entry.originalPath, entry.target);
     if (["preparing", "restoring", "restored"].includes(entry.status)) {
       return persist(
         {
@@ -222,12 +258,26 @@ export async function undoProviderFileQuarantine(
     throw new Error(`provider-file quarantine entry cannot be restored from ${entry.status}`);
   }
   await assertOffline(entry, entry.quarantinePath, dependencies);
+  const sourceHandle = await openValidatedFile(
+    entry.quarantinePath,
+    entry.quarantineIdentity,
+    true,
+  );
   entry = await persist(
     { ...entry, status: "restoring", quarantineIdentity: entry.quarantineIdentity },
     options,
   );
-  await move(entry.quarantinePath, entry.originalPath);
-  await chmod(entry.originalPath, entry.target.mode & 0o7777);
+  try {
+    await move(entry.quarantinePath, entry.originalPath);
+    if (!providerFileStatsMatch(await lstat(entry.originalPath), entry.target, true)) {
+      await move(entry.originalPath, entry.quarantinePath);
+      throw new Error("provider-file restore pathname changed before the atomic move");
+    }
+    await sourceHandle.chmod(entry.target.mode & 0o7777);
+    await sourceHandle.sync();
+  } finally {
+    await sourceHandle.close();
+  }
   await Promise.all([
     syncDirectory(dirname(entry.originalPath)),
     syncDirectory(options.quarantineDirectory),

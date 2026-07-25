@@ -141,3 +141,21 @@ export function providerFileIdentityMatches(
           })))
   );
 }
+
+export function providerFileStatsMatch(
+  stats: Awaited<ReturnType<typeof lstat>>,
+  expected: ProviderFileIdentity,
+  allowSealedMode = false,
+): boolean {
+  return (
+    stats.isFile() &&
+    !stats.isSymbolicLink() &&
+    stats.dev === expected.device &&
+    stats.ino === expected.inode &&
+    stats.nlink === expected.linkCount &&
+    (stats.mode === expected.mode ||
+      (allowSealedMode && stats.mode === (expected.mode & ~0o222))) &&
+    stats.mtimeMs === expected.mtimeMs &&
+    stats.size === expected.measuredBytes
+  );
+}

@@ -1,5 +1,4 @@
 import { constants } from "node:fs";
-import type { Stats } from "node:fs";
 import { lstat, open, rm, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
@@ -10,7 +9,11 @@ import {
 } from "../contracts/provider-file-quarantine.js";
 import { ensurePrivateDirectory, syncDirectory, writeJsonAtomic } from "../state/json-file.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
-import { inspectProviderFile, providerFileIdentityMatches } from "./provider-file-identity.js";
+import {
+  inspectProviderFile,
+  providerFileIdentityMatches,
+  providerFileStatsMatch,
+} from "./provider-file-identity.js";
 import {
   revalidateProviderFileQuarantine,
   type ProviderFileRevalidationDependencies,
@@ -90,23 +93,6 @@ async function persist(
     privateDirectories: [quarantineDirectory],
   });
   return parsed;
-}
-
-function openedIdentityMatches(
-  stats: Stats,
-  action: ProviderFileQuarantineAction,
-  sealed = false,
-): boolean {
-  return (
-    stats.isFile() &&
-    !stats.isSymbolicLink() &&
-    stats.dev === action.target.device &&
-    stats.ino === action.target.inode &&
-    stats.nlink === action.target.linkCount &&
-    stats.mode === (sealed ? action.target.mode & ~0o222 : action.target.mode) &&
-    stats.mtimeMs === action.target.mtimeMs &&
-    stats.size === action.target.measuredBytes
-  );
 }
 
 async function finalizeUnmovedEntry(
@@ -224,7 +210,7 @@ export async function executeProviderFileQuarantine(
   const originalMode = action.target.mode & 0o7777;
   try {
     sourceHandle = await open(action.target.path, constants.O_RDONLY | constants.O_NOFOLLOW);
-    if (!openedIdentityMatches(await sourceHandle.stat(), action)) {
+    if (!providerFileStatsMatch(await sourceHandle.stat(), action.target)) {
       throw new ProviderFileExecutionError(
         "provider file identity changed while acquiring exclusive access",
         "skipped-stale",
@@ -234,7 +220,7 @@ export async function executeProviderFileQuarantine(
     }
     await sourceHandle.chmod(originalMode & ~0o222);
     await sourceHandle.sync();
-    if (!openedIdentityMatches(await sourceHandle.stat(), action, true)) {
+    if (!providerFileStatsMatch(await sourceHandle.stat(), action.target, true)) {
       throw new ProviderFileExecutionError(
         "provider file identity changed while sealing exclusive access",
         "skipped-stale",
@@ -278,7 +264,7 @@ export async function executeProviderFileQuarantine(
     assertAuthorized(dependencies, entry);
     await move(action.target.path, quarantinePath);
     moved = true;
-    if (!openedIdentityMatches(await lstat(quarantinePath), action, true)) {
+    if (!providerFileStatsMatch(await lstat(quarantinePath), action.target, true)) {
       let rollbackError: unknown;
       try {
         await move(quarantinePath, action.target.path);
