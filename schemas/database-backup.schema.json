@@ -27,7 +27,6 @@
       "enum": [
         "preparing",
         "vacuumed",
-        "original-backed-up",
         "installing",
         "installed",
         "restoring",

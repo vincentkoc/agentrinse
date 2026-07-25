@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { renameNoReplace } from "../../src/core/no-clobber-rename.js";
+import { exchangePaths, renameNoReplace } from "../../src/core/no-clobber-rename.js";
 
 describe("renameNoReplace", () => {
   it("moves a directory only when the destination is absent", async () => {
@@ -35,5 +35,18 @@ describe("renameNoReplace", () => {
     await expect(readFile(join(destination, "destination.txt"), "utf8")).resolves.toBe(
       "destination\n",
     );
+  });
+
+  it("atomically exchanges two occupied paths", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-exchange-"));
+    const source = join(root, "source.txt");
+    const destination = join(root, "destination.txt");
+    await writeFile(source, "source\n");
+    await writeFile(destination, "destination\n");
+
+    await exchangePaths(source, destination);
+
+    await expect(readFile(source, "utf8")).resolves.toBe("destination\n");
+    await expect(readFile(destination, "utf8")).resolves.toBe("source\n");
   });
 });

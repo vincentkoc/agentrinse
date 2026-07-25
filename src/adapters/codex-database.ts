@@ -402,8 +402,8 @@ async function defaultLsofRunner(paths: string[]): Promise<CommandResult> {
     return { stdout: result.stdout, stderr: result.stderr };
   } catch (error) {
     const value = commandError(error);
-    if (Number(value.code) === 1 && value.stdout === "" && value.stderr === "") {
-      return { stdout: "", stderr: "" };
+    if (Number(value.code) === 1 && value.stderr === "") {
+      return { stdout: value.stdout, stderr: "" };
     }
     throw error;
   }

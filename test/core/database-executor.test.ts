@@ -10,6 +10,7 @@ import type { DatabaseIdentity, DatabaseVacuumAction } from "../../src/contracts
 import { databaseBackupEntrySchema } from "../../src/contracts/database-backup.js";
 import { executeDatabaseVacuum } from "../../src/core/database-executor.js";
 import { purgeDatabaseBackup, undoDatabaseVacuum } from "../../src/core/database-recovery.js";
+import { exchangePaths } from "../../src/core/no-clobber-rename.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import { inspectCodexDatabase } from "../../src/adapters/codex-database.js";
 
@@ -69,6 +70,17 @@ function dependencies() {
     vacuumInto: async (_source: string, destination: string) => {
       await writeFile(destination, "compacted");
     },
+    acquireExclusion: async (paths: string[]) => ({
+      identities: new Map(
+        await Promise.all(
+          paths.map(async (path) => {
+            const content = (await readFile(path, "utf8")) as "original" | "compacted";
+            return [path, { ...identity(path, content) }] as const;
+          }),
+        ),
+      ),
+      release: async () => undefined,
+    }),
     inspectDatabase: async (path: string) => {
       const content = (await readFile(path, "utf8")) as "original" | "compacted";
       const sidecars = await Promise.all(
@@ -145,14 +157,27 @@ describe("database vacuum execution and recovery", () => {
     };
     const offline = {
       inspectProcesses: async () => ({ status: "idle" as const, pids: [] as [] }),
-      inspectOpenHandles: async () => ({ status: "idle" as const, pids: [] as [] }),
+    };
+    let exchanges = 0;
+    const exchangeWhileLocked = async (source: string, destination: string) => {
+      await expect(
+        execFileAsync("sqlite3", [
+          "-batch",
+          "-cmd",
+          ".timeout 0",
+          source,
+          "SELECT count(*) FROM _sqlx_migrations;",
+        ]),
+      ).rejects.toMatchObject({ code: 5 });
+      exchanges += 1;
+      await exchangePaths(source, destination);
     };
 
     const result = await executeDatabaseVacuum(selectedAction, {
       runId: "run-sqlite",
       entryId: "entry-sqlite",
       backupDirectory,
-      dependencies: offline,
+      dependencies: { ...offline, exchange: exchangeWhileLocked },
     });
     const after = await inspectCodexDatabase(originalPath);
     expect(after.identity.measuredBytes).toBeLessThan(before.identity.measuredBytes);
@@ -163,7 +188,7 @@ describe("database vacuum execution and recovery", () => {
     await undoDatabaseVacuum(manifest, {
       manifestPath,
       backupDirectory,
-      dependencies: offline,
+      dependencies: { ...offline, exchange: exchangeWhileLocked },
     });
     expect((await inspectCodexDatabase(originalPath)).identity.fingerprint).toBe(
       before.identity.fingerprint,
@@ -174,6 +199,7 @@ describe("database vacuum execution and recovery", () => {
         (before.identity.wal?.measuredBytes ?? 0) +
         (before.identity.shm?.measuredBytes ?? 0),
     );
+    expect(exchanges).toBe(2);
   });
 
   it("retains the original, installs the compacted copy, and restores through undo", async () => {
@@ -314,8 +340,6 @@ describe("database vacuum execution and recovery", () => {
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
-    let moves = 0;
-
     await expect(
       executeDatabaseVacuum(action(originalPath), {
         runId: "run-2",
@@ -324,9 +348,8 @@ describe("database vacuum execution and recovery", () => {
         dependencies: {
           ...dependencies(),
           async rename(source, destination) {
-            moves += 1;
-            if (moves === 2) {
-              throw new Error("injected install failure");
+            if (destination.endsWith(".original")) {
+              throw new Error("injected archive failure");
             }
             await rename(source, destination);
           },
@@ -340,23 +363,31 @@ describe("database vacuum execution and recovery", () => {
     expect(await readFile(originalPath, "utf8")).toBe("original");
   });
 
-  it("rolls back when post-install integrity verification fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-post-install-"));
+  it("rolls back an exchanged database when a sidecar archive fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-sidecar-rollback-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
+    await writeFile(`${originalPath}-wal`, "");
+    await writeFile(`${originalPath}-shm`, "synthetic shm");
+    const baseDependencies = dependencies();
+    const selectedAction = {
+      ...action(originalPath),
+      target: (await baseDependencies.inspectDatabase(originalPath)).identity,
+    };
 
     await expect(
-      executeDatabaseVacuum(action(originalPath), {
-        runId: "run-post-install",
-        entryId: "entry-post-install",
+      executeDatabaseVacuum(selectedAction, {
+        runId: "run-sidecar-rollback",
+        entryId: "entry-sidecar-rollback",
         backupDirectory,
         dependencies: {
-          ...dependencies(),
-          async verifyIntegrity(path) {
-            if (path === originalPath && (await readFile(path, "utf8")) === "compacted") {
-              throw new Error("injected installed integrity failure");
+          ...baseDependencies,
+          async rename(source, destination) {
+            if (source.endsWith("-shm")) {
+              throw new Error("injected SHM archive failure");
             }
+            await rename(source, destination);
           },
         },
       }),
@@ -366,8 +397,9 @@ describe("database vacuum execution and recovery", () => {
     });
 
     expect(await readFile(originalPath, "utf8")).toBe("original");
+    expect(await readFile(`${originalPath}-shm`, "utf8")).toBe("synthetic shm");
     const manifest = databaseBackupEntrySchema.parse(
-      await readJsonFile(join(backupDirectory, "entry-post-install.json")),
+      await readJsonFile(join(backupDirectory, "entry-sidecar-rollback.json")),
     );
     expect(manifest.status).toBe("restored");
   });
@@ -392,13 +424,8 @@ describe("database vacuum execution and recovery", () => {
         backupDirectory,
         dependencies: {
           ...baseDependencies,
-          async verifyIntegrity(path) {
-            if (path === originalPath && (await readFile(path, "utf8")) === "compacted") {
-              throw new Error("injected installed integrity failure");
-            }
-          },
           async rename(source, destination) {
-            if (source.includes(".original-shm")) {
+            if (source.endsWith("-shm") || source.includes(".original-wal")) {
               throw new Error("injected rollback sidecar failure");
             }
             await rename(source, destination);
@@ -461,28 +488,26 @@ describe("database vacuum execution and recovery", () => {
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("restores a moved original after a crash in the vacuumed state", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-vacuumed-crash-"));
+  it("restores the original after a crash between exchange and archive", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-exchange-crash-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
     await executeDatabaseVacuum(action(originalPath), {
-      runId: "run-vacuumed",
-      entryId: "entry-vacuumed",
+      runId: "run-exchange-crash",
+      entryId: "entry-exchange-crash",
       backupDirectory,
       dependencies: dependencies(),
     });
-    const manifestPath = join(backupDirectory, "entry-vacuumed.json");
+    const manifestPath = join(backupDirectory, "entry-exchange-crash.json");
     const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
     await mkdir(dirname(manifest.temporaryPath));
-    await rename(originalPath, manifest.temporaryPath);
+    await rename(manifest.backupPath, manifest.temporaryPath);
 
     const restored = await undoDatabaseVacuum(
       {
         ...manifest,
-        status: "vacuumed",
-        backupIdentity: undefined,
-        installedIdentity: undefined,
+        status: "installing",
       },
       {
         manifestPath,
@@ -554,7 +579,7 @@ describe("database vacuum execution and recovery", () => {
           dependencies: dependencies(),
         },
       ),
-    ).rejects.toThrow("changed after interrupted installation");
+    ).rejects.toThrow("changed after installation");
     expect(await readFile(originalPath, "utf8")).toBe("original");
   });
 

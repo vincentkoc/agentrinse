@@ -7,7 +7,6 @@ import { quarantineEntryIdSchema } from "./quarantine.js";
 export const databaseBackupStatusSchema = z.enum([
   "preparing",
   "vacuumed",
-  "original-backed-up",
   "installing",
   "installed",
   "restoring",
@@ -55,7 +54,7 @@ export const databaseBackupEntrySchema = z
       });
     }
     if (
-      ["original-backed-up", "installing", "installed", "restoring", "purging", "purged"].includes(
+      ["installing", "installed", "restoring", "purging", "purged", "partial"].includes(
         entry.status,
       ) &&
       entry.backupIdentity === undefined
@@ -67,7 +66,9 @@ export const databaseBackupEntrySchema = z
       });
     }
     if (
-      ["installing", "installed", "purging", "purged"].includes(entry.status) &&
+      ["installing", "installed", "restoring", "purging", "purged", "partial"].includes(
+        entry.status,
+      ) &&
       entry.installedIdentity === undefined
     ) {
       context.addIssue({

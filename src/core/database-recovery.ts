@@ -13,8 +13,13 @@ import {
   type DatabaseBackupEntry,
 } from "../contracts/database-backup.js";
 import type { DatabaseIdentity, DatabaseSidecarIdentity } from "../contracts/action.js";
-import { ensurePrivateDirectory, syncDirectory, writeJsonAtomic } from "../state/json-file.js";
-import { renameNoReplace } from "./no-clobber-rename.js";
+import { syncDirectory, writeJsonAtomic } from "../state/json-file.js";
+import {
+  acquireDatabaseExclusion,
+  lockedFileIdentityMatches,
+  type DatabaseExclusion,
+} from "./database-exclusion.js";
+import { exchangePaths, renameNoReplace } from "./no-clobber-rename.js";
 
 export type DatabaseRecoveryDependencies = CodexDatabaseDependencies & {
   clock?: () => Date;
@@ -23,6 +28,8 @@ export type DatabaseRecoveryDependencies = CodexDatabaseDependencies & {
   inspectOpenHandles?: typeof inspectDatabaseOpenHandles;
   verifyIntegrity?: typeof verifyCodexDatabaseIntegrity;
   rename?: typeof renameNoReplace;
+  exchange?: typeof exchangePaths;
+  acquireExclusion?: typeof acquireDatabaseExclusion;
 };
 
 export type DatabaseRecoveryOptions = {
@@ -87,6 +94,7 @@ function assertRecoveryPaths(entry: DatabaseBackupEntry, options: DatabaseRecove
 async function assertOffline(
   entry: DatabaseBackupEntry,
   dependencies: DatabaseRecoveryDependencies,
+  allowedHandlePids: ReadonlySet<number> = new Set(),
 ): Promise<void> {
   const processes = await (dependencies.inspectProcesses ?? inspectCodexProcesses)(dependencies);
   if (processes.status !== "idle") {
@@ -101,13 +109,25 @@ async function assertOffline(
       path,
       dependencies,
     );
-    if (handles.status !== "idle") {
+    const externalPids =
+      handles.status === "busy" ? handles.pids.filter((pid) => !allowedHandlePids.has(pid)) : [];
+    if (handles.status === "unknown" || (handles.status === "busy" && externalPids.length !== 0)) {
       throw new Error(
         handles.status === "busy"
           ? `a process has a database recovery path open: ${path}`
           : `database descriptor state is unknown: ${handles.reason}`,
       );
     }
+  }
+}
+
+function assertLockedIdentity(
+  exclusion: DatabaseExclusion,
+  path: string,
+  identity: DatabaseIdentity,
+): void {
+  if (!lockedFileIdentityMatches(exclusion.identities.get(path), identity)) {
+    throw new Error(`database identity changed while acquiring exclusive access: ${path}`);
   }
 }
 
@@ -170,7 +190,7 @@ function movedSidecarMatches(
   );
 }
 
-function movedOriginalMatches(actual: DatabaseIdentity, planned: DatabaseIdentity): boolean {
+function databaseMainIdentityMatches(actual: DatabaseIdentity, planned: DatabaseIdentity): boolean {
   return (
     actual.database === planned.database &&
     actual.filename === planned.filename &&
@@ -187,7 +207,13 @@ function movedOriginalMatches(actual: DatabaseIdentity, planned: DatabaseIdentit
     actual.migrationVersion === planned.migrationVersion &&
     actual.migrationDigest === planned.migrationDigest &&
     actual.tables.join("\0") === planned.tables.join("\0") &&
-    actual.schemaDigest === planned.schemaDigest &&
+    actual.schemaDigest === planned.schemaDigest
+  );
+}
+
+function movedOriginalMatches(actual: DatabaseIdentity, planned: DatabaseIdentity): boolean {
+  return (
+    databaseMainIdentityMatches(actual, planned) &&
     movedSidecarMatches(actual.wal, planned.wal) &&
     movedSidecarMatches(actual.shm, planned.shm)
   );
@@ -203,54 +229,11 @@ async function verifyRetainedOriginal(
     dependencies,
   );
   const backup = await inspect(entry.backupPath, dependencies, entry.originalPath);
-  const matches =
-    entry.backupIdentity === undefined
-      ? movedOriginalMatches(backup.identity, entry.target)
-      : backup.identity.fingerprint === entry.backupIdentity.fingerprint;
+  const matches = movedOriginalMatches(backup.identity, entry.backupIdentity ?? entry.target);
   if (!matches || (backup.identity.wal?.measuredBytes ?? 0) > 0) {
     throw new Error("the retained original database no longer matches its recovery manifest");
   }
   return backup.identity;
-}
-
-async function completeRestoredOriginal(
-  entry: DatabaseBackupEntry,
-  options: DatabaseRecoveryOptions,
-  dependencies: DatabaseRecoveryDependencies,
-  inspect: typeof inspectCodexDatabase,
-  rename: typeof renameNoReplace,
-  clock: () => Date,
-): Promise<DatabaseBackupEntry> {
-  await restoreSidecars(entry, rename);
-  await syncDirectory(dirname(entry.originalPath));
-  await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-    entry.originalPath,
-    dependencies,
-  );
-  const restored = await inspect(entry.originalPath, dependencies);
-  if (restored.identity.fingerprint !== entry.target.fingerprint) {
-    throw new Error("restored database identity does not match the planned original");
-  }
-  await removeTemporaryWorkspace(entry);
-  return markRestored(options, entry, clock);
-}
-
-async function restoreRetainedOriginal(
-  entry: DatabaseBackupEntry,
-  options: DatabaseRecoveryOptions,
-  dependencies: DatabaseRecoveryDependencies,
-  inspect: typeof inspectCodexDatabase,
-  rename: typeof renameNoReplace,
-  clock: () => Date,
-): Promise<DatabaseBackupEntry> {
-  const backupIdentity = await verifyRetainedOriginal(entry, dependencies, inspect);
-  const restoring = await persist(options, {
-    ...entry,
-    status: "restoring",
-    backupIdentity,
-  });
-  await rename(restoring.backupPath, restoring.originalPath);
-  return completeRestoredOriginal(restoring, options, dependencies, inspect, rename, clock);
 }
 
 export async function undoDatabaseVacuum(
@@ -262,6 +245,8 @@ export async function undoDatabaseVacuum(
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
   const rename = dependencies.rename ?? renameNoReplace;
+  const exchange = dependencies.exchange ?? exchangePaths;
+  const acquireExclusion = dependencies.acquireExclusion ?? acquireDatabaseExclusion;
   const inspect = dependencies.inspectDatabase ?? inspectCodexDatabase;
   await assertOffline(entry, dependencies);
 
@@ -288,53 +273,77 @@ export async function undoDatabaseVacuum(
       }
       return markRestored(options, entry, clock);
     }
-    if (!originalExists && backupExists) {
-      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
-    }
     throw new Error("interrupted database vacuum has ambiguous file state");
   }
 
-  if (entry.status === "partial" && originalExists && !backupExists) {
-    return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
-  }
-
-  if (entry.status === "original-backed-up" || entry.status === "partial") {
-    if (!originalExists && backupExists) {
-      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
-    }
-    if (!(originalExists && backupExists && !temporaryExists)) {
-      throw new Error("partial database vacuum has ambiguous file state");
-    }
-  }
-
-  if (entry.status === "installing") {
-    if (!originalExists && backupExists && temporaryExists) {
-      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
-    }
+  if (entry.status === "installing" || entry.status === "partial") {
     if (originalExists && backupExists && !temporaryExists) {
-      const installed = await inspect(entry.originalPath, dependencies);
+      entry = await persist(options, { ...entry, status: "installed" });
+    }
+    if (originalExists && !backupExists && temporaryExists) {
+      const original = await inspect(entry.originalPath, dependencies);
+      if (databaseMainIdentityMatches(original.identity, entry.target)) {
+        const temporary = await inspect(
+          entry.temporaryPath,
+          dependencies,
+          entry.originalPath,
+          entry.originalPath,
+        );
+        if (
+          entry.installedIdentity === undefined ||
+          !databaseMainIdentityMatches(temporary.identity, entry.installedIdentity)
+        ) {
+          throw new Error("interrupted database exchange no longer contains the compacted copy");
+        }
+        const exclusion = await acquireExclusion([entry.originalPath, entry.temporaryPath]);
+        try {
+          assertLockedIdentity(exclusion, entry.originalPath, original.identity);
+          assertLockedIdentity(exclusion, entry.temporaryPath, temporary.identity);
+          await assertOffline(entry, dependencies, new Set([process.pid]));
+          await restoreSidecars(entry, rename);
+          await removeTemporaryWorkspace(entry);
+          return markRestored(options, entry, clock);
+        } finally {
+          await exclusion.release();
+        }
+      }
       if (
         entry.installedIdentity === undefined ||
-        installed.identity.fingerprint !== entry.installedIdentity.fingerprint ||
-        installed.sidecarsPresent
+        original.identity.fingerprint !== entry.installedIdentity.fingerprint ||
+        original.sidecarsPresent
       ) {
         throw new Error(
           "the compacted database changed after interrupted installation; automatic undo is no longer safe",
         );
       }
-      entry = await persist(options, { ...entry, status: "restoring" });
-      await ensurePrivateDirectory(dirname(entry.temporaryPath));
-      await rename(entry.originalPath, entry.temporaryPath);
-      await syncDirectory(dirname(entry.originalPath));
-      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
+      const temporary = await inspect(
+        entry.temporaryPath,
+        dependencies,
+        entry.originalPath,
+        entry.originalPath,
+      );
+      if (!databaseMainIdentityMatches(temporary.identity, entry.target)) {
+        throw new Error("interrupted database exchange no longer contains the planned original");
+      }
+      const exclusion = await acquireExclusion([entry.originalPath, entry.temporaryPath]);
+      try {
+        assertLockedIdentity(exclusion, entry.originalPath, original.identity);
+        assertLockedIdentity(exclusion, entry.temporaryPath, temporary.identity);
+        await assertOffline(entry, dependencies, new Set([process.pid]));
+        await exchange(entry.originalPath, entry.temporaryPath);
+        await restoreSidecars(entry, rename);
+        await removeTemporaryWorkspace(entry);
+        return markRestored(options, entry, clock);
+      } finally {
+        await exclusion.release();
+      }
     }
-    if (originalExists && !backupExists) {
-      return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
+    if (["installing", "partial"].includes(entry.status)) {
+      throw new Error("interrupted database installation has ambiguous file state");
     }
-    throw new Error("interrupted database installation has ambiguous file state");
   }
 
-  if (!["installed", "restoring", "original-backed-up", "partial"].includes(entry.status)) {
+  if (!["installed", "restoring"].includes(entry.status)) {
     throw new Error(`database backup entry cannot be restored from ${entry.status}`);
   }
 
@@ -343,17 +352,48 @@ export async function undoDatabaseVacuum(
   const currentTemporaryExists = await pathExists(entry.temporaryPath);
 
   if (entry.status === "restoring") {
-    if (!currentOriginalExists && currentBackupExists && currentTemporaryExists) {
-      return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
-    }
-    if (currentOriginalExists && !currentBackupExists && currentTemporaryExists) {
-      return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
-    }
     if (currentOriginalExists && !currentBackupExists && !currentTemporaryExists) {
-      return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
+      const restored = await inspect(entry.originalPath, dependencies);
+      if (!databaseMainIdentityMatches(restored.identity, entry.target)) {
+        throw new Error("interrupted database restore no longer matches the retained original");
+      }
+      const exclusion = await acquireExclusion([entry.originalPath]);
+      try {
+        assertLockedIdentity(exclusion, entry.originalPath, restored.identity);
+        await assertOffline(entry, dependencies, new Set([process.pid]));
+        await restoreSidecars(entry, rename);
+        return markRestored(options, entry, clock);
+      } finally {
+        await exclusion.release();
+      }
     }
     if (!(currentOriginalExists && currentBackupExists && !currentTemporaryExists)) {
       throw new Error("interrupted database restore has ambiguous file state");
+    }
+    const restored = await inspect(entry.originalPath, dependencies);
+    const displaced = await inspect(
+      entry.backupPath,
+      dependencies,
+      entry.originalPath,
+      entry.originalPath,
+    );
+    if (
+      databaseMainIdentityMatches(restored.identity, entry.target) &&
+      entry.installedIdentity !== undefined &&
+      databaseMainIdentityMatches(displaced.identity, entry.installedIdentity)
+    ) {
+      const exclusion = await acquireExclusion([entry.originalPath, entry.backupPath]);
+      try {
+        assertLockedIdentity(exclusion, entry.originalPath, restored.identity);
+        assertLockedIdentity(exclusion, entry.backupPath, displaced.identity);
+        await assertOffline(entry, dependencies, new Set([process.pid]));
+        await restoreSidecars(entry, rename);
+        await rm(entry.backupPath);
+        await syncDirectory(options.backupDirectory);
+        return markRestored(options, entry, clock);
+      } finally {
+        await exclusion.release();
+      }
     }
   }
 
@@ -370,7 +410,7 @@ export async function undoDatabaseVacuum(
       "the compacted database changed after installation; automatic undo is no longer safe",
     );
   }
-  await verifyRetainedOriginal(entry, dependencies, inspect);
+  const backupIdentity = await verifyRetainedOriginal(entry, dependencies, inspect);
   await assertOffline(entry, dependencies);
   const boundaryInstalled = await inspect(entry.originalPath, dependencies);
   if (
@@ -382,66 +422,37 @@ export async function undoDatabaseVacuum(
       "the compacted database changed before the restore boundary; automatic undo is no longer safe",
     );
   }
-  entry = await persist(options, { ...entry, status: "restoring" });
-  await ensurePrivateDirectory(dirname(entry.temporaryPath));
-  await rename(entry.originalPath, entry.temporaryPath);
-  await syncDirectory(dirname(entry.originalPath));
+  entry = await persist(options, { ...entry, status: "restoring", backupIdentity });
+  const exclusion = await acquireExclusion([entry.originalPath, entry.backupPath]);
+  let exchanged = false;
   try {
-    await rename(entry.backupPath, entry.originalPath);
+    // Keep both inodes excluded until the restored layout and manifest agree;
+    // a crash before then is resumed from exact identities above.
+    assertLockedIdentity(exclusion, entry.originalPath, boundaryInstalled.identity);
+    assertLockedIdentity(exclusion, entry.backupPath, backupIdentity);
+    await assertOffline(entry, dependencies, new Set([process.pid]));
+    await exchange(entry.originalPath, entry.backupPath);
+    exchanged = true;
     await restoreSidecars(entry, rename);
     await syncDirectory(dirname(entry.originalPath));
-    await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-      entry.originalPath,
-      dependencies,
-    );
-    await removeTemporaryWorkspace(entry);
+    await rm(entry.backupPath);
+    await syncDirectory(options.backupDirectory);
     return markRestored(options, entry, clock);
   } catch (error) {
-    if (!(await pathExists(entry.originalPath)) && (await pathExists(entry.temporaryPath))) {
-      await rename(entry.temporaryPath, entry.originalPath);
-      await syncDirectory(dirname(entry.originalPath));
-      entry = await persist(options, {
-        ...entry,
-        status: "installed",
-        diagnostic: {
-          severity: "error",
-          code: "DATABASE_UNDO_ROLLED_BACK",
-          message: error instanceof Error ? error.message : String(error),
-          adapter: "codex",
-          resourceId: entry.resourceId,
-        },
-      });
-      throw new Error("database undo failed and the compacted database was restored");
-    }
-    const originalRestored =
-      (await pathExists(entry.originalPath)) && !(await pathExists(entry.backupPath));
-    await persist(
-      options,
-      originalRestored
-        ? {
-            ...entry,
-            status: "restoring",
-            diagnostic: {
-              severity: "error",
-              code: "DATABASE_UNDO_RESUMABLE",
-              message: error instanceof Error ? error.message : String(error),
-              adapter: "codex",
-              resourceId: entry.resourceId,
-            },
-          }
-        : {
-            ...entry,
-            status: "partial",
-            diagnostic: {
-              severity: "error",
-              code: "DATABASE_UNDO_PARTIAL",
-              message: error instanceof Error ? error.message : String(error),
-              adapter: "codex",
-              resourceId: entry.resourceId,
-            },
-          },
-    );
+    await persist(options, {
+      ...entry,
+      status: "restoring",
+      diagnostic: {
+        severity: "error",
+        code: exchanged ? "DATABASE_UNDO_RESUMABLE" : "DATABASE_UNDO_BLOCKED",
+        message: error instanceof Error ? error.message : String(error),
+        adapter: "codex",
+        resourceId: entry.resourceId,
+      },
+    });
     throw error;
+  } finally {
+    await exclusion.release();
   }
 }
 

@@ -15,7 +15,12 @@ import {
   type DatabaseBackupEntry,
 } from "../contracts/database-backup.js";
 import { ensurePrivateDirectory, syncDirectory, writeJsonAtomic } from "../state/json-file.js";
-import { renameNoReplace } from "./no-clobber-rename.js";
+import {
+  acquireDatabaseExclusion,
+  lockedFileIdentityMatches,
+  type DatabaseExclusion,
+} from "./database-exclusion.js";
+import { exchangePaths, renameNoReplace } from "./no-clobber-rename.js";
 
 export type DatabaseExecutionOutcome =
   | "failed"
@@ -44,6 +49,8 @@ export type DatabaseExecutionDependencies = CodexDatabaseDependencies & {
   vacuumInto?: typeof vacuumCodexDatabaseInto;
   verifyIntegrity?: typeof verifyCodexDatabaseIntegrity;
   rename?: typeof renameNoReplace;
+  exchange?: typeof exchangePaths;
+  acquireExclusion?: typeof acquireDatabaseExclusion;
   authorization?: {
     expiresAtMs: number;
     now: () => Date;
@@ -107,6 +114,7 @@ async function syncFile(path: string): Promise<void> {
 async function assertOffline(
   path: string,
   dependencies: DatabaseExecutionDependencies,
+  allowedHandlePids: ReadonlySet<number> = new Set(),
 ): Promise<void> {
   const processes = await (dependencies.inspectProcesses ?? inspectCodexProcesses)(dependencies);
   if (processes.status !== "idle") {
@@ -122,7 +130,9 @@ async function assertOffline(
     path,
     dependencies,
   );
-  if (handles.status !== "idle") {
+  const externalPids =
+    handles.status === "busy" ? handles.pids.filter((pid) => !allowedHandlePids.has(pid)) : [];
+  if (handles.status === "unknown" || (handles.status === "busy" && externalPids.length !== 0)) {
     throw new DatabaseExecutionError(
       handles.status === "busy"
         ? "a process opened the database before the swap"
@@ -131,6 +141,20 @@ async function assertOffline(
       handles.status === "busy"
         ? "DATABASE_DESCRIPTOR_ACTIVE"
         : "DATABASE_DESCRIPTOR_STATE_UNKNOWN",
+    );
+  }
+}
+
+function assertLockedIdentity(
+  exclusion: DatabaseExclusion,
+  path: string,
+  planned: DatabaseVacuumAction["target"],
+): void {
+  if (!lockedFileIdentityMatches(exclusion.identities.get(path), planned)) {
+    throw new DatabaseExecutionError(
+      "database identity changed while acquiring exclusive access",
+      "skipped-stale",
+      "DATABASE_IDENTITY_CHANGED",
     );
   }
 }
@@ -154,6 +178,8 @@ export async function executeDatabaseVacuum(
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
   const rename = dependencies.rename ?? renameNoReplace;
+  const exchange = dependencies.exchange ?? exchangePaths;
+  const acquireExclusion = dependencies.acquireExclusion ?? acquireDatabaseExclusion;
   const inspect = dependencies.inspectDatabase ?? inspectCodexDatabase;
   const originalDirectory = dirname(action.target.path);
   const backupPath = join(
@@ -274,8 +300,42 @@ export async function executeDatabaseVacuum(
     }
     assertAuthorized(dependencies);
 
+    entry = await persist(
+      manifestPath,
+      {
+        ...entry,
+        status: "installing",
+        backupIdentity: current.identity,
+        installedIdentity: compacted.identity,
+      },
+      options.backupDirectory,
+    );
+
+    let exclusion: DatabaseExclusion;
+    try {
+      exclusion = await acquireExclusion([action.target.path, temporaryPath]);
+    } catch (error) {
+      throw new DatabaseExecutionError(
+        error instanceof Error ? error.message : String(error),
+        "skipped-stale",
+        "DATABASE_EXCLUSION_UNAVAILABLE",
+        entry,
+      );
+    }
+
+    let exchanged = false;
+    let archived = false;
     const movedSidecars: Array<{ source: string; destination: string }> = [];
     try {
+      // Both inode locks stay held across exchange, archival, and the durable
+      // manifest write so Codex can never reopen a half-transitioned layout.
+      assertLockedIdentity(exclusion, action.target.path, current.identity);
+      assertLockedIdentity(exclusion, temporaryPath, compacted.identity);
+      await assertOffline(action.target.path, dependencies, new Set([process.pid]));
+      assertAuthorized(dependencies);
+
+      await exchange(action.target.path, temporaryPath);
+      exchanged = true;
       if (action.target.wal !== undefined && backupWalPath !== undefined) {
         await rename(action.target.wal.path, backupWalPath);
         movedSidecars.push({ source: action.target.wal.path, destination: backupWalPath });
@@ -284,49 +344,10 @@ export async function executeDatabaseVacuum(
         await rename(action.target.shm.path, backupShmPath);
         movedSidecars.push({ source: action.target.shm.path, destination: backupShmPath });
       }
-      await rename(action.target.path, backupPath);
-    } catch (error) {
-      for (const sidecar of movedSidecars.reverse()) {
-        if (!(await pathExists(sidecar.source)) && (await pathExists(sidecar.destination))) {
-          await rename(sidecar.destination, sidecar.source);
-        }
-      }
+      await rename(temporaryPath, backupPath);
+      archived = true;
       await syncDirectory(originalDirectory);
-      throw error;
-    }
-    await syncDirectory(originalDirectory);
-    await syncDirectory(options.backupDirectory);
-    const backup = await inspect(backupPath, dependencies, action.target.path);
-    entry = await persist(
-      manifestPath,
-      {
-        ...entry,
-        status: "original-backed-up",
-        backupIdentity: backup.identity,
-      },
-      options.backupDirectory,
-    );
-
-    entry = await persist(
-      manifestPath,
-      {
-        ...entry,
-        status: "installing",
-        installedIdentity: compacted.identity,
-      },
-      options.backupDirectory,
-    );
-    try {
-      await rename(temporaryPath, action.target.path);
-      await syncDirectory(originalDirectory);
-      await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-        action.target.path,
-        dependencies,
-      );
-      const installed = await inspect(action.target.path, dependencies);
-      if (installed.identity.fingerprint !== entry.installedIdentity?.fingerprint) {
-        throw new Error("installed database identity changed during the atomic swap");
-      }
+      await syncDirectory(options.backupDirectory);
       await rm(temporaryDirectory, { recursive: true, force: true });
       await syncDirectory(originalDirectory);
       entry = await persist(
@@ -334,7 +355,6 @@ export async function executeDatabaseVacuum(
         {
           ...entry,
           status: "installed",
-          installedIdentity: installed.identity,
         },
         options.backupDirectory,
       );
@@ -342,7 +362,7 @@ export async function executeDatabaseVacuum(
         backupEntryId: entry.entryId,
         backupPath: entry.backupPath,
         originalBytes: action.target.measuredBytes,
-        compactedBytes: installed.identity.measuredBytes,
+        compactedBytes: compacted.identity.measuredBytes,
         retainedBackupBytes:
           action.target.measuredBytes +
           (action.target.wal?.measuredBytes ?? 0) +
@@ -351,31 +371,19 @@ export async function executeDatabaseVacuum(
       };
     } catch (installError) {
       try {
-        const sourceExists = await pathExists(action.target.path);
-        const backupExists = await pathExists(backupPath);
-        const temporaryExists = await pathExists(temporaryPath);
-        if (sourceExists && backupExists && !temporaryExists) {
-          await rename(action.target.path, temporaryPath);
-          await syncDirectory(originalDirectory);
-        } else if (!(!sourceExists && backupExists && temporaryExists)) {
-          throw new Error("database installation rollback paths are ambiguous");
+        if (archived) {
+          await exchange(action.target.path, backupPath);
+          await rm(backupPath);
+        } else if (exchanged) {
+          await exchange(action.target.path, temporaryPath);
         }
-        await rename(backupPath, action.target.path);
-        if (backupWalPath !== undefined && (await pathExists(backupWalPath))) {
-          await rename(backupWalPath, `${action.target.path}-wal`);
-        }
-        if (backupShmPath !== undefined && (await pathExists(backupShmPath))) {
-          await rename(backupShmPath, `${action.target.path}-shm`);
+        for (const sidecar of movedSidecars.reverse()) {
+          if (!(await pathExists(sidecar.source)) && (await pathExists(sidecar.destination))) {
+            await rename(sidecar.destination, sidecar.source);
+          }
         }
         await syncDirectory(originalDirectory);
-        await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-          action.target.path,
-          dependencies,
-        );
-        const restored = await inspect(action.target.path, dependencies);
-        if (restored.identity.fingerprint !== action.target.fingerprint) {
-          throw new Error("restored database identity does not match the planned original");
-        }
+        await syncDirectory(options.backupDirectory);
         await rm(temporaryDirectory, { recursive: true, force: true });
         await syncDirectory(originalDirectory);
         entry = await persist(
@@ -430,6 +438,8 @@ export async function executeDatabaseVacuum(
           entry,
         );
       }
+    } finally {
+      await exclusion.release();
     }
   } catch (error) {
     if (error instanceof DatabaseExecutionError) {
