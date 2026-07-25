@@ -20,7 +20,34 @@ Only `artifacts.remove` mutates:
 - the action risk is `safe`
 
 Provider state and Docker resources remain report-only except for the explicit
-offline Codex database boundary below.
+offline Codex database and exact provider-file boundaries below.
+
+## Recoverable Provider File Boundary
+
+`provider.file-quarantine` is a reusable `recoverable` executor for one exact
+provider-owned regular file. No provider adapter emits it until a separate
+owner-specific policy proves that the selected log or cache file is
+disposable.
+
+The action records and revalidates:
+
+- the provider and canonical owner root
+- the canonical path and exact relative path beneath that root
+- regular-file and non-symlink type
+- device, inode, full mode, mtime, and byte size
+- a streamed SHA-256 content digest and complete identity fingerprint
+- stopped provider processes and no open file descriptor
+- same-filesystem AgentRinse recovery storage
+- unexpired plan authorization immediately before the atomic move
+
+Apply temporarily removes write bits while repeating identity and liveness
+checks, atomically moves the same inode into owner-only state, restores the
+recorded mode, fsyncs both directories, and persists the moved identity.
+Undo and purge use only the durable manifest and refuse ambiguous paths,
+changed content, active providers, open descriptors, or cross-owned paths.
+Directories, sessions, transcripts, databases, credentials, configuration,
+plugins, and caches without an explicit file-level owner contract are not
+accepted.
 
 ## Recoverable Codex Database Boundary
 
@@ -186,8 +213,9 @@ the next safe checkpoint.
 
 The state directory is rejected if it is inside a planned cleanup target.
 Quarantine manifests are schema-validated by doctor and retain the exact
-original path, quarantine path, recovery ref, pre-move identity, post-repair
-identity, TTL, and last recovery state.
+original path, quarantine path, pre-move identity, post-move identity, TTL,
+and last recovery state. Worktree entries also retain their recovery ref and
+Git repair state.
 
 ## Hard Invariants
 

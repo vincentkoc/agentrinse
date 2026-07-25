@@ -37,6 +37,18 @@ $XDG_STATE_HOME/agentrinse/database-backups/<entry-id>.json
 
 The retained original database file lives in the same owner-only directory.
 
+Provider-file quarantine manifests and payloads live under:
+
+```text
+$XDG_STATE_HOME/agentrinse/provider-quarantine/<entry-id>.json
+$XDG_STATE_HOME/agentrinse/provider-quarantine/<entry-id>.payload
+```
+
+They record the exact owner root, relative path, provider, inode, mode, size,
+mtime, and streamed content digest. Provider adapters must opt into this
+primitive with their own disposal policy; the recovery layer never discovers
+or widens provider targets.
+
 ## Restore a Quarantined Worktree
 
 Inspect the run first:
@@ -148,6 +160,23 @@ in-progress claim is restored before later validation after interruption.
 
 Atomic quarantine itself does not free disk. Only purge reports those bytes as
 reclaimed.
+
+## Restore a Provider File
+
+`agentrinse undo <run-id>` also selects live `provider.file-quarantine`
+entries. Undo requires the provider to be stopped, proves that no process has
+the payload open, refuses an occupied original path, atomically restores the
+same inode, restores the recorded mode, and verifies the full content identity.
+
+Interrupted entries are reconciled from the two exact paths. If the original
+matches and the payload is absent, recovery records `restored`. If the
+original is absent and the payload matches, recovery resumes from
+`quarantined`. Both-present and both-missing states fail closed, except that a
+persisted `purging` entry with both paths absent can finalize as `purged`.
+
+Explicit-run purge may remove an unexpired payload; expiry purge waits for the
+manifest TTL. Both routes repeat provider-process, descriptor, path, and
+content checks. Only the recorded `.payload` file is removed.
 
 ## Restore an Offline Codex Vacuum
 

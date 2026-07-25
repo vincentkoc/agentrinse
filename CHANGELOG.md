@@ -6,6 +6,21 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- recoverable `provider.file-quarantine` execution, undo, purge, run-journal,
+  manifest, and JSON Schema contracts for exact provider-owned regular files
+- streamed content identity, provider-process and descriptor refusal,
+  same-filesystem atomic moves, crash reconciliation, and permission
+  preservation for provider-file recovery
+
+### Safety
+
+- no provider adapter emits the new action until a provider-specific owner
+  contract defines which log or cache files are disposable
+- directories, symlinks, sessions, transcripts, databases, credentials,
+  configuration, and ambiguous recovery state remain outside this boundary
+
 ## [0.4.0] - 2026-07-25
 
 ### Added

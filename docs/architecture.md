@@ -11,7 +11,7 @@ CLI
   -> authorization
   -> exclusive apply lock
   -> per-action revalidation
-  -> same-parent isolation, worktree quarantine, or verified database copy
+  -> same-parent isolation, recoverable quarantine, or verified database copy
   -> type-specific executor
   -> durable run journal
 ```
@@ -19,9 +19,9 @@ CLI
 ## Contracts
 
 Zod schemas validate resources, diagnostics, findings, reports, actions,
-plans, runs, quarantine manifests, and database rollback manifests. Generated
-JSON Schemas under `schemas/` are checked for drift in CI and shipped in the
-npm package.
+plans, runs, worktree and provider-file quarantine manifests, and database
+rollback manifests. Generated JSON Schemas under `schemas/` are checked for
+drift in CI and shipped in the npm package.
 
 ## Adapters
 
@@ -74,6 +74,12 @@ exchanges the canonical and compacted paths. The locks remain held through
 sidecar archival, manifest persistence, and directory fsync. Undo uses the same
 locked exchange; purge shares the durable database manifest.
 
+The provider-file executor accepts one fully identified regular file from an
+owner-specific adapter policy. It streams a content digest, seals write bits,
+rechecks provider processes and open descriptors, atomically moves the same
+inode into owner-only state, then records enough identity for deterministic
+undo and purge. It never accepts directories or discovers neighboring files.
+
 ## State
 
 Default state:
@@ -85,6 +91,8 @@ $XDG_STATE_HOME/agentrinse/
   locks/apply.lock
   runs/<run-id>.json
   quarantine/<entry-id>.json
+  provider-quarantine/<entry-id>.json
+  provider-quarantine/<entry-id>.payload
   database-backups/<entry-id>.json
   database-backups/<entry-id>-<filename>.original
 ```
