@@ -11,7 +11,7 @@ CLI
   -> authorization
   -> exclusive apply lock
   -> per-action revalidation
-  -> same-parent isolation or worktree quarantine
+  -> same-parent isolation, worktree quarantine, or verified database copy
   -> type-specific executor
   -> durable run journal
 ```
@@ -19,13 +19,15 @@ CLI
 ## Contracts
 
 Zod schemas validate resources, diagnostics, findings, reports, actions,
-plans, runs, and quarantine manifests. Generated JSON Schemas under `schemas/`
-are checked for drift in CI and shipped in the npm package.
+plans, runs, quarantine manifests, and database rollback manifests. Generated
+JSON Schemas under `schemas/` are checked for drift in CI and shipped in the
+npm package.
 
 ## Adapters
 
 Collectors and classifiers are read-only. Provider and Docker adapters emit
-protected findings. The artifact adapter can emit one exact
+protected findings by default. The Codex adapter may emit a versioned
+experimental `database.vacuum` action after explicit audit opt-in. The artifact adapter can emit one exact
 `artifacts.remove` action for each eligible configured directory. The Git
 adapter can emit one exact `worktree.quarantine` action for each fully proven
 inactive linked worktree.
@@ -65,6 +67,13 @@ linked worktree to a sibling owner-only quarantine directory, repairs and
 locks its Git registration, then records a post-repair identity. Undo and purge
 revalidate that identity before any recovery mutation.
 
+The database executor creates a compacted same-filesystem sibling with
+`VACUUM INTO`, verifies integrity and schema identity, retains the exact
+original under AgentRinse state, then locks both SQLite inodes and atomically
+exchanges the canonical and compacted paths. The locks remain held through
+sidecar archival, manifest persistence, and directory fsync. Undo uses the same
+locked exchange; purge shares the durable database manifest.
+
 ## State
 
 Default state:
@@ -76,6 +85,8 @@ $XDG_STATE_HOME/agentrinse/
   locks/apply.lock
   runs/<run-id>.json
   quarantine/<entry-id>.json
+  database-backups/<entry-id>.json
+  database-backups/<entry-id>-<filename>.original
 ```
 
 Without `XDG_STATE_HOME`, the root is

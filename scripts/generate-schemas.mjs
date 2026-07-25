@@ -10,6 +10,7 @@ import {
   commandEventSchema,
   cleanupPlanSchema,
   cleanupRunSchema,
+  databaseBackupEntrySchema,
   doctorReportSchema,
   quarantineEntrySchema,
 } from "../dist/index.js";
@@ -21,6 +22,7 @@ const schemas = [
   ["command-envelope.schema.json", "command-envelope", commandEnvelopeSchema],
   ["command-event.schema.json", "command-event", commandEventSchema],
   ["doctor.schema.json", "doctor", doctorReportSchema],
+  ["database-backup.schema.json", "database-backup", databaseBackupEntrySchema],
   ["plan.schema.json", "plan", cleanupPlanSchema],
   ["quarantine.schema.json", "quarantine", quarantineEntrySchema],
   ["run.schema.json", "run", cleanupRunSchema],

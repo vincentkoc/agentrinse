@@ -2,6 +2,8 @@
 
 AgentRinse is safe by default: provider adapters inventory state, while
 artifact cleanup remains disabled until project roots are explicitly listed.
+Codex database compaction additionally requires an audit opt-in and the
+`experimental` risk ceiling.
 
 ## Resolution
 
@@ -97,7 +99,10 @@ protects the unresolved scope instead of allowing an artifact action.
 
 Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, and Grok Build
 are enabled for read-only inventory by default. Each accepts an optional
-`root`. Missing default roots mean the provider is absent, not broken. A
+`root`. Missing default roots mean the provider is absent, not broken. Codex
+can propose offline database maintenance only with
+`audit --allow-offline-vacuum`; the flag is intentionally not persisted in
+configuration. A
 missing explicit root is a doctor warning.
 
 Git is disabled by default and requires an explicit repository root. When

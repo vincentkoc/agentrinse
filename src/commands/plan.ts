@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { loadConfigForHome } from "../config/load.js";
 import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import { auditReportSchema } from "../contracts/report.js";
+import { actionRiskSchema, type ActionRisk } from "../contracts/action.js";
 import { createCleanupPlan } from "../core/plan.js";
 import { readJsonFile, writeJsonAtomic } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
@@ -12,6 +13,7 @@ export type PlanCommandOptions = {
   config?: string;
   output?: string;
   stateDir?: string;
+  maxRisk?: ActionRisk;
 };
 
 export type PlanCommandResult = {
@@ -22,7 +24,17 @@ export type PlanCommandResult = {
 
 export async function executePlanCommand(options: PlanCommandOptions): Promise<PlanCommandResult> {
   const audit = auditReportSchema.parse(await readJsonFile(resolve(options.audit)));
-  const { config } = await loadConfigForHome(audit.home, options.config);
+  const { config: loadedConfig } = await loadConfigForHome(audit.home, options.config);
+  const config =
+    options.maxRisk === undefined
+      ? loadedConfig
+      : {
+          ...loadedConfig,
+          plan: {
+            ...loadedConfig.plan,
+            maxRisk: actionRiskSchema.parse(options.maxRisk),
+          },
+        };
   const plan = cleanupPlanSchema.parse(createCleanupPlan(audit, config));
   const layout = stateLayout(resolveStateRoot(audit.home, options.stateDir));
   const statePath = resolve(layout.plans, `${plan.planId}.json`);

@@ -9,6 +9,7 @@ ownership proof.
 - Node.js 22 or newer
 - Git
 - `lsof`
+- `sqlite3` for offline Codex database maintenance
 - `lockf` on macOS or `flock` from `util-linux` on Linux
 - local filesystem state directory with owner read/write access
 
@@ -19,12 +20,13 @@ Run `agentrinse doctor` to verify the current machine without mutating it.
 
 ## macOS
 
-macOS is Tier 1 for `0.3.0`.
+macOS is Tier 1 for `0.4.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - `lsof` process ownership proof
 - safe configured artifact apply
 - recoverable linked-worktree quarantine, undo, and purge
+- experimental recoverable offline Codex database compaction
 - optional Mole detection through `mo --version`
 - external `mo purge --dry-run` and `mo clean --dry-run` suggestions from the
   closeout profile
@@ -34,13 +36,14 @@ cleanup.
 
 ## Linux
 
-Linux is Tier 2 for `0.3.0`.
+Linux is Tier 2 for `0.4.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - same-user `/proc` process ownership inspection
 - `lsof` fallback when procfs is incomplete or restricted
 - safe configured artifact apply
 - recoverable linked-worktree quarantine, undo, and purge
+- experimental recoverable offline Codex database compaction
 
 If neither `/proc` nor `lsof` can prove a target idle, apply skips it.
 
@@ -51,7 +54,7 @@ automatically.
 ## WSL
 
 WSL follows the Linux contract for paths and processes inside the WSL
-filesystem. Do not use `0.3.0` to mutate Windows-mounted project trees unless
+filesystem. Do not use `0.4.0` to mutate Windows-mounted project trees unless
 doctor and a disposable canary prove path identity, ownership, rename, and
 mount behavior for that exact setup.
 
@@ -67,4 +70,4 @@ limitation and recommends WSL for supported artifact apply.
 
 When enabled, Docker uses the current CLI context and structured output.
 Unavailable CLI, context, or daemon state degrades only Docker inventory.
-`0.3.0` does not remove any Docker resource.
+`0.4.0` does not remove any Docker resource.

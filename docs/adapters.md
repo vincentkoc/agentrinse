@@ -1,22 +1,23 @@
 # Adapter Matrix
 
-Provider and Docker adapters are read-only. Artifact cleanup is scoped to
-explicitly configured rebuildable directories. The Git adapter can emit one
-recoverable whole-worktree action when every safety gate is proven.
+Provider and Docker adapters are read-only except for one versioned Codex
+maintenance action. Artifact cleanup is scoped to explicitly configured
+rebuildable directories. The Git adapter can emit one recoverable
+whole-worktree action when every safety gate is proven.
 
-| Adapter        | Current capability                                         | Protected state |
-| -------------- | ---------------------------------------------------------- | --------------- |
-| Codex          | sessions, archived sessions, worktrees, diagnostic DB size | all             |
-| Claude         | project sessions, debug logs, managed worktrees            | all             |
-| Cursor         | workspace state, global state, logs                        | all             |
-| GitHub Copilot | CLI sessions and logs                                      | all             |
-| Zed            | user-data root                                             | all             |
-| OpenCode       | database, logs, snapshots                                  | all             |
-| Grok Build     | version-gated data root                                    | all             |
-| Runtime        | opt-in selected executable and Claude native versions      | all             |
-| Git            | worktree audit and recoverable linked-worktree quarantine  | conditional     |
-| Docker         | opt-in structured image/container inventory                | all             |
-| Artifacts      | exact configured rebuildable directories                   | conditional     |
+| Adapter        | Current capability                                        | Protected state |
+| -------------- | --------------------------------------------------------- | --------------- |
+| Codex          | sessions, worktrees, four SQLite DBs, offline compaction  | conditional     |
+| Claude         | project sessions, debug logs, managed worktrees           | all             |
+| Cursor         | workspace state, global state, logs                       | all             |
+| GitHub Copilot | CLI sessions and logs                                     | all             |
+| Zed            | user-data root                                            | all             |
+| OpenCode       | database, logs, snapshots                                 | all             |
+| Grok Build     | version-gated data root                                   | all             |
+| Runtime        | opt-in selected executable and Claude native versions     | all             |
+| Git            | worktree audit and recoverable linked-worktree quarantine | conditional     |
+| Docker         | opt-in structured image/container inventory               | all             |
+| Artifacts      | exact configured rebuildable directories                  | conditional     |
 
 ## Artifact Rules
 
@@ -30,7 +31,25 @@ ownership probe. Apply performs the full check again under the lock.
 ### Codex
 
 JSONL sessions are durable replay state. SQLite is not treated as a complete
-substitute. Database compaction remains an offline experimental feature.
+substitute and no rows are deleted. AgentRinse recognizes only
+`state_5.sqlite`, `logs_2.sqlite`, `goals_1.sqlite`, and
+`memories_1.sqlite`, with their current SQLx migration versions and required
+tables.
+
+`audit --allow-offline-vacuum` may propose `database.vacuum` when free pages
+are at least 512 MiB and 25 percent of the file. The action remains
+`experimental`, so planning and apply also require
+`--max-risk experimental`.
+
+Compaction requires every Codex process stopped, no descriptor for the
+database/WAL/SHM paths, no non-empty WAL, a successful quick check, sufficient
+same-filesystem space, and an exact schema match. Zero-length WAL and SHM
+companions are preserved with the rollback copy. Apply uses
+`VACUUM INTO`, runs a full integrity check, fsyncs the output, retains the
+original file, then holds POSIX record locks on both database inodes while an
+atomic path exchange installs the compacted file. A second owner/descriptor
+check runs after those locks are held and permits only AgentRinse's own file
+descriptors.
 
 ### Claude
 

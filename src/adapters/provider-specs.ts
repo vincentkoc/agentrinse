@@ -48,6 +48,21 @@ export const PROVIDER_SPECS: Record<ProviderAdapterId, ProviderSpec> = {
         displayName: "Codex diagnostic database",
         kind: "agent-database",
       },
+      {
+        relativePath: "state_5.sqlite",
+        displayName: "Codex state database",
+        kind: "agent-database",
+      },
+      {
+        relativePath: "goals_1.sqlite",
+        displayName: "Codex goals database",
+        kind: "agent-database",
+      },
+      {
+        relativePath: "memories_1.sqlite",
+        displayName: "Codex memories database",
+        kind: "agent-database",
+      },
     ],
   },
   claude: {

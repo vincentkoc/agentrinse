@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
-import type { ArtifactRemoveAction, WorktreeQuarantineAction } from "../contracts/action.js";
+import type {
+  ArtifactRemoveAction,
+  DatabaseVacuumAction,
+  WorktreeQuarantineAction,
+} from "../contracts/action.js";
 import type { CleanupPlan } from "../contracts/plan.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { acquireApplyLock } from "../state/lock.js";
@@ -19,6 +23,16 @@ import {
   type ArtifactRevalidationResult,
 } from "./artifact-revalidation.js";
 import { sha256 } from "./digest.js";
+import {
+  DatabaseExecutionError,
+  executeDatabaseVacuum,
+  type DatabaseExecutionResult,
+  type ExecuteDatabaseVacuumOptions,
+} from "./database-executor.js";
+import {
+  revalidateDatabaseVacuum,
+  type DatabaseRevalidationResult,
+} from "./database-revalidation.js";
 import { CommandInterruptedError } from "./interruption.js";
 import { verifyCleanupPlan } from "./plan-verification.js";
 import { isPathInside, resolvePhysicalPath } from "./safety.js";
@@ -66,6 +80,15 @@ export type ApplyDependencies = {
     action: WorktreeQuarantineAction,
     options: ExecuteWorktreeQuarantineOptions,
   ) => Promise<WorktreeExecutionResult>;
+  revalidateDatabase?: (
+    action: DatabaseVacuumAction,
+    home: string,
+    config: AgentRinseConfig,
+  ) => Promise<DatabaseRevalidationResult>;
+  executeDatabase?: (
+    action: DatabaseVacuumAction,
+    options: ExecuteDatabaseVacuumOptions,
+  ) => Promise<DatabaseExecutionResult>;
   worktreeProtectionRoots?: (
     action: WorktreeQuarantineAction,
     home: string,
@@ -114,6 +137,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
   await ensurePrivateDirectory(layout.locks);
   await ensurePrivateDirectory(layout.runs);
   await ensurePrivateDirectory(layout.quarantine);
+  await ensurePrivateDirectory(layout.databaseBackups);
   const lock = await acquireApplyLock(layout.locks, {
     planId: plan.planId,
     runId,
@@ -144,9 +168,13 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           ? options.dependencies?.revalidate === undefined
             ? await revalidateArtifactRemove(action, plan.home, config, { now: clock })
             : await options.dependencies.revalidate(action, plan.home, config)
-          : options.dependencies?.revalidateWorktree === undefined
-            ? await revalidateWorktreeQuarantine(action, plan.home, config, { now: clock })
-            : await options.dependencies.revalidateWorktree(action, plan.home, config);
+          : action.type === "worktree.quarantine"
+            ? options.dependencies?.revalidateWorktree === undefined
+              ? await revalidateWorktreeQuarantine(action, plan.home, config, { now: clock })
+              : await options.dependencies.revalidateWorktree(action, plan.home, config)
+            : options.dependencies?.revalidateDatabase === undefined
+              ? await revalidateDatabaseVacuum(action, plan.home, config)
+              : await options.dependencies.revalidateDatabase(action, plan.home, config);
       if (revalidation.status === "stale") {
         await journal.updateAction(action.actionId, {
           status: "skipped-stale",
@@ -233,7 +261,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           reclaimedBytes: result.reclaimedBytes,
           isolationPath: result.isolationPath,
         });
-      } else {
+      } else if (action.type === "worktree.quarantine") {
         const quarantinePath = worktreeQuarantinePath(action, isolationId);
         const recoveryRef = worktreeRecoveryRef(action, runId);
         await journal.updateAction(action.actionId, {
@@ -330,6 +358,75 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           quarantineEntryId: result.quarantineEntryId,
           quarantinePath: result.quarantinePath,
           recoveryRef: result.recoveryRef,
+        });
+      } else {
+        await journal.updateAction(action.actionId, {
+          status: "applying",
+          backupEntryId: isolationId,
+        });
+        throwIfInterrupted(options.signal);
+
+        let result: DatabaseExecutionResult;
+        try {
+          result = await (
+            options.dependencies?.executeDatabase ??
+            ((selectedAction, selectedOptions) =>
+              executeDatabaseVacuum(selectedAction, selectedOptions))
+          )(action, {
+            runId,
+            entryId: isolationId,
+            backupDirectory: layout.databaseBackups,
+            ...(options.signal === undefined ? {} : { signal: options.signal }),
+            dependencies: {
+              clock,
+              authorization: {
+                expiresAtMs: Date.parse(plan.expiresAt),
+                now: clock,
+              },
+            },
+          });
+        } catch (error) {
+          if (error instanceof CommandInterruptedError) {
+            throw error;
+          }
+          const executionError = error instanceof DatabaseExecutionError ? error : undefined;
+          await journal.updateAction(action.actionId, {
+            status: executionError?.outcome ?? "failed",
+            completedAt: clock().toISOString(),
+            backupEntryId: executionError?.entry?.entryId ?? isolationId,
+            backupPath: executionError?.entry?.backupPath,
+            diagnostic: {
+              severity: executionError?.outcome === "skipped-stale" ? "warning" : "error",
+              code:
+                executionError?.diagnosticCode ??
+                (executionError?.outcome === "partially-applied"
+                  ? "DATABASE_VACUUM_PARTIAL"
+                  : executionError?.outcome === "rolled-back"
+                    ? "DATABASE_VACUUM_ROLLED_BACK"
+                    : executionError?.outcome === "skipped-stale"
+                      ? "DATABASE_IDENTITY_CHANGED"
+                      : "DATABASE_VACUUM_FAILED"),
+              message: error instanceof Error ? error.message : String(error),
+              adapter: action.adapter,
+              resourceId: action.resourceId,
+            },
+          });
+          if (executionError?.outcome === "skipped-stale") {
+            throwIfInterrupted(options.signal);
+            continue;
+          }
+          break;
+        }
+
+        await journal.updateAction(action.actionId, {
+          status: "applied",
+          completedAt: clock().toISOString(),
+          reclaimedBytes: result.reclaimedBytes,
+          backupEntryId: result.backupEntryId,
+          backupPath: result.backupPath,
+          originalBytes: result.originalBytes,
+          compactedBytes: result.compactedBytes,
+          retainedBackupBytes: result.retainedBackupBytes,
         });
       }
       throwIfInterrupted(options.signal);

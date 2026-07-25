@@ -64,9 +64,63 @@ export const worktreeQuarantineActionSchema = z.object({
   target: worktreeIdentitySchema,
 });
 
+export const codexDatabaseNameSchema = z.enum(["state", "logs", "goals", "memories"]);
+
+export const codexDatabaseFilenameSchema = z.enum([
+  "state_5.sqlite",
+  "logs_2.sqlite",
+  "goals_1.sqlite",
+  "memories_1.sqlite",
+]);
+
+export const databaseSidecarIdentitySchema = z.object({
+  path: z.string().min(1),
+  device: z.number().int().nonnegative(),
+  inode: z.number().int().nonnegative(),
+  mode: z.number().int().nonnegative(),
+  mtimeMs: z.number().finite(),
+  measuredBytes: z.number().int().nonnegative(),
+});
+
+export const databaseIdentitySchema = z.object({
+  path: z.string().min(1),
+  database: codexDatabaseNameSchema,
+  filename: codexDatabaseFilenameSchema,
+  device: z.number().int().nonnegative(),
+  inode: z.number().int().nonnegative(),
+  mode: z.number().int().nonnegative(),
+  mtimeMs: z.number().finite(),
+  measuredBytes: z.number().int().nonnegative(),
+  pageSize: z.number().int().positive(),
+  pageCount: z.number().int().nonnegative(),
+  freelistCount: z.number().int().nonnegative(),
+  journalMode: z.literal("wal"),
+  autoVacuum: z.number().int().min(0).max(2),
+  migrationVersion: z.number().int().nonnegative(),
+  migrationDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  tables: z.array(z.string().min(1)),
+  wal: databaseSidecarIdentitySchema.optional(),
+  shm: databaseSidecarIdentitySchema.optional(),
+  schemaDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+
+export const databaseVacuumActionSchema = z.object({
+  actionId: z.string().min(1),
+  type: z.literal("database.vacuum"),
+  adapter: z.literal("codex"),
+  resourceId: z.string().min(1),
+  risk: z.literal("experimental"),
+  description: z.string().min(1),
+  expectedReclaimBytes: z.number().int().positive(),
+  backupTtlMinutes: z.number().int().positive(),
+  target: databaseIdentitySchema,
+});
+
 export const plannedActionSchema = z.discriminatedUnion("type", [
   artifactRemoveActionSchema,
   worktreeQuarantineActionSchema,
+  databaseVacuumActionSchema,
 ]);
 
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
@@ -75,4 +129,9 @@ export type PathIdentity = z.infer<typeof pathIdentitySchema>;
 export type ArtifactRemoveAction = z.infer<typeof artifactRemoveActionSchema>;
 export type WorktreeIdentity = z.infer<typeof worktreeIdentitySchema>;
 export type WorktreeQuarantineAction = z.infer<typeof worktreeQuarantineActionSchema>;
+export type CodexDatabaseName = z.infer<typeof codexDatabaseNameSchema>;
+export type CodexDatabaseFilename = z.infer<typeof codexDatabaseFilenameSchema>;
+export type DatabaseIdentity = z.infer<typeof databaseIdentitySchema>;
+export type DatabaseSidecarIdentity = z.infer<typeof databaseSidecarIdentitySchema>;
+export type DatabaseVacuumAction = z.infer<typeof databaseVacuumActionSchema>;
 export type PlannedAction = z.infer<typeof plannedActionSchema>;

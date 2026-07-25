@@ -52,10 +52,22 @@ export const cleanupPlanSchema = z
           });
         }
         pendingQuarantineBytes += action.pendingQuarantineBytes;
-      } else if (action.expectedReclaimBytes !== action.target.measuredBytes) {
+      } else if (
+        action.type === "artifacts.remove" &&
+        action.expectedReclaimBytes !== action.target.measuredBytes
+      ) {
         context.addIssue({
           code: "custom",
           message: "action reclaim estimate must match the measured target bytes",
+          path: ["actions", index, "expectedReclaimBytes"],
+        });
+      } else if (
+        action.type === "database.vacuum" &&
+        action.expectedReclaimBytes > action.target.measuredBytes
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "database reclaim estimate cannot exceed the database size",
           path: ["actions", index, "expectedReclaimBytes"],
         });
       }

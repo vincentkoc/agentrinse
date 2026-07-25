@@ -18,6 +18,7 @@ function healthyRunner(command: string, args: string[]): Promise<CommandResult> 
   const key = `${command} ${args.join(" ")}`;
   const output: Record<string, string> = {
     "lsof -v": "lsof 4.99",
+    "sqlite3 --version": "3.51.0",
     "git --version": "git version 2.50.1",
     "docker --version": "Docker version 28.3.0",
     "docker context show": "desktop-linux",
@@ -69,6 +70,9 @@ describe("doctor command", () => {
     );
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "docker", status: "pass" }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({ id: "database-maintenance", status: "pass" }),
     );
   });
 
@@ -153,10 +157,41 @@ describe("doctor command", () => {
       expect.objectContaining({ id: "recovery-mutex", status: "error" }),
     );
     expect(result.report.checks).toContainEqual(
+      expect.objectContaining({ id: "database-maintenance", status: "warning" }),
+    );
+    expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "docker", status: "pass" }),
     );
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "mole", status: "pass" }),
+    );
+  });
+
+  it("warns when sqlite3 is missing instead of reporting database maintenance healthy", async () => {
+    const value = await setup();
+    const result = await executeDoctorCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateRoot,
+      json: false,
+      dependencies: {
+        platform: "darwin",
+        runCommand: async (command, args) => {
+          if (command === "sqlite3") {
+            throw commandError("sqlite3 unavailable");
+          }
+          return healthyRunner(command, args);
+        },
+      },
+    });
+
+    expect(result.report.status).toBe("warning");
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "database-maintenance",
+        status: "warning",
+        summary: "offline database maintenance is unavailable (sqlite3)",
+      }),
     );
   });
 

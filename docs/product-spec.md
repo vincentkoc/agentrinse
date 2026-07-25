@@ -2,7 +2,7 @@
 
 Status: active implementation
 
-Target version: 0.3.0
+Target version: 0.4.0
 
 Created: 2026-07-23
 
@@ -1797,17 +1797,30 @@ The finding says "offline compaction opportunity", not "corruption" or
 
 ### Offline compaction
 
-Not in MVP. Target: experimental Phase 4.
+Shipped experimentally in `0.4.0` for the current Codex database contracts:
+
+- `state_5.sqlite`, SQLx migration 39, required `threads` table
+- `logs_2.sqlite`, SQLx migration 2, required `logs` table
+- `goals_1.sqlite`, SQLx migration 1, required `thread_goals` table
+- `memories_1.sqlite`, SQLx migration 1, required `stage1_outputs` and `jobs`
+  tables
+
+Every database also requires the SQLx migration table. Any filename,
+migration-ledger checksum, final schema digest, or required-table drift blocks
+the action until the upstream contract is reviewed again.
 
 Required preconditions:
 
 - all Codex CLI, desktop, and app-server processes stopped
 - no open descriptor for database, WAL, or SHM
-- schema version supported
+- exact filename, migration version, and required tables supported
+- exact SQLx migration/checksum ledger and final schema digest supported
 - sufficient free disk for a second compacted copy
 - quick integrity check succeeds
-- explicit `--allow-offline-vacuum`
+- explicit `audit --allow-offline-vacuum`
 - plan risk `experimental`
+- nonblocking SQLite-compatible record locking and atomic path exchange
+  available on the host
 
 Preferred implementation:
 
@@ -1815,12 +1828,43 @@ Preferred implementation:
 2. use `VACUUM INTO` to a sibling temporary destination where supported
 3. verify compacted database integrity and expected tables
 4. fsync destination
-5. atomically exchange or rename with a retained backup
-6. preserve rollback copy until quarantine TTL
-7. never delete WAL/SHM manually unless SQLite ownership rules prove it safe
+5. acquire exclusive POSIX record locks on both source and destination inodes
+6. temporarily remove write permissions from both locked inodes
+7. verify locked main/sidecar identities and repeat owner/descriptor checks
+8. atomically exchange source and destination without an absent-path window
+9. retain the original and tracked sidecars before releasing either lock
+10. release locks while both inodes remain read-only, then restore exact modes
+11. preserve rollback copy until quarantine TTL
+12. use the same sealed atomic exchange for undo and purge boundaries
 
 Running `VACUUM` directly against the canonical file is not sufficient for the
 product-grade implementation.
+
+`0.4.0` is stricter than the minimum sequence above: a non-empty WAL blocks
+compaction. A zero-length WAL and its SHM companion are identity-tracked and
+moved with the retained original rather than deleted. Apply uses a
+same-filesystem sibling output, sets incremental auto-vacuum on the compacted
+copy inside an owner-only temporary directory, fsyncs it, retains the exact
+original set under owner-only AgentRinse state, and installs with an atomic
+path exchange while whole-file POSIX record locks remain held on both inodes.
+Both inodes are temporarily write-sealed before the post-lock process,
+descriptor, and WAL/SHM rechecks. The check allows only AgentRinse's own lock
+descriptors. Locks are released before exact modes are restored, so a new
+writer cannot wait on the old inode and resume after the exchange.
+
+Undo is supported only while the installed compacted identity remains
+unchanged. Once Codex writes the compacted database, automatic rollback is
+refused to avoid discarding new state. Expired originals can be purged only
+while Codex is offline and after full integrity checks of both copies.
+Interrupted exchange states are recovered from exact inode, schema, migration,
+and content identities; filenames alone never authorize a recovery mutation.
+
+Revalidation reserves free space for two source-sized temporary copies plus a
+64 MiB margin because incremental auto-vacuum normalization performs a second
+vacuum. Maintenance subprocesses have two-hour operation timeouts; full
+integrity checks have 30-minute timeouts. Apply reports zero reclaimed bytes
+while the original is retained and records the rollback set as
+`retainedBackupBytes`; purge reports bytes when it actually deletes that set.
 
 ## Claude Adapter
 
@@ -3195,8 +3239,9 @@ These do not block the Phase 0 scaffold but need decisions before their phase.
    - Decision for 0.x: report-only. A later action is destructive unless
      AgentRinse can produce and validate a complete recreation descriptor.
 6. Should offline Codex database compaction ship before 1.0?
-   - Recommendation: yes, as explicit experimental functionality only after
-     upstream schema and process-lock tests exist.
+   - Decision: yes in `0.4.0`, as explicit experimental functionality for
+     exact current upstream contracts with process, descriptor, integrity,
+     rollback, and recovery tests.
 7. Should the package expose a public library API?
    - Recommendation: no stability promise before 1.0. Build internal seams,
      then expose only proven contracts.
@@ -3253,7 +3298,8 @@ Windows mutation remains blocked before 1.0.
 Publish `0.0.0` only to reserve the npm name and configure trusted publishing.
 The first supported release is `0.1.0`. Release `0.2.0` adds agent-aware
 reachability without expanding mutation. Release `0.3.0` adds recoverable
-worktree quarantine and undo.
+worktree quarantine and undo. Release `0.4.0` adds recoverable offline Codex
+database compaction.
 
 ### 2026-07-24: operational UX precedes mutation growth
 
@@ -3328,6 +3374,24 @@ The supported npm release remains the first distribution target. A formula in
 This owner-command sequence was validated on July 24, 2026 against Git 2.54.0
 using a disposable repository, including quarantine repair, lock, undo repair,
 exact recovery-ref deletion, and clean purge.
+
+### 2026-07-25: versioned offline Codex database compaction
+
+`0.4.0` adds `database.vacuum` for the four current Codex runtime databases.
+The action never deletes logical rows and never runs in-place `VACUUM`.
+Discovery requires explicit operator opt-in; plan and apply require the
+`experimental` risk ceiling.
+
+The source contract is pinned to Codex's current filenames, SQLx migration
+versions, required tables, WAL mode, and incremental auto-vacuum expectation.
+Any upstream drift returns the database to protected report-only state.
+
+The original file is retained for seven days. Undo requires unchanged streamed
+SHA-256 content identities for both database files, verified again while both
+inodes are locked. Purge requires Codex offline plus full integrity checks and
+the current pinned schema contract. Normal Codex writes disable automatic undo
+without preventing later purge of the retained original. Claude, Cursor,
+OpenCode, Zed, and all other provider databases remain report-only.
 
 ## Specification Maintenance
 
@@ -3423,6 +3487,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] implement initial schema compatibility tests
 - [x] define `0.2.0` reachability facts and roots
 - [x] define `0.3.0` quarantine, recovery, undo, and purge records
+- [x] define `0.4.0` database vacuum action, run, and rollback records
 
 ### Core safety
 
@@ -3455,7 +3520,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [ ] Docker safe cleanup
 - [x] worktree quarantine
 - [x] worktree undo
-- [ ] offline database compaction
+- [x] offline Codex database compaction
 
 ### Documentation and release
 

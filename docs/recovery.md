@@ -29,6 +29,14 @@ $XDG_STATE_HOME/agentrinse/quarantine/<entry-id>.json
 They record both the planned worktree identity and its post-repair quarantine
 identity.
 
+Database rollback manifests live under:
+
+```text
+$XDG_STATE_HOME/agentrinse/database-backups/<entry-id>.json
+```
+
+The retained original database file lives in the same owner-only directory.
+
 ## Restore a Quarantined Worktree
 
 Inspect the run first:
@@ -140,6 +148,37 @@ in-progress claim is restored before later validation after interruption.
 
 Atomic quarantine itself does not free disk. Only purge reports those bytes as
 reclaimed.
+
+## Restore an Offline Codex Vacuum
+
+Inspect and undo with the same command used for worktrees:
+
+```bash
+agentrinse show run <run-id>
+agentrinse undo <run-id>
+```
+
+Database undo requires Codex to remain fully stopped. It verifies that the
+installed compacted database still has the exact post-vacuum identity and that
+the retained original still matches its manifest. It then holds
+SQLite-compatible POSIX record locks on both inodes, repeats the process and
+descriptor checks, atomically exchanges the canonical and retained paths,
+restores tracked sidecars, durably records recovery, and removes only the
+displaced compacted file.
+
+An interrupted apply or undo is classified from the exact main-file identities
+on both sides of the exchange. Recovery either finishes the pending sidecar and
+journal work or exchanges the files back while holding the same exclusion
+locks. It never reconstructs the state from filenames alone.
+
+If Codex has reopened or changed the compacted database, automatic undo stops.
+This prevents a rollback from discarding new state. Keep the rollback copy for
+manual recovery or purge it after expiry once the canonical database is
+healthy.
+
+Database apply records the original as `retainedBackupBytes` and reports zero
+reclaimed bytes. The storage is counted as reclaimed only when purge actually
+deletes the rollback set.
 
 ## Interrupted Runs
 

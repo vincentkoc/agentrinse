@@ -19,7 +19,53 @@ Only `artifacts.remove` mutates:
 - same-user process ownership is proven idle
 - the action risk is `safe`
 
-Provider state and Docker resources remain report-only.
+Provider state and Docker resources remain report-only except for the explicit
+offline Codex database boundary below.
+
+## Recoverable Codex Database Boundary
+
+`database.vacuum` is `experimental` and excluded by every lower risk ceiling.
+It is limited to the exact current Codex SQLite filenames, expected SQLx
+migration versions, and required tables.
+
+The audit and apply boundaries require:
+
+- explicit `--allow-offline-vacuum`
+- at least 512 MiB and 25 percent free pages
+- a successful SQLite quick check
+- all Codex CLI, desktop, and app-server processes stopped
+- no open descriptor for the database, WAL, or SHM paths
+- no non-empty WAL; zero-length WAL and SHM companions are identity-tracked
+  and moved into the rollback set
+- enough free space for the second database plus a safety margin
+- macOS or Linux with `sqlite3`, `lsof`, POSIX record locks, and atomic path
+  exchange
+
+Apply builds a sibling file with `VACUUM INTO`; it never runs in-place
+`VACUUM`. The output is created inside an owner-only temporary directory. It
+verifies the full integrity check, schema digest, complete SQLx
+migration/checksum ledger, tables, migration version, and incremental
+auto-vacuum mode and fsyncs the file. Immediately before mutation, AgentRinse
+holds nonblocking whole-file POSIX record locks on the source and compacted
+inodes and temporarily removes their write bits. It then repeats owner and
+descriptor checks, verifies the locked main and sidecar identities, and
+atomically exchanges the paths. Both inodes remain read-only and locked until
+the original and its tracked sidecars are retained, directories are synced,
+and the installed manifest is durable. Locks are released before the recorded
+write modes are restored, preventing a waiting writer from following the old
+inode through the exchange.
+
+Undo is available only while the installed compacted identity is unchanged.
+The identity includes a streamed SHA-256 digest of the complete main database
+file. AgentRinse verifies both content digests, locks both inodes, repeats
+owner, descriptor, and digest checks, and atomically exchanges them before
+removing the displaced compacted copy. Once Codex reopens and writes the
+database, automatic rollback is refused.
+Expired original files are purged only after both copies pass full integrity
+checks and the same sealed exclusion boundary revalidates the canonical
+database, sidecars, and offline owner state. Normal post-vacuum writes disable
+automatic undo but do not block purge while the canonical database still
+matches the pinned Codex schema contract.
 
 ## Recoverable Worktree Boundary
 
@@ -155,7 +201,7 @@ identity, TTL, and last recovery state.
 - no wildcard or unfiltered prune
 - no `git worktree remove --force`
 - no cross-device worktree copy-and-delete fallback
-- no provider database mutation
+- no unsupported provider database mutation or logical row deletion
 - no provider sessions, transcripts, credentials, configuration, plugins,
   skills, memories, branches, stashes, or Docker volumes are removed
 - no action removes the current working directory or an ancestor
