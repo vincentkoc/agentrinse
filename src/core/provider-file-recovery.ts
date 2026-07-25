@@ -83,6 +83,7 @@ function movedIdentityMatches(
     actual.provider === expected.provider &&
     actual.device === expected.device &&
     actual.inode === expected.inode &&
+    actual.linkCount === expected.linkCount &&
     (actual.mode === expected.mode || actual.mode === (expected.mode & ~0o222)) &&
     actual.mtimeMs === expected.mtimeMs &&
     actual.measuredBytes === expected.measuredBytes &&
@@ -213,11 +214,18 @@ export async function undoProviderFileQuarantine(
   if (entry.status === "restored") {
     return entry;
   }
-  if (!["quarantined", "restoring", "partial"].includes(entry.status)) {
+  if (
+    entry.status !== "quarantined" &&
+    entry.status !== "restoring" &&
+    entry.status !== "partial"
+  ) {
     throw new Error(`provider-file quarantine entry cannot be restored from ${entry.status}`);
   }
   await assertOffline(entry, entry.quarantinePath, dependencies);
-  entry = await persist({ ...entry, status: "restoring" }, options);
+  entry = await persist(
+    { ...entry, status: "restoring", quarantineIdentity: entry.quarantineIdentity },
+    options,
+  );
   await move(entry.quarantinePath, entry.originalPath);
   await chmod(entry.originalPath, entry.target.mode & 0o7777);
   await Promise.all([
@@ -253,14 +261,17 @@ export async function purgeProviderFileQuarantine(
   if (entry.status === "purged") {
     return { entry, reclaimedBytes: 0 };
   }
-  if (!["quarantined", "purging"].includes(entry.status)) {
+  if (entry.status !== "quarantined" && entry.status !== "purging") {
     throw new Error(`provider-file quarantine entry cannot be purged from ${entry.status}`);
   }
   if (!options.allowUnexpired && Date.parse(entry.expiresAt) > clock().getTime()) {
     throw new Error(`provider-file quarantine entry has not expired: ${entry.entryId}`);
   }
   await assertOffline(entry, entry.quarantinePath, dependencies);
-  entry = await persist({ ...entry, status: "purging" }, options);
+  entry = await persist(
+    { ...entry, status: "purging", quarantineIdentity: entry.quarantineIdentity },
+    options,
+  );
   await rm(entry.quarantinePath);
   await syncDirectory(options.quarantineDirectory);
   entry = await persist(

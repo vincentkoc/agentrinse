@@ -42,6 +42,7 @@ function stableFileStats(
   return (
     before.dev === after.dev &&
     before.ino === after.ino &&
+    before.nlink === after.nlink &&
     before.mode === after.mode &&
     before.mtimeMs === after.mtimeMs &&
     before.size === after.size
@@ -70,10 +71,16 @@ export async function inspectProviderFile(
   if (!before.isFile() || before.isSymbolicLink()) {
     throw new Error(`provider cleanup target is not a regular file: ${path}`);
   }
+  if (before.nlink !== 1) {
+    throw new Error(`provider cleanup target has multiple hard links: ${path}`);
+  }
   const contentSha256 = await hashFile(physicalPath);
   const after = await lstat(physicalPath);
   if (!stableFileStats(before, after)) {
     throw new Error(`provider file changed while its content identity was measured: ${path}`);
+  }
+  if (after.nlink !== 1) {
+    throw new Error(`provider cleanup target has multiple hard links: ${path}`);
   }
 
   const identity = {
@@ -83,6 +90,7 @@ export async function inspectProviderFile(
     provider,
     device: after.dev,
     inode: after.ino,
+    linkCount: 1 as const,
     mode: after.mode,
     mtimeMs: after.mtimeMs,
     measuredBytes: after.size,
@@ -110,6 +118,7 @@ export function providerFileIdentityMatches(
     actual.provider === expected.provider &&
     actual.device === expected.device &&
     actual.inode === expected.inode &&
+    actual.linkCount === expected.linkCount &&
     modeMatches(actual.mode, expected.mode, allowSealedMode) &&
     actual.mtimeMs === expected.mtimeMs &&
     actual.measuredBytes === expected.measuredBytes &&
@@ -124,6 +133,7 @@ export function providerFileIdentityMatches(
             provider: expected.provider,
             device: expected.device,
             inode: expected.inode,
+            linkCount: expected.linkCount,
             mode: expected.mode & ~0o222,
             mtimeMs: expected.mtimeMs,
             measuredBytes: expected.measuredBytes,

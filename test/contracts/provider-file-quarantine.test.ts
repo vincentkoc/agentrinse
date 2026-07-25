@@ -10,6 +10,7 @@ const target = {
   provider: "claude" as const,
   device: 1,
   inode: 2,
+  linkCount: 1 as const,
   mode: 0o100600,
   mtimeMs: 3,
   measuredBytes: 64,
@@ -79,6 +80,6 @@ describe("provider-file quarantine contracts", () => {
         expiresAt: "2026-08-01T00:00:00.000Z",
         target,
       }),
-    ).toThrow("requires quarantine identity");
+    ).toThrow("expected object");
   });
 });

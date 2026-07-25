@@ -102,6 +102,7 @@ function openedIdentityMatches(
     !stats.isSymbolicLink() &&
     stats.dev === action.target.device &&
     stats.ino === action.target.inode &&
+    stats.nlink === action.target.linkCount &&
     stats.mode === (sealed ? action.target.mode & ~0o222 : action.target.mode) &&
     stats.mtimeMs === action.target.mtimeMs &&
     stats.size === action.target.measuredBytes
@@ -261,7 +262,10 @@ export async function executeProviderFileQuarantine(
       },
       undefined,
       undefined,
-      dependencies,
+      {
+        ...dependencies,
+        allowedHandlePids: new Set([...(dependencies.allowedHandlePids ?? []), process.pid]),
+      },
     );
     if (readiness.status === "stale") {
       throw new ProviderFileExecutionError(
@@ -274,6 +278,34 @@ export async function executeProviderFileQuarantine(
     assertAuthorized(dependencies, entry);
     await move(action.target.path, quarantinePath);
     moved = true;
+    if (!openedIdentityMatches(await lstat(quarantinePath), action, true)) {
+      let rollbackError: unknown;
+      try {
+        await move(quarantinePath, action.target.path);
+        await Promise.all([
+          syncDirectory(dirname(action.target.path)),
+          syncDirectory(options.quarantineDirectory),
+        ]);
+        moved = false;
+      } catch (error) {
+        rollbackError = error;
+      }
+      if (rollbackError !== undefined) {
+        throw new ProviderFileExecutionError(
+          "an unexpected inode was moved and rollback failed",
+          "partially-applied",
+          "PROVIDER_FILE_UNEXPECTED_INODE_PARTIAL",
+          entry,
+          { cause: rollbackError },
+        );
+      }
+      throw new ProviderFileExecutionError(
+        "source pathname changed before the atomic move; the unexpected inode was restored",
+        "rolled-back",
+        "PROVIDER_FILE_UNEXPECTED_INODE_ROLLED_BACK",
+        entry,
+      );
+    }
     await Promise.all([
       syncDirectory(dirname(action.target.path)),
       syncDirectory(options.quarantineDirectory),

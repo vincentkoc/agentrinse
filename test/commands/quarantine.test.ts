@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 import { executePurgeCommand } from "../../src/commands/purge.js";
 import { executeUndoCommand } from "../../src/commands/undo.js";
 import type { DatabaseBackupEntry } from "../../src/contracts/database-backup.js";
-import type { ProviderFileQuarantineEntry } from "../../src/contracts/provider-file-quarantine.js";
+import {
+  providerFileQuarantineEntrySchema,
+  type ProviderFileQuarantineEntry,
+} from "../../src/contracts/provider-file-quarantine.js";
 import { quarantineRecoveryRef, type QuarantineEntry } from "../../src/contracts/quarantine.js";
 import {
   worktreePurgeIsolationPath,
@@ -125,13 +128,14 @@ function providerFileEntry(
     provider: "claude" as const,
     device: 1,
     inode: 2,
+    linkCount: 1 as const,
     mode: 0o100600,
     mtimeMs: 3,
     measuredBytes: 64,
     contentSha256: "a".repeat(64),
     fingerprint: "b".repeat(64),
   };
-  return {
+  return providerFileQuarantineEntrySchema.parse({
     schemaVersion: 1,
     entryId: "provider-entry",
     runId: "run-provider",
@@ -155,7 +159,7 @@ function providerFileEntry(
             fingerprint: "c".repeat(64),
           },
         }),
-  };
+  });
 }
 
 async function stateFixture(entries: QuarantineEntry[]): Promise<{

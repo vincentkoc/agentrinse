@@ -12,6 +12,7 @@ export type ProviderFileRevalidationResult =
 
 export type ProviderFileRevalidationDependencies = {
   authorizeTarget?: (action: ProviderFileQuarantineAction) => Promise<void>;
+  allowedHandlePids?: ReadonlySet<number>;
   inspectProcesses?: (
     provider: ProviderFileQuarantineAction["adapter"],
   ) => Promise<ProviderProcessResult>;
@@ -92,15 +93,21 @@ export async function revalidateProviderFileQuarantine(
   const handles = await (dependencies.inspectOpenHandles ?? findProcessesUsingFile)(
     action.target.path,
   );
-  if (handles.status !== "idle") {
+  const externalMatches =
+    handles.status === "busy"
+      ? handles.matches.filter((match) => !dependencies.allowedHandlePids?.has(match.pid))
+      : [];
+  if (handles.status === "unknown" || externalMatches.length > 0) {
+    const message =
+      handles.status === "unknown"
+        ? `provider file descriptor state is unknown: ${handles.reason}`
+        : "a process has the provider file open";
     return stale(
       action,
-      handles.status === "busy"
+      externalMatches.length > 0
         ? "PROVIDER_FILE_DESCRIPTOR_ACTIVE"
         : "PROVIDER_FILE_DESCRIPTOR_STATE_UNKNOWN",
-      handles.status === "busy"
-        ? "a process has the provider file open"
-        : `provider file descriptor state is unknown: ${handles.reason}`,
+      message,
     );
   }
   return { status: "ready" };

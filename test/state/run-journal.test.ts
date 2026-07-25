@@ -200,6 +200,7 @@ describe("run journal", () => {
             provider: "claude",
             device: 1,
             inode: 2,
+            linkCount: 1,
             mode: 0o100600,
             mtimeMs: 3,
             measuredBytes: 20,

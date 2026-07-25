@@ -133,6 +133,7 @@ export const providerFileIdentitySchema = z.object({
   provider: providerMutationIdSchema,
   device: z.number().int().nonnegative(),
   inode: z.number().int().nonnegative(),
+  linkCount: z.literal(1),
   mode: z.number().int().nonnegative(),
   mtimeMs: z.number().finite(),
   measuredBytes: z.number().int().nonnegative(),

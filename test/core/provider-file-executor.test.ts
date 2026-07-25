@@ -1,5 +1,6 @@
 import {
   chmod,
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -128,6 +129,24 @@ describe("provider-file quarantine execution and recovery", () => {
     await expect(lstat(result.quarantinePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("ignores only the executor's own open descriptor", async () => {
+    const selected = await fixture();
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-self-handle",
+      entryId: "entry-self-handle",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: {
+        ...idleDependencies(),
+        inspectOpenHandles: async (path) => ({
+          status: "busy" as const,
+          matches: [{ pid: process.pid, source: "fd" as const, path }],
+        }),
+      },
+    });
+
+    await expect(readFile(result.quarantinePath, "utf8")).resolves.toBe("synthetic debug output\n");
+  });
+
   it("restores source permissions when the provider becomes active", async () => {
     const selected = await fixture();
     const originalMode = (await lstat(selected.file)).mode;
@@ -204,6 +223,43 @@ describe("provider-file quarantine execution and recovery", () => {
     await expect(readFile(protectedFile, "utf8")).resolves.toBe('{"token":"synthetic"}\n');
     await expect(
       readJsonFile(join(selected.quarantineDirectory, "entry-race.json")),
+    ).resolves.toMatchObject({ status: "restored" });
+  });
+
+  it("rolls back when the source pathname changes before rename", async () => {
+    const selected = await fixture();
+    const rotated = join(selected.action.target.ownerRoot, "debug", "rotated.txt");
+    const replacement = join(selected.action.target.ownerRoot, "debug", "replacement.txt");
+    await writeFile(replacement, "replacement\n");
+    let firstMove = true;
+    const move = async (source: string, destination: string) => {
+      if (firstMove) {
+        firstMove = false;
+        await rename(source, rotated);
+        await rename(replacement, source);
+      }
+      await rename(source, destination);
+    };
+
+    await expect(
+      executeProviderFileQuarantine(selected.action, {
+        runId: "run-rename-race",
+        entryId: "entry-rename-race",
+        quarantineDirectory: selected.quarantineDirectory,
+        dependencies: { ...idleDependencies(), move },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      diagnosticCode: "PROVIDER_FILE_UNEXPECTED_INODE_ROLLED_BACK",
+    });
+
+    await expect(readFile(selected.action.target.path, "utf8")).resolves.toBe("replacement\n");
+    await expect(readFile(rotated, "utf8")).resolves.toBe("synthetic debug output\n");
+    await expect(
+      lstat(providerFileQuarantinePath(selected.quarantineDirectory, "entry-rename-race")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readJsonFile(join(selected.quarantineDirectory, "entry-rename-race.json")),
     ).resolves.toMatchObject({ status: "restored" });
   });
 
@@ -284,6 +340,17 @@ describe("provider-file quarantine execution and recovery", () => {
       "contains a symlink",
     );
     await expect(readFile(config, "utf8")).resolves.toBe('{"token":"synthetic"}\n');
+  });
+
+  it("rejects provider files with hard-link aliases", async () => {
+    const selected = await fixture();
+    const alias = join(selected.action.target.ownerRoot, "debug", "alias.txt");
+    await link(selected.action.target.path, alias);
+
+    await expect(
+      inspectProviderFile(selected.action.target.path, selected.action.target.ownerRoot, "claude"),
+    ).rejects.toThrow("multiple hard links");
+    await expect(readFile(alias, "utf8")).resolves.toBe("synthetic debug output\n");
   });
 
   it("refuses purge while the payload has an open descriptor", async () => {
