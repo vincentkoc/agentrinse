@@ -15,7 +15,11 @@ describe("Codex database inspection", () => {
   it("reads a supported state database contract without opening provider content", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-db-"));
     const path = join(root, "state_5.sqlite");
-    await writeFile(path, "synthetic sqlite fixture");
+    const header = Buffer.alloc(100);
+    header.write("SQLite format 3\0", "binary");
+    header[18] = 2;
+    header[19] = 2;
+    await writeFile(path, header);
     const queries: string[] = [];
 
     const inspection = await inspectCodexDatabase(path, {

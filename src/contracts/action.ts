@@ -94,6 +94,7 @@ export const databaseIdentitySchema = z.object({
   pageSize: z.number().int().positive(),
   pageCount: z.number().int().nonnegative(),
   freelistCount: z.number().int().nonnegative(),
+  journalMode: z.literal("wal"),
   autoVacuum: z.number().int().min(0).max(2),
   migrationVersion: z.number().int().nonnegative(),
   tables: z.array(z.string().min(1)),

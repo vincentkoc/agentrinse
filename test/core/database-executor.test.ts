@@ -36,6 +36,7 @@ function identity(path: string, content: "original" | "compacted"): DatabaseIden
     pageSize: 4096,
     pageCount: content === "original" ? 4 : 1,
     freelistCount: content === "original" ? 3 : 0,
+    journalMode: "wal",
     autoVacuum: content === "original" ? 0 : 2,
     migrationVersion: 39,
     tables: ["_sqlx_migrations", "threads"],

@@ -22,6 +22,7 @@ function databaseIdentity(path: string): DatabaseIdentity {
     pageSize: 4096,
     pageCount: 262_144,
     freelistCount: 196_608,
+    journalMode: "wal",
     autoVacuum: 0,
     migrationVersion: 39,
     tables: ["_sqlx_migrations", "threads"],

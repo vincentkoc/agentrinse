@@ -521,6 +521,10 @@
                           "minimum": 0,
                           "maximum": 9007199254740991
                         },
+                        "journalMode": {
+                          "type": "string",
+                          "const": "wal"
+                        },
                         "autoVacuum": {
                           "type": "integer",
                           "minimum": 0,
@@ -639,6 +643,7 @@
                         "pageSize",
                         "pageCount",
                         "freelistCount",
+                        "journalMode",
                         "autoVacuum",
                         "migrationVersion",
                         "tables",

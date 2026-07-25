@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { lstat } from "node:fs/promises";
+import { lstat, open } from "node:fs/promises";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -155,6 +155,23 @@ async function optionalFile(path: string): Promise<DatabaseSidecarIdentity | und
   }
 }
 
+async function readSqliteJournalMode(path: string): Promise<"wal"> {
+  const handle = await open(path, "r");
+  try {
+    const header = Buffer.alloc(100);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    if (bytesRead !== header.length || header.toString("binary", 0, 16) !== "SQLite format 3\0") {
+      throw new Error(`Codex database has an invalid SQLite header: ${path}`);
+    }
+    if (header[18] !== 2 || header[19] !== 2) {
+      throw new Error(`Codex database journal mode is not persistent WAL: ${path}`);
+    }
+    return "wal";
+  } finally {
+    await handle.close();
+  }
+}
+
 function parseInteger(value: string | undefined, label: string): number {
   const parsed = value === undefined ? Number.NaN : Number.parseInt(value, 10);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
@@ -224,6 +241,7 @@ export async function inspectCodexDatabase(
   const pageCount = parseInteger(values[1], "page count");
   const freelistCount = parseInteger(values[2], "freelist count");
   const autoVacuum = parseInteger(values[3], "auto-vacuum mode");
+  const journalMode = await readSqliteJournalMode(path);
   const wal = await optionalFile(`${path}-wal`);
   const shm = await optionalFile(`${path}-shm`);
   const identity = databaseIdentitySchema.parse({
@@ -238,6 +256,7 @@ export async function inspectCodexDatabase(
     pageSize,
     pageCount,
     freelistCount,
+    journalMode,
     autoVacuum,
     migrationVersion,
     tables,
@@ -256,6 +275,7 @@ export async function inspectCodexDatabase(
       pageSize,
       pageCount,
       freelistCount,
+      journalMode,
       autoVacuum,
       migrationVersion,
       tables,
@@ -300,7 +320,7 @@ export async function vacuumCodexDatabaseInto(
     "-cmd",
     ".timeout 1000",
     destinationPath,
-    "PRAGMA synchronous=FULL; PRAGMA auto_vacuum=INCREMENTAL; VACUUM;",
+    "PRAGMA synchronous=FULL; PRAGMA auto_vacuum=INCREMENTAL; VACUUM; PRAGMA journal_mode=WAL;",
   ]);
   if (normalize.stderr.trim() !== "") {
     throw new Error(
