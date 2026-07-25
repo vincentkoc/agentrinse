@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
-import { lstat, realpath } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import type { ProviderFileIdentity, ProviderMutationId } from "../contracts/action.js";
@@ -11,10 +11,17 @@ function inside(root: string, candidate: string): boolean {
   return result !== "" && !result.startsWith("..") && !isAbsolute(result);
 }
 
-async function hashFile(path: string): Promise<string> {
+async function hashFileDescriptor(handle: Awaited<ReturnType<typeof open>>): Promise<string> {
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) {
-    hash.update(chunk);
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  let position = 0;
+  for (;;) {
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+    if (bytesRead === 0) {
+      break;
+    }
+    hash.update(buffer.subarray(0, bytesRead));
+    position += bytesRead;
   }
   return hash.digest("hex");
 }
@@ -45,7 +52,25 @@ function stableFileStats(
     before.nlink === after.nlink &&
     before.mode === after.mode &&
     before.mtimeMs === after.mtimeMs &&
+    before.ctimeMs === after.ctimeMs &&
     before.size === after.size
+  );
+}
+
+function sameFileStats(
+  pathStats: Awaited<ReturnType<typeof lstat>>,
+  descriptorStats: Awaited<ReturnType<typeof lstat>>,
+): boolean {
+  return (
+    pathStats.isFile() &&
+    !pathStats.isSymbolicLink() &&
+    pathStats.dev === descriptorStats.dev &&
+    pathStats.ino === descriptorStats.ino &&
+    pathStats.nlink === descriptorStats.nlink &&
+    pathStats.mode === descriptorStats.mode &&
+    pathStats.mtimeMs === descriptorStats.mtimeMs &&
+    pathStats.ctimeMs === descriptorStats.ctimeMs &&
+    pathStats.size === descriptorStats.size
   );
 }
 
@@ -67,20 +92,29 @@ export async function inspectProviderFile(
     throw new Error(`provider file is outside its owner root: ${path}`);
   }
 
-  const before = await lstat(physicalPath);
-  if (!before.isFile() || before.isSymbolicLink()) {
-    throw new Error(`provider cleanup target is not a regular file: ${path}`);
-  }
-  if (before.nlink !== 1) {
-    throw new Error(`provider cleanup target has multiple hard links: ${path}`);
-  }
-  const contentSha256 = await hashFile(physicalPath);
-  const after = await lstat(physicalPath);
-  if (!stableFileStats(before, after)) {
-    throw new Error(`provider file changed while its content identity was measured: ${path}`);
-  }
-  if (after.nlink !== 1) {
-    throw new Error(`provider cleanup target has multiple hard links: ${path}`);
+  const handle = await open(physicalPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let after: Awaited<ReturnType<typeof lstat>>;
+  let contentSha256: string;
+  try {
+    const before = await handle.stat();
+    const pathBefore = await lstat(physicalPath);
+    if (!sameFileStats(pathBefore, before)) {
+      throw new Error(`provider file changed while its descriptor was acquired: ${path}`);
+    }
+    if (before.nlink !== 1) {
+      throw new Error(`provider cleanup target has multiple hard links: ${path}`);
+    }
+    contentSha256 = await hashFileDescriptor(handle);
+    after = await handle.stat();
+    const pathAfter = await lstat(physicalPath);
+    if (!stableFileStats(before, after) || !sameFileStats(pathAfter, after)) {
+      throw new Error(`provider file changed while its content identity was measured: ${path}`);
+    }
+    if (after.nlink !== 1) {
+      throw new Error(`provider cleanup target has multiple hard links: ${path}`);
+    }
+  } finally {
+    await handle.close();
   }
 
   const identity = {
