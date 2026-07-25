@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, rm, type FileHandle } from "node:fs/promises";
+import { lstat, open, type FileHandle } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
@@ -24,6 +25,7 @@ export type ProviderFileRecoveryDependencies = {
     provider: ProviderFileQuarantineEntry["target"]["provider"],
   ) => Promise<ProviderProcessResult>;
   inspectOpenHandles?: (path: string) => Promise<ProcessOwnershipResult>;
+  truncateHandle?: (handle: FileHandle) => Promise<void>;
   platform?: NodeJS.Platform;
 };
 
@@ -40,6 +42,8 @@ export function providerFilePurgeIsolationPath(
 ): string {
   return join(quarantineDirectory, `${entryId}.payload.purging`);
 }
+
+const EMPTY_FILE_SHA256 = createHash("sha256").digest("hex");
 
 function isMissing(error: unknown): boolean {
   return (
@@ -64,14 +68,66 @@ async function openValidatedFile(
   identity: ProviderFileQuarantineEntry["target"],
   allowSealedMode = false,
 ): Promise<FileHandle> {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
-    if (!providerFileStatsMatch(await handle.stat(), identity, allowSealedMode)) {
+    const stats = await handle.stat();
+    if (!stats.isFile()) {
+      throw new Error(`provider-file recovery target is not a regular file: ${path}`);
+    }
+    if (!providerFileStatsMatch(stats, identity, allowSealedMode)) {
       throw new Error(`provider-file descriptor identity changed: ${path}`);
     }
     return handle;
   } catch (error) {
     await handle.close().catch(() => undefined);
+    throw error;
+  }
+}
+
+async function openValidatedWritableFile(
+  path: string,
+  identity: ProviderFileQuarantineEntry["target"],
+  readHandle: FileHandle,
+): Promise<FileHandle> {
+  const openWritable = () =>
+    open(path, constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  let writeHandle: FileHandle | undefined;
+  let modeAdjusted = false;
+  try {
+    try {
+      writeHandle = await openWritable();
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        !["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")
+      ) {
+        throw error;
+      }
+      await readHandle.chmod((identity.mode & 0o7777) | 0o200);
+      await readHandle.sync();
+      modeAdjusted = true;
+      writeHandle = await openWritable();
+    }
+    const writableMode = modeAdjusted ? identity.mode | 0o200 : identity.mode;
+    if (!providerFileStatsMatch(await writeHandle.stat(), { ...identity, mode: writableMode })) {
+      throw new Error(`provider-file writable descriptor identity changed: ${path}`);
+    }
+    await readHandle.chmod(identity.mode & ~0o222);
+    await readHandle.sync();
+    if (
+      !providerFileStatsMatch(await readHandle.stat(), identity, true) ||
+      !providerFileStatsMatch(await writeHandle.stat(), identity, true)
+    ) {
+      throw new Error(`provider-file descriptor identity changed while sealing purge: ${path}`);
+    }
+    return writeHandle;
+  } catch (error) {
+    await writeHandle?.close().catch(() => undefined);
+    if (modeAdjusted) {
+      await readHandle.chmod(identity.mode & 0o7777).catch(() => undefined);
+      await readHandle.sync().catch(() => undefined);
+    }
     throw error;
   }
 }
@@ -133,6 +189,22 @@ function movedIdentityMatches(
     actual.mtimeMs === expected.mtimeMs &&
     actual.measuredBytes === expected.measuredBytes &&
     actual.contentSha256 === expected.contentSha256
+  );
+}
+
+function purgedMarkerMatches(
+  actual: ProviderFileQuarantineEntry["target"],
+  entry: ProviderFileQuarantineEntry,
+): boolean {
+  const expected = entry.target;
+  return (
+    actual.provider === expected.provider &&
+    actual.device === expected.device &&
+    actual.inode === expected.inode &&
+    actual.linkCount === expected.linkCount &&
+    actual.mode === (expected.mode & ~0o222) &&
+    actual.measuredBytes === 0 &&
+    actual.contentSha256 === EMPTY_FILE_SHA256
   );
 }
 
@@ -225,6 +297,22 @@ async function reconcile(
     throw new Error("provider-file recovery found unexpected content at the original path");
   }
   if (purgeIsolation !== undefined) {
+    if (
+      ["purging", "purged"].includes(entry.status) &&
+      purgedMarkerMatches(purgeIsolation, entry)
+    ) {
+      return persist(
+        {
+          ...entry,
+          status: "purged",
+          purgedAt:
+            entry.purgedAt ?? (options.dependencies?.clock ?? (() => new Date()))().toISOString(),
+          quarantineIdentity: purgeIsolation,
+          diagnostic: undefined,
+        },
+        options,
+      );
+    }
     if (entry.status !== "purging" || !movedIdentityMatches(purgeIsolation, entry)) {
       throw new Error("provider-file purge isolation payload does not match its manifest");
     }
@@ -382,12 +470,9 @@ export async function purgeProviderFileQuarantine(
   const payloadPath = alreadyIsolated ? purgeIsolationPath : entry.quarantinePath;
   await assertOffline(entry, payloadPath, dependencies);
   const payloadHandle = await openValidatedFile(payloadPath, entry.quarantineIdentity, true);
+  let writableHandle: FileHandle | undefined;
   try {
-    await payloadHandle.chmod(entry.target.mode & ~0o222);
-    await payloadHandle.sync();
-    if (!providerFileStatsMatch(await payloadHandle.stat(), entry.target, true)) {
-      throw new Error("provider-file payload changed while it was sealed for purge");
-    }
+    writableHandle = await openValidatedWritableFile(payloadPath, entry.target, payloadHandle);
     entry = await persist(
       { ...entry, status: "purging", quarantineIdentity: entry.quarantineIdentity },
       options,
@@ -417,22 +502,41 @@ export async function purgeProviderFileQuarantine(
       }
       await syncDirectory(options.quarantineDirectory);
     }
-    await rm(purgeIsolationPath);
-    if ((await payloadHandle.stat()).nlink !== 0) {
-      throw new Error("provider-file purge removed a path other than the claimed inode");
+    await (dependencies.truncateHandle ?? ((handle: FileHandle) => handle.truncate(0)))(
+      writableHandle,
+    );
+    await writableHandle.sync();
+    const truncatedStats = await writableHandle.stat();
+    if (
+      !truncatedStats.isFile() ||
+      truncatedStats.dev !== entry.target.device ||
+      truncatedStats.ino !== entry.target.inode ||
+      truncatedStats.nlink !== entry.target.linkCount ||
+      truncatedStats.size !== 0
+    ) {
+      throw new Error("provider-file purge did not truncate the claimed inode");
     }
-    await syncDirectory(options.quarantineDirectory);
+    const purgedMarker = await inspectProviderFile(
+      purgeIsolationPath,
+      options.quarantineDirectory,
+      entry.target.provider,
+    );
+    if (!purgedMarkerMatches(purgedMarker, entry)) {
+      throw new Error("provider-file purge marker no longer names the claimed inode");
+    }
+    entry = await persist(
+      {
+        ...entry,
+        status: "purged",
+        purgedAt: clock().toISOString(),
+        quarantineIdentity: purgedMarker,
+        diagnostic: undefined,
+      },
+      options,
+    );
   } finally {
+    await writableHandle?.close().catch(() => undefined);
     await payloadHandle.close();
   }
-  entry = await persist(
-    {
-      ...entry,
-      status: "purged",
-      purgedAt: clock().toISOString(),
-      diagnostic: undefined,
-    },
-    options,
-  );
   return { entry, reclaimedBytes: entry.target.measuredBytes };
 }

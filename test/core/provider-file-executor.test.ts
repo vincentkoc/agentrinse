@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import {
   chmod,
   link,
@@ -7,10 +8,12 @@ import {
   readFile,
   rename,
   symlink,
+  truncate,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -32,6 +35,7 @@ import {
 import { writeJsonAtomic, readJsonFile } from "../../src/state/json-file.js";
 
 const NOW = new Date("2026-07-25T00:00:00.000Z");
+const execFileAsync = promisify(execFile);
 
 function idleDependencies() {
   return {
@@ -128,6 +132,11 @@ describe("provider-file quarantine execution and recovery", () => {
     expect(purged.entry.status).toBe("purged");
     expect(purged.reclaimedBytes).toBe(selected.action.target.measuredBytes);
     await expect(lstat(result.quarantinePath)).rejects.toMatchObject({ code: "ENOENT" });
+    const markerPath = providerFilePurgeIsolationPath(
+      selected.quarantineDirectory,
+      manifest.entryId,
+    );
+    expect((await lstat(markerPath)).size).toBe(0);
   });
 
   it("ignores only the executor's own open descriptor", async () => {
@@ -424,6 +433,19 @@ describe("provider-file quarantine execution and recovery", () => {
     await expect(readFile(alias, "utf8")).resolves.toBe("synthetic debug output\n");
   });
 
+  it.runIf(["darwin", "linux"].includes(process.platform))(
+    "rejects a FIFO without blocking on open",
+    async () => {
+      const selected = await fixture();
+      const fifo = join(selected.ownerRoot, "debug", "raced-fifo");
+      await execFileAsync("mkfifo", [fifo]);
+
+      await expect(inspectProviderFile(fifo, selected.ownerRoot, "claude")).rejects.toThrow(
+        "not a regular file",
+      );
+    },
+  );
+
   it("refuses purge while the payload has an open descriptor", async () => {
     const selected = await fixture();
     const result = await executeProviderFileQuarantine(selected.action, {
@@ -490,7 +512,49 @@ describe("provider-file quarantine execution and recovery", () => {
     });
 
     expect(purged.entry.status).toBe("purged");
-    await expect(lstat(isolationPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(isolationPath)).size).toBe(0);
+  });
+
+  it("finalizes a purge interrupted after descriptor truncation", async () => {
+    const selected = await fixture();
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-resume-truncated-purge",
+      entryId: "entry-resume-truncated-purge",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: idleDependencies(),
+    });
+    const manifest = providerFileQuarantineEntrySchema.parse(
+      await readJsonFile(result.manifestPath),
+    );
+    const isolationPath = providerFilePurgeIsolationPath(
+      selected.quarantineDirectory,
+      manifest.entryId,
+    );
+    await rename(result.quarantinePath, isolationPath);
+    await truncate(isolationPath, 0);
+    await chmod(isolationPath, selected.action.target.mode & ~0o222);
+    if (manifest.quarantineIdentity === undefined) {
+      throw new Error("expected quarantined provider-file identity");
+    }
+    const purgingEntry = providerFileQuarantineEntrySchema.parse({
+      ...manifest,
+      status: "purging",
+      quarantineIdentity: manifest.quarantineIdentity,
+    });
+    await writeJsonAtomic(result.manifestPath, purgingEntry, {
+      privateDirectories: [selected.quarantineDirectory],
+    });
+
+    const purged = await purgeProviderFileQuarantine(purgingEntry, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory: selected.quarantineDirectory,
+      allowUnexpired: true,
+      dependencies: idleDependencies(),
+    });
+
+    expect(purged.entry.status).toBe("purged");
+    expect(purged.reclaimedBytes).toBe(0);
+    expect((await lstat(isolationPath)).size).toBe(0);
   });
 
   it("rolls back an unexpected inode raced into the purge claim", async () => {
@@ -531,6 +595,77 @@ describe("provider-file quarantine execution and recovery", () => {
     await expect(
       lstat(providerFilePurgeIsolationPath(selected.quarantineDirectory, manifest.entryId)),
     ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("never truncates a replacement raced into the private purge claim", async () => {
+    const selected = await fixture();
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-truncate-race",
+      entryId: "entry-truncate-race",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: idleDependencies(),
+    });
+    const manifest = providerFileQuarantineEntrySchema.parse(
+      await readJsonFile(result.manifestPath),
+    );
+    const isolationPath = providerFilePurgeIsolationPath(
+      selected.quarantineDirectory,
+      manifest.entryId,
+    );
+    const heldPayload = join(selected.quarantineDirectory, "held-truncate-payload");
+
+    await expect(
+      purgeProviderFileQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory: selected.quarantineDirectory,
+        allowUnexpired: true,
+        dependencies: {
+          ...idleDependencies(),
+          truncateHandle: async (handle) => {
+            await rename(isolationPath, heldPayload);
+            await writeFile(isolationPath, "replacement payload\n");
+            await handle.truncate(0);
+          },
+        },
+      }),
+    ).rejects.toThrow("marker");
+
+    await expect(readFile(isolationPath, "utf8")).resolves.toBe("replacement payload\n");
+    expect((await lstat(heldPayload)).size).toBe(0);
+  });
+
+  it("purges an owner-read-only payload through a validated writable descriptor", async () => {
+    const selected = await fixture();
+    await chmod(selected.file, 0o440);
+    const target = await inspectProviderFile(selected.file, selected.ownerRoot, "claude");
+    selected.action = {
+      ...selected.action,
+      pendingQuarantineBytes: target.measuredBytes,
+      target,
+    };
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-read-only-purge",
+      entryId: "entry-read-only-purge",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: idleDependencies(),
+    });
+    const manifest = providerFileQuarantineEntrySchema.parse(
+      await readJsonFile(result.manifestPath),
+    );
+
+    const purged = await purgeProviderFileQuarantine(manifest, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory: selected.quarantineDirectory,
+      allowUnexpired: true,
+      dependencies: idleDependencies(),
+    });
+
+    expect(purged.entry.status).toBe("purged");
+    const markerPath = providerFilePurgeIsolationPath(
+      selected.quarantineDirectory,
+      manifest.entryId,
+    );
+    expect((await lstat(markerPath)).size).toBe(0);
   });
 
   it("preserves non-write permission bits across quarantine and undo", async () => {
