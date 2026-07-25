@@ -15,9 +15,17 @@ import {
   databaseBackupEntrySchema,
   type DatabaseBackupEntry,
 } from "../contracts/database-backup.js";
+import {
+  providerFileQuarantineEntrySchema,
+  type ProviderFileQuarantineEntry,
+} from "../contracts/provider-file-quarantine.js";
 import type { ResourceRef } from "../contracts/resource.js";
 import { ReachabilityIndex } from "../core/reachability.js";
 import { purgeDatabaseBackup, type DatabaseRecoveryOptions } from "../core/database-recovery.js";
+import {
+  purgeProviderFileQuarantine,
+  type ProviderFileRecoveryOptions,
+} from "../core/provider-file-recovery.js";
 import {
   purgeWorktreeQuarantine,
   worktreePurgeIsolationPath,
@@ -59,12 +67,16 @@ export type PurgeCommandOptions = {
       entry: DatabaseBackupEntry,
       options: DatabaseRecoveryOptions,
     ) => Promise<{ entry: DatabaseBackupEntry; reclaimedBytes: number }>;
+    purgeProviderFile?: (
+      entry: ProviderFileQuarantineEntry,
+      options: ProviderFileRecoveryOptions,
+    ) => Promise<{ entry: ProviderFileQuarantineEntry; reclaimedBytes: number }>;
     runGit?: (args: string[]) => Promise<string>;
   };
 };
 
 export type PurgeCommandResult = {
-  entries: Array<QuarantineEntry | DatabaseBackupEntry>;
+  entries: Array<QuarantineEntry | DatabaseBackupEntry | ProviderFileQuarantineEntry>;
   applied: boolean;
   reclaimedBytes: number;
   output: string;
@@ -128,7 +140,10 @@ async function currentProtectionRoots(
   return [...unique.values()];
 }
 
-function renderPreview(entries: Array<QuarantineEntry | DatabaseBackupEntry>, now: Date): string {
+function renderPreview(
+  entries: Array<QuarantineEntry | DatabaseBackupEntry | ProviderFileQuarantineEntry>,
+  now: Date,
+): string {
   if (entries.length === 0) {
     return "No matching quarantine entries.\n";
   }
@@ -188,9 +203,26 @@ export async function executePurgeCommand(
       (entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()) &&
       (options.runId === undefined || entry.runId === options.runId),
   );
+  const providerFileRecords = await listJsonRecordFiles(
+    layout.providerQuarantine,
+    providerFileQuarantineEntrySchema,
+  );
+  for (const record of providerFileRecords) {
+    if (record.name !== `${record.value.entryId}.json`) {
+      throw new Error(`provider-file manifest entry ID does not match filename: ${record.name}`);
+    }
+  }
+  const providerFileEntries = providerFileRecords.filter(
+    ({ value: entry }) =>
+      ["quarantined", "purging"].includes(entry.status) &&
+      (options.expired
+        ? entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()
+        : options.runId === undefined || entry.runId === options.runId),
+  );
   const selected = [
     ...entries.map((record) => record.value),
     ...databaseEntries.map((record) => record.value),
+    ...providerFileEntries.map((record) => record.value),
   ];
 
   if (!options.apply) {
@@ -223,7 +255,7 @@ export async function executePurgeCommand(
     runId: operationId,
     command: "agentrinse purge",
   });
-  const purged: Array<QuarantineEntry | DatabaseBackupEntry> = [];
+  const purged: Array<QuarantineEntry | DatabaseBackupEntry | ProviderFileQuarantineEntry> = [];
   let reclaimedBytes = 0;
   const runGit = options.dependencies?.runGit ?? defaultGitRunner;
   try {
@@ -257,6 +289,18 @@ export async function executePurgeCommand(
         {
           manifestPath: record.path,
           backupDirectory: layout.databaseBackups,
+        },
+      );
+      purged.push(result.entry);
+      reclaimedBytes += result.reclaimedBytes;
+    }
+    for (const record of providerFileEntries) {
+      const result = await (options.dependencies?.purgeProviderFile ?? purgeProviderFileQuarantine)(
+        record.value,
+        {
+          manifestPath: record.path,
+          quarantineDirectory: layout.providerQuarantine,
+          allowUnexpired: record.value.status === "purging" || options.runId !== undefined,
         },
       );
       purged.push(result.entry);

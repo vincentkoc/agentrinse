@@ -6,7 +6,15 @@ import {
   databaseBackupEntrySchema,
   type DatabaseBackupEntry,
 } from "../contracts/database-backup.js";
+import {
+  providerFileQuarantineEntrySchema,
+  type ProviderFileQuarantineEntry,
+} from "../contracts/provider-file-quarantine.js";
 import { undoDatabaseVacuum, type DatabaseRecoveryOptions } from "../core/database-recovery.js";
+import {
+  undoProviderFileQuarantine,
+  type ProviderFileRecoveryOptions,
+} from "../core/provider-file-recovery.js";
 import { undoWorktreeQuarantine, type WorktreeRecoveryOptions } from "../core/worktree-recovery.js";
 import { ensurePrivateDirectory } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
@@ -28,11 +36,15 @@ export type UndoCommandOptions = {
       entry: DatabaseBackupEntry,
       options: DatabaseRecoveryOptions,
     ) => Promise<DatabaseBackupEntry>;
+    undoProviderFile?: (
+      entry: ProviderFileQuarantineEntry,
+      options: ProviderFileRecoveryOptions,
+    ) => Promise<ProviderFileQuarantineEntry>;
   };
 };
 
 export type UndoCommandResult = {
-  entries: Array<QuarantineEntry | DatabaseBackupEntry>;
+  entries: Array<QuarantineEntry | DatabaseBackupEntry | ProviderFileQuarantineEntry>;
   output: string;
 };
 
@@ -78,7 +90,22 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
       value.runId === options.runId &&
       (options.actionId === undefined || value.actionId === options.actionId),
   );
-  const entryCount = entries.length + databaseEntries.length;
+  const providerFileRecords = await listJsonRecordFiles(
+    layout.providerQuarantine,
+    providerFileQuarantineEntrySchema,
+  );
+  for (const record of providerFileRecords) {
+    if (record.name !== `${record.value.entryId}.json`) {
+      throw new Error(`provider-file manifest entry ID does not match filename: ${record.name}`);
+    }
+  }
+  const providerFileEntries = providerFileRecords.filter(
+    ({ value }) =>
+      ["preparing", "quarantined", "restoring", "partial"].includes(value.status) &&
+      value.runId === options.runId &&
+      (options.actionId === undefined || value.actionId === options.actionId),
+  );
+  const entryCount = entries.length + databaseEntries.length + providerFileEntries.length;
   if (entryCount === 0) {
     throw new Error(`no live quarantine entries found for run ${options.runId}`);
   }
@@ -99,7 +126,7 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
     runId: operationId,
     command: "agentrinse undo",
   });
-  const restored: Array<QuarantineEntry | DatabaseBackupEntry> = [];
+  const restored: Array<QuarantineEntry | DatabaseBackupEntry | ProviderFileQuarantineEntry> = [];
   try {
     for (const record of entries) {
       const entry = record.value;
@@ -115,6 +142,14 @@ export async function executeUndoCommand(options: UndoCommandOptions): Promise<U
         await (options.dependencies?.undoDatabase ?? undoDatabaseVacuum)(record.value, {
           manifestPath: record.path,
           backupDirectory: layout.databaseBackups,
+        }),
+      );
+    }
+    for (const record of providerFileEntries) {
+      restored.push(
+        await (options.dependencies?.undoProviderFile ?? undoProviderFileQuarantine)(record.value, {
+          manifestPath: record.path,
+          quarantineDirectory: layout.providerQuarantine,
         }),
       );
     }
