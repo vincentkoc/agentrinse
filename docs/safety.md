@@ -61,8 +61,10 @@ Undo keeps the restored inode write-sealed through directory sync and complete
 content verification, then restores its recorded mode through the same
 descriptor as the final mutation. Purge atomically renames the payload to a
 deterministic owner-only claim path, verifies the claimed descriptor and inode,
-then unlinks only that path. Interrupted permission repair and purge claims
-remain durable recovery states.
+then truncates the contents through a validated writable descriptor. The empty,
+write-sealed inode remains as a durable purge proof, preventing pathname
+rebinding from deleting unrelated content. Interrupted permission repair and
+purge claims remain durable recovery states.
 Directories, sessions, transcripts, databases, credentials, configuration,
 plugins, and caches without an explicit file-level owner contract are not
 accepted.

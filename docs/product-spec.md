@@ -3310,10 +3310,12 @@ descriptor-bound content digest, immutable provider policy ID, configured owner
 root, provider identity, same-filesystem recovery storage, provider-process
 refusal, descriptor refusal, durable manifest, undo, and purge. Undo keeps the
 restored inode write-sealed until content verification completes. Purge first
-claims the exact inode at a deterministic owner-only path, then verifies and
-unlinks the claim. Interrupted permission repair and purge claims remain
-recoverable manifest states. The action cannot target directories, sessions,
-transcripts, databases, credentials, configuration, or neighboring files.
+claims the exact inode at a deterministic owner-only path, then reclaims its
+contents through a validated writable descriptor and retains the empty sealed
+inode as proof. It never unlinks a re-bindable purge pathname. Interrupted
+permission repair and purge claims remain recoverable manifest states. The
+action cannot target directories, sessions, transcripts, databases,
+credentials, configuration, or neighboring files.
 
 The shared executor does not decide retention. Each provider adapter needs a
 separate evidence-backed policy for its known log or cache files before it may

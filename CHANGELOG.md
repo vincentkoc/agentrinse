@@ -15,8 +15,9 @@ The project follows semantic versioning after its first supported release.
   rollback, crash reconciliation, and permission preservation for
   provider-file recovery
 - descriptor-bound hashing, write-sealed restore verification, durable
-  permission-repair recovery, and deterministic purge claims with
-  unexpected-inode rollback
+  permission-repair recovery, nonblocking and size-bounded inspection, and
+  deterministic purge claims that reclaim content through the validated
+  descriptor while retaining an empty proof inode
 - provider liveness detection for native, helper, interpreted, and wrapped
   command lines, with fail-closed incomplete process evidence
 

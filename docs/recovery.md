@@ -183,9 +183,12 @@ Explicit-run purge may remove an unexpired payload; expiry purge waits for the
 manifest TTL. Both routes repeat provider-process, descriptor, path, and
 content checks. Purge write-seals the validated descriptor, atomically claims
 the payload as the deterministic `.payload.purging` file, verifies the claimed
-inode, and only then unlinks it. A raced replacement is moved back rather than
-deleted. Permission-repair failures keep the manifest in `preparing` so undo
-can retry the exact descriptor-bound repair.
+inode, opens and validates a writable descriptor, and truncates that descriptor
+to reclaim the content. It retains the empty write-sealed inode as a purge
+proof; purge never unlinks a pathname that another process could rebind. A
+replacement raced into either move or truncation remains untouched and recovery
+fails closed. Permission-repair failures keep the manifest in `preparing` so
+undo can retry the exact descriptor-bound repair.
 
 ## Restore an Offline Codex Vacuum
 
