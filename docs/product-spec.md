@@ -1883,6 +1883,7 @@ AgentRinse owns:
 - Claude session-to-worktree roots
 - Git safety analysis
 - artifact trimming
+- recoverable quarantine for exact old Claude debug logs
 - explanation of native retention behavior
 
 ### Discovery
@@ -1895,6 +1896,7 @@ Detect:
 - user-created `--worktree` locations when discoverable
 - live Claude processes
 - configured `cleanupPeriodDays`
+- direct regular `debug/*.txt` files old enough for the AgentRinse policy
 
 ### Session handling
 
@@ -1909,6 +1911,19 @@ AgentRinse must distinguish:
 - unknown metadata due to unsupported formats
 
 Provider settings parsing failures protect affected resources.
+
+### Debug log handling
+
+Direct regular files matching `debug/*.txt` are the only Claude-owned mutation
+surface in this phase. A file must be at least 30 days old and completely
+identified before it can emit `provider.file-quarantine`. The action is
+`recoverable`, retains the file for seven days, and revalidates the configured
+Claude root, exact content identity, stopped provider processes, and open
+descriptors before its atomic move.
+
+Directories, nested debug paths, JSONL, transcripts, prompt history,
+checkpoint state, tasks, settings, credentials, plugins, and caches do not
+match this policy.
 
 ### Native cleanup interaction
 
@@ -3549,6 +3564,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] worktree undo
 - [x] offline Codex database compaction
 - [x] exact provider-file quarantine, undo, purge, and recovery foundation
+- [x] recoverable Claude debug-log quarantine
 
 ### Documentation and release
 

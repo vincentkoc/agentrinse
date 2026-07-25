@@ -57,7 +57,7 @@ logical memory records.
 | Logo                                                                        | Client                                                        | Mode                   | What it protects                                                    |
 | --------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------- |
 | <img width="48px" src="docs/client-openai.jpg" alt="OpenAI Codex" />        | [OpenAI Codex](https://github.com/openai/codex)               | audit + offline vacuum | sessions, workspace roots, reachability, and supported SQLite state |
-| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | audit-only             | sessions, workspace roots, and reachability                         |
+| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | audit + log quarantine | sessions, workspace roots, reachability, and old debug logs         |
 | <img width="48px" src="docs/client-cursor.jpg" alt="Cursor" />              | [Cursor](https://cursor.com/docs)                             | audit-only             | local agent state and workspace references                          |
 | <img width="48px" src="docs/client-copilot.png" alt="GitHub Copilot CLI" /> | [GitHub Copilot CLI](https://github.com/github/copilot-cli)   | audit-only             | local session and configuration state                               |
 | <img width="48px" src="docs/client-zed.svg" alt="Zed" />                    | [Zed](https://zed.dev/docs/ai/overview)                       | audit-only             | local agent state                                                   |
@@ -66,14 +66,15 @@ logical memory records.
 
 ## cleanup surfaces
 
-| Icon                                                                 | Surface                              | Mode               | What it understands                                                     |
-| -------------------------------------------------------------------- | ------------------------------------ | ------------------ | ----------------------------------------------------------------------- |
-| 🌿                                                                   | Git worktrees                        | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots |
-| 🧹                                                                   | Build artifacts                      | safe-clean         | exact configured rebuildable directories                                |
-| 🗜️                                                                   | Codex SQLite state                   | experimental       | schema versions, free pages, sidecars, owner processes, and rollback    |
-| ⚡                                                                   | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                |
-| <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" /> | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images and containers                                                   |
-| 🕳️                                                                   | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                         |
+| Icon                                                                 | Surface                              | Mode               | What it understands                                                      |
+| -------------------------------------------------------------------- | ------------------------------------ | ------------------ | ------------------------------------------------------------------------ |
+| 🌿                                                                   | Git worktrees                        | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots  |
+| 🧹                                                                   | Build artifacts                      | safe-clean         | exact configured rebuildable directories                                 |
+| 🗜️                                                                   | Codex SQLite state                   | experimental       | schema versions, free pages, sidecars, owner processes, and rollback     |
+| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />  | Claude debug logs                    | recoverable        | direct old text logs, exact identity, provider liveness, undo, and purge |
+| ⚡                                                                   | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                 |
+| <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" /> | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images and containers                                                    |
+| 🕳️                                                                   | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                          |
 
 ## install
 

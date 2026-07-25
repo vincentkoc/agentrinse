@@ -73,6 +73,11 @@ Directories, sessions, transcripts, databases, credentials, configuration,
 plugins, and caches without an explicit file-level owner contract are not
 accepted.
 
+The first registered owner contract is Claude `debug/*.txt`: one direct
+regular file, at least 30 days old, retained in quarantine for seven days.
+JSONL, nested paths, recent files, incomplete directory enumeration, active
+Claude processes, and open descriptors remain protected.
+
 ## Recoverable Codex Database Boundary
 
 `database.vacuum` is `experimental` and excluded by every lower risk ceiling.

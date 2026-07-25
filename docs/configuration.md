@@ -98,12 +98,13 @@ protects the unresolved scope instead of allowing an artifact action.
 ## Provider Adapters
 
 Codex, Claude Code, Cursor, GitHub Copilot CLI, Zed, OpenCode, and Grok Build
-are enabled for read-only inventory by default. Each accepts an optional
-`root`. Claude resolves its root from the explicit adapter `root`, then an
-absolute `$CLAUDE_CONFIG_DIR`, then `$HOME/.claude`. A relative
-`$CLAUDE_CONFIG_DIR` degrades the Claude adapter rather than auditing the wrong
-directory. The same resolution is repeated before any provider-file action is
-authorized. Missing default roots mean the provider is absent, not broken.
+are enabled for inventory by default. Each accepts an optional `root`. Claude
+resolves its root from the explicit adapter `root`, then an absolute
+`$CLAUDE_CONFIG_DIR`, then `$HOME/.claude`. A relative `$CLAUDE_CONFIG_DIR`
+degrades the Claude adapter rather than auditing the wrong directory. The same
+resolution is repeated before any provider-file action is authorized. Claude
+debug-log quarantine requires `plan --max-risk recoverable` and matching apply
+authorization. Missing default roots mean the provider is absent, not broken.
 Codex can propose offline database maintenance only with
 `audit --allow-offline-vacuum`; the flag is intentionally not persisted in
 configuration. A
