@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -95,6 +95,49 @@ describe("Codex database inspection", () => {
         },
       }),
     ).rejects.toThrow("failed SQLx migration");
+  });
+
+  it("uses complete file contents for the database fingerprint", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-db-content-"));
+    const path = join(root, "state_5.sqlite");
+    const bytes = Buffer.alloc(200);
+    bytes.write("SQLite format 3\0", "binary");
+    bytes[18] = 2;
+    bytes[19] = 2;
+    await writeFile(path, bytes);
+    const fixedTime = new Date("2026-07-25T00:00:00.000Z");
+    await utimes(path, fixedTime, fixedTime);
+    const runSqlite = async (args: string[]) => {
+      const sql = args.at(-1) ?? "";
+      if (sql.includes("pragma_page_size")) {
+        return { stdout: "4096\n1\n0\n2\nok\n", stderr: "" };
+      }
+      if (sql.includes("type = 'table'")) {
+        return { stdout: "_sqlx_migrations\nthreads\n", stderr: "" };
+      }
+      if (sql.includes("success != 1")) {
+        return { stdout: "0\n", stderr: "" };
+      }
+      if (sql.includes("lower(hex(checksum))")) {
+        return { stdout: `39\u001fthreads recency at\u001f00\n`, stderr: "" };
+      }
+      return {
+        stdout:
+          "table\u001f_sqlx_migrations\u001f_sqlx_migrations\u001fCREATE TABLE _sqlx_migrations(version INTEGER)\n" +
+          "table\u001fthreads\u001fthreads\u001fCREATE TABLE threads(id TEXT)\n",
+        stderr: "",
+      };
+    };
+
+    const before = await inspectCodexDatabase(path, { runSqlite });
+    bytes[150] = 1;
+    await writeFile(path, bytes);
+    await utimes(path, fixedTime, fixedTime);
+    const after = await inspectCodexDatabase(path, { runSqlite });
+
+    expect(after.identity.measuredBytes).toBe(before.identity.measuredBytes);
+    expect(after.identity.mtimeMs).toBe(before.identity.mtimeMs);
+    expect(after.identity.fingerprint).not.toBe(before.identity.fingerprint);
   });
 
   it("uses long operation-specific timeouts for compaction and integrity checks", async () => {

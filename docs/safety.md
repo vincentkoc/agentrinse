@@ -56,9 +56,11 @@ write modes are restored, preventing a waiting writer from following the old
 inode through the exchange.
 
 Undo is available only while the installed compacted identity is unchanged.
-It verifies both copies, locks both inodes, repeats owner and descriptor checks,
-and atomically exchanges them before removing the displaced compacted copy.
-Once Codex reopens and writes the database, automatic rollback is refused.
+The identity includes a streamed SHA-256 digest of the complete main database
+file. AgentRinse verifies both content digests, locks both inodes, repeats
+owner, descriptor, and digest checks, and atomically exchanges them before
+removing the displaced compacted copy. Once Codex reopens and writes the
+database, automatic rollback is refused.
 Expired original files are purged only after both copies pass full integrity
 checks and the same sealed exclusion boundary revalidates the canonical
 database, sidecars, and offline owner state. Normal post-vacuum writes disable

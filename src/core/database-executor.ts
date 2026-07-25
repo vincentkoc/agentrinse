@@ -422,6 +422,24 @@ export async function executeDatabaseVacuum(
         assertLockedIdentity(exclusion, temporaryPath, compacted.identity);
         await assertOffline(action.target.path, dependencies, new Set([process.pid]));
         await assertSidecarsStable(action);
+        const lockedCurrent = await inspect(action.target.path, dependencies);
+        const lockedCompacted = await inspect(
+          temporaryPath,
+          dependencies,
+          action.target.path,
+          action.target.path,
+        );
+        if (
+          lockedCurrent.identity.fingerprint !== current.identity.fingerprint ||
+          lockedCompacted.identity.fingerprint !== compacted.identity.fingerprint
+        ) {
+          throw new DatabaseExecutionError(
+            "database content changed while acquiring the atomic swap boundary",
+            "skipped-stale",
+            "DATABASE_IDENTITY_CHANGED",
+            entry,
+          );
+        }
         assertAuthorized(dependencies);
         throwIfInterrupted(options.signal);
 

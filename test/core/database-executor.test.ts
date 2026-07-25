@@ -167,15 +167,8 @@ describe("database vacuum execution and recovery", () => {
     };
     let exchanges = 0;
     const exchangeWhileLocked = async (source: string, destination: string) => {
-      await expect(
-        execFileAsync("sqlite3", [
-          "-batch",
-          "-cmd",
-          ".timeout 0",
-          source,
-          "INSERT INTO threads(payload) VALUES(zeroblob(1));",
-        ]),
-      ).rejects.toBeDefined();
+      expect((await lstat(source)).mode & 0o222).toBe(0);
+      expect((await lstat(destination)).mode & 0o222).toBe(0);
       exchanges += 1;
       await exchangePaths(source, destination);
     };
@@ -873,6 +866,55 @@ describe("database vacuum execution and recovery", () => {
         },
       }),
     ).rejects.toThrow("Codex is running");
+    expect(await readFile(originalPath, "utf8")).toBe("compacted");
+    expect(await readFile(manifest.backupPath, "utf8")).toBe("original");
+  });
+
+  it("rechecks database content while both undo inodes are locked", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-undo-content-boundary-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const baseDependencies = dependencies();
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-undo-content-boundary",
+      entryId: "entry-undo-content-boundary",
+      backupDirectory,
+      dependencies: baseDependencies,
+    });
+    const manifestPath = join(backupDirectory, "entry-undo-content-boundary.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    let originalInspections = 0;
+    let exchangeCalled = false;
+
+    await expect(
+      undoDatabaseVacuum(manifest, {
+        manifestPath,
+        backupDirectory,
+        dependencies: {
+          ...baseDependencies,
+          async inspectDatabase(path) {
+            const inspection = await baseDependencies.inspectDatabase(path);
+            if (path === originalPath && ++originalInspections === 3) {
+              return {
+                ...inspection,
+                identity: {
+                  ...inspection.identity,
+                  fingerprint: "e".repeat(64),
+                },
+              };
+            }
+            return inspection;
+          },
+          async exchange(source, destination) {
+            exchangeCalled = true;
+            await exchangePaths(source, destination);
+          },
+        },
+      }),
+    ).rejects.toThrow("content changed while acquiring the restore boundary");
+
+    expect(exchangeCalled).toBe(false);
     expect(await readFile(originalPath, "utf8")).toBe("compacted");
     expect(await readFile(manifest.backupPath, "utf8")).toBe("original");
   });

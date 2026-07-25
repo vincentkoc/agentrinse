@@ -3386,12 +3386,12 @@ The source contract is pinned to Codex's current filenames, SQLx migration
 versions, required tables, WAL mode, and incremental auto-vacuum expectation.
 Any upstream drift returns the database to protected report-only state.
 
-The original file is retained for seven days. Undo requires an unchanged
-compacted identity, while purge requires Codex offline plus full integrity
-checks and the current pinned schema contract. Normal Codex writes disable
-automatic undo without preventing later purge of the retained original.
-Claude, Cursor, OpenCode, Zed, and all other provider databases remain
-report-only.
+The original file is retained for seven days. Undo requires unchanged streamed
+SHA-256 content identities for both database files, verified again while both
+inodes are locked. Purge requires Codex offline plus full integrity checks and
+the current pinned schema contract. Normal Codex writes disable automatic undo
+without preventing later purge of the retained original. Claude, Cursor,
+OpenCode, Zed, and all other provider databases remain report-only.
 
 ## Specification Maintenance
 

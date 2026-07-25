@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { lstat, open } from "node:fs/promises";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -12,7 +14,7 @@ import {
   type DatabaseIdentity,
   type DatabaseSidecarIdentity,
 } from "../contracts/action.js";
-import { sha256, sha256Json } from "../core/digest.js";
+import { sha256 } from "../core/digest.js";
 
 const execFileAsync = promisify(execFile);
 const SQLITE_SEPARATOR = "\u001f";
@@ -208,6 +210,15 @@ async function readSqliteJournalMode(path: string): Promise<"wal"> {
   }
 }
 
+async function sha256File(path: string, signal?: AbortSignal): Promise<string> {
+  const hash = createHash("sha256");
+  const stream = createReadStream(path, signal === undefined ? {} : { signal });
+  for await (const chunk of stream) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
+}
+
 function parseInteger(value: string | undefined, label: string): number {
   const parsed = value === undefined ? Number.NaN : Number.parseInt(value, 10);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
@@ -296,6 +307,17 @@ export async function inspectCodexDatabase(
   const journalMode = await readSqliteJournalMode(path);
   const wal = await optionalFile(`${path}-wal`);
   const shm = await optionalFile(`${path}-shm`);
+  const fingerprint = await sha256File(path, dependencies.signal);
+  const finalStats = await lstat(path);
+  if (
+    finalStats.dev !== stats.dev ||
+    finalStats.ino !== stats.ino ||
+    finalStats.mode !== stats.mode ||
+    finalStats.mtimeMs !== stats.mtimeMs ||
+    finalStats.size !== stats.size
+  ) {
+    throw new Error(`Codex database changed during inspection: ${path}`);
+  }
   const identity = databaseIdentitySchema.parse({
     path: identityPath,
     database: contract.database,
@@ -316,27 +338,7 @@ export async function inspectCodexDatabase(
     ...(wal === undefined ? {} : { wal }),
     ...(shm === undefined ? {} : { shm }),
     schemaDigest: sha256(schemaRows.join("\n")),
-    fingerprint: sha256Json({
-      path: identityPath,
-      database: contract.database,
-      filename: contract.filename,
-      device: stats.dev,
-      inode: stats.ino,
-      mode: stats.mode,
-      mtimeMs: stats.mtimeMs,
-      measuredBytes: stats.size,
-      pageSize,
-      pageCount,
-      freelistCount,
-      journalMode,
-      autoVacuum,
-      migrationVersion,
-      migrationDigest,
-      tables,
-      wal,
-      shm,
-      schemaRows,
-    }),
+    fingerprint,
   });
   return {
     identity,

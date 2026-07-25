@@ -317,7 +317,8 @@ function databaseMainIdentityMatches(
     actual.migrationVersion === planned.migrationVersion &&
     actual.migrationDigest === planned.migrationDigest &&
     actual.tables.join("\0") === planned.tables.join("\0") &&
-    actual.schemaDigest === planned.schemaDigest
+    actual.schemaDigest === planned.schemaDigest &&
+    actual.fingerprint === planned.fingerprint
   );
 }
 
@@ -692,6 +693,22 @@ export async function undoDatabaseVacuum(
     assertLockedIdentity(exclusion, entry.backupPath, backupIdentity);
     await assertOffline(entry, dependencies, new Set([process.pid]));
     await assertRecoverableSidecars(entry);
+    const lockedInstalled = await inspect(entry.originalPath, dependencies);
+    const lockedBackup = await inspect(
+      entry.backupPath,
+      dependencies,
+      entry.originalPath,
+      entry.originalPath,
+    );
+    if (
+      !databaseMainIdentityMatches(lockedInstalled.identity, installedIdentity, true) ||
+      lockedInstalled.sidecarsPresent ||
+      !movedOriginalMatches(lockedBackup.identity, backupIdentity, true)
+    ) {
+      throw new Error(
+        "database content changed while acquiring the restore boundary; automatic undo is no longer safe",
+      );
+    }
     await exchange(entry.originalPath, entry.backupPath);
     exchanged = true;
     await restoreSidecars(entry, rename);
