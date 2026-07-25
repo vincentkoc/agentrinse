@@ -19,7 +19,36 @@ Only `artifacts.remove` mutates:
 - same-user process ownership is proven idle
 - the action risk is `safe`
 
-Provider state and Docker resources remain report-only.
+Provider state and Docker resources remain report-only except for the explicit
+offline Codex database boundary below.
+
+## Recoverable Codex Database Boundary
+
+`database.vacuum` is `experimental` and excluded by every lower risk ceiling.
+It is limited to the exact current Codex SQLite filenames, expected SQLx
+migration versions, and required tables.
+
+The audit and apply boundaries require:
+
+- explicit `--allow-offline-vacuum`
+- at least 512 MiB and 25 percent free pages
+- a successful SQLite quick check
+- all Codex CLI, desktop, and app-server processes stopped
+- no open descriptor for the database, WAL, or SHM paths
+- no non-empty WAL; zero-length WAL and SHM companions are identity-tracked
+  and moved into the rollback set
+- enough free space for the second database plus a safety margin
+- macOS or Linux with `sqlite3` and `lsof`
+
+Apply builds a sibling file with `VACUUM INTO`; it never runs in-place
+`VACUUM`. It verifies the full integrity check, schema digest, tables,
+migration version, and incremental auto-vacuum mode, fsyncs the file, then
+retains the original in AgentRinse state before installing the compacted copy.
+
+Undo is available only while the installed compacted identity is unchanged.
+Once Codex reopens and writes the database, automatic rollback is refused.
+Expired original files are purged only while Codex is offline and both the
+canonical database and rollback copy pass full integrity checks.
 
 ## Recoverable Worktree Boundary
 
@@ -155,7 +184,7 @@ identity, TTL, and last recovery state.
 - no wildcard or unfiltered prune
 - no `git worktree remove --force`
 - no cross-device worktree copy-and-delete fallback
-- no provider database mutation
+- no unsupported provider database mutation or logical row deletion
 - no provider sessions, transcripts, credentials, configuration, plugins,
   skills, memories, branches, stashes, or Docker volumes are removed
 - no action removes the current working directory or an ancestor

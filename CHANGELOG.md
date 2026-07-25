@@ -6,12 +6,34 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-25
+
+### Added
+
+- experimental `database.vacuum` actions for the current Codex state, logs,
+  goals, and memories SQLite contracts
+- explicit `audit --allow-offline-vacuum` discovery and matching
+  `plan`/`apply --max-risk experimental` authorization
+- free-page diagnostics, current SQLx migration/table checks, owner-process
+  and exact descriptor refusal, non-empty WAL refusal, and tracked zero-WAL/SHM
+  rollback
+- `VACUUM INTO` compaction with full integrity proof, fsync, atomic install,
+  seven-day retained originals, strict undo, and expiry purge
+- database backup manifests and generated JSON Schema
+
 ### Changed
 
 - rewrote the public README around a faster product explanation, scannable
   agent coverage and command tables, install and closeout examples, and the
   shipped mutation, safety, and recovery boundaries, with visual integration
   icons matching TokenJuice
+
+### Safety
+
+- compaction never deletes SQLite rows and never runs in place
+- unsupported filenames, migrations, tables, active Codex processes, open
+  descriptors, non-empty WAL state, insufficient disk, integrity failures,
+  and changed post-vacuum state fail closed
 
 ## [0.3.0] - 2026-07-24
 

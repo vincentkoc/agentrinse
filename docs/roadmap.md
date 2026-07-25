@@ -45,7 +45,15 @@ purge remains a separate destructive command.
 
 ## 0.4: Owner-Managed Maintenance
 
-- Codex diagnostic and log database compaction
+Shipped:
+
+- recoverable offline compaction for current Codex state, logs, goals, and
+  memories SQLite contracts
+- exact migration/table checks, live-owner and descriptor refusal
+- `VACUUM INTO`, full integrity proof, atomic install, undo, and expiry purge
+
+Remaining:
+
 - Cursor database diagnostics and optional compaction
 - provider-native retention operations
 - filtered Docker build-cache cleanup

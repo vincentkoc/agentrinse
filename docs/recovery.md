@@ -29,6 +29,14 @@ $XDG_STATE_HOME/agentrinse/quarantine/<entry-id>.json
 They record both the planned worktree identity and its post-repair quarantine
 identity.
 
+Database rollback manifests live under:
+
+```text
+$XDG_STATE_HOME/agentrinse/database-backups/<entry-id>.json
+```
+
+The retained original database file lives in the same owner-only directory.
+
 ## Restore a Quarantined Worktree
 
 Inspect the run first:
@@ -140,6 +148,26 @@ in-progress claim is restored before later validation after interruption.
 
 Atomic quarantine itself does not free disk. Only purge reports those bytes as
 reclaimed.
+
+## Restore an Offline Codex Vacuum
+
+Inspect and undo with the same command used for worktrees:
+
+```bash
+agentrinse show run <run-id>
+agentrinse undo <run-id>
+```
+
+Database undo requires Codex to remain fully stopped. It verifies that the
+installed compacted database still has the exact post-vacuum identity and that
+the retained original still matches its manifest. It then atomically parks
+the compacted file, restores the original, runs a full integrity check, and
+removes only the parked compacted file.
+
+If Codex has reopened or changed the compacted database, automatic undo stops.
+This prevents a rollback from discarding new state. Keep the rollback copy for
+manual recovery or purge it after expiry once the canonical database is
+healthy.
 
 ## Interrupted Runs
 
