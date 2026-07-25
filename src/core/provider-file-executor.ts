@@ -33,10 +33,13 @@ export class ProviderFileExecutionError extends Error {
     readonly outcome: ProviderFileExecutionOutcome,
     readonly diagnosticCode: string,
     readonly entry?: ProviderFileQuarantineEntry,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { quarantinedBytes?: number },
   ) {
     super(message, options);
+    this.quarantinedBytes = options?.quarantinedBytes ?? 0;
   }
+
+  readonly quarantinedBytes: number;
 }
 
 export type ProviderFileExecutorDependencies = ProviderFileRevalidationDependencies & {
@@ -213,7 +216,10 @@ export async function executeProviderFileQuarantine(
   const chmodHandle =
     dependencies.chmodHandle ?? ((handle: FileHandle, mode: number) => handle.chmod(mode));
   try {
-    sourceHandle = await open(action.target.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    sourceHandle = await open(
+      action.target.path,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
     if (!providerFileStatsMatch(await sourceHandle.stat(), action.target)) {
       throw new ProviderFileExecutionError(
         "provider file identity changed while acquiring exclusive access",
@@ -389,7 +395,7 @@ export async function executeProviderFileQuarantine(
       "partially-applied",
       "PROVIDER_FILE_QUARANTINE_PARTIAL",
       entry,
-      { cause: error },
+      { cause: error, quarantinedBytes: moved ? action.target.measuredBytes : 0 },
     );
   } finally {
     await sourceHandle?.close().catch(() => undefined);

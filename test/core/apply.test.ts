@@ -29,6 +29,7 @@ import { sha256Json } from "../../src/core/digest.js";
 import { CommandInterruptedError } from "../../src/core/interruption.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
+import { ProviderFileExecutionError } from "../../src/core/provider-file-executor.js";
 import { inspectProviderFile } from "../../src/core/provider-file-identity.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { WorktreeExecutionError } from "../../src/core/worktree-executor.js";
@@ -436,6 +437,34 @@ describe("applyCleanupPlan", () => {
       status: "applied",
       reclaimedBytes: 0,
       quarantinedBytes: value.action.target.measuredBytes,
+    });
+  });
+
+  it("does not report quarantine bytes for a pre-move provider-file failure", async () => {
+    const value = await providerFileFixture();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidateProviderFile: async () => ({ status: "ready" }),
+        executeProviderFile: async () => {
+          throw new ProviderFileExecutionError(
+            "synthetic permission repair failure",
+            "partially-applied",
+            "PROVIDER_FILE_PERMISSION_RESTORE_FAILED",
+          );
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("failed");
+    expect(result.run.quarantinedBytes).toBe(0);
+    expect(result.run.actions[0]).toMatchObject({
+      status: "partially-applied",
+      quarantinedBytes: 0,
     });
   });
 

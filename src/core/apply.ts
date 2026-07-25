@@ -420,10 +420,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             completedAt: clock().toISOString(),
             quarantineEntryId: executionError?.entry?.entryId ?? isolationId,
             quarantinePath: executionError?.entry?.quarantinePath ?? quarantinePath,
-            quarantinedBytes:
-              executionError?.outcome === "partially-applied"
-                ? (executionError.entry?.target.measuredBytes ?? 0)
-                : 0,
+            quarantinedBytes: executionError?.quarantinedBytes ?? 0,
             diagnostic: {
               severity: executionError?.outcome === "skipped-stale" ? "warning" : "error",
               code:
