@@ -40,6 +40,12 @@ type NativeLock = {
   errnoNames: Record<string, number>;
 };
 
+type HeldFile = {
+  handle: FileHandle;
+  initialMode: number;
+  restoreMode: number;
+};
+
 const nativeLockPromises = new Map<NodeJS.Platform, Promise<NativeLock>>();
 
 function errnoName(errnoNames: Record<string, number>, value: number): string {
@@ -87,12 +93,25 @@ async function loadNativeLock(platform: NodeJS.Platform): Promise<NativeLock> {
   };
 }
 
-async function releaseHandles(handles: FileHandle[], nativeLock: NativeLock): Promise<void> {
+async function releaseHandles(
+  files: HeldFile[],
+  nativeLock: NativeLock,
+  restoreInitialModes = false,
+): Promise<void> {
   let firstError: unknown;
-  for (const handle of handles.reverse()) {
-    nativeLock.unlock(handle.fd);
+  // Keep every inode read-only until all record locks are released. Restoring
+  // write bits first would let a new opener wait on the old inode at unlock.
+  for (const file of files.reverse()) {
+    nativeLock.unlock(file.handle.fd);
+  }
+  for (const file of files) {
     try {
-      await handle.close();
+      await file.handle.chmod((restoreInitialModes ? file.initialMode : file.restoreMode) & 0o777);
+    } catch (error) {
+      firstError ??= error;
+    }
+    try {
+      await file.handle.close();
     } catch (error) {
       firstError ??= error;
     }
@@ -105,6 +124,7 @@ async function releaseHandles(handles: FileHandle[], nativeLock: NativeLock): Pr
 export async function acquireDatabaseExclusion(
   paths: string[],
   platform: NodeJS.Platform = process.platform,
+  restoreModes: ReadonlyMap<string, number> = new Map(),
 ): Promise<DatabaseExclusion> {
   let nativeLockPromise = nativeLockPromises.get(platform);
   if (nativeLockPromise === undefined) {
@@ -112,18 +132,34 @@ export async function acquireDatabaseExclusion(
     nativeLockPromises.set(platform, nativeLockPromise);
   }
   const nativeLock = await nativeLockPromise;
-  const handles: FileHandle[] = [];
+  const files: HeldFile[] = [];
   const identities = new Map<string, LockedFileIdentity>();
 
   try {
     for (const path of [...new Set(paths)].sort()) {
-      const handle = await open(path, "r+");
-      handles.push(handle);
+      const inspectionHandle = await open(path, "r");
+      const initialStats = await inspectionHandle.stat();
+      const restoreMode = restoreModes.get(path) ?? initialStats.mode;
+      if ((initialStats.mode & 0o200) === 0 && (restoreMode & 0o200) !== 0) {
+        await inspectionHandle.chmod(restoreMode & 0o777);
+      }
+      let handle: FileHandle;
+      try {
+        handle = await open(path, "r+");
+      } catch (error) {
+        await inspectionHandle.chmod(initialStats.mode & 0o777);
+        await inspectionHandle.close();
+        throw error;
+      }
+      await inspectionHandle.close();
+      const file = { handle, initialMode: initialStats.mode, restoreMode };
+      files.push(file);
       const locked = nativeLock.lock(handle.fd);
       if (locked.result !== 0) {
         throw lockError(path, nativeLock.errnoNames, locked.errno);
       }
       const stats = await handle.stat();
+      await handle.chmod(stats.mode & ~0o222);
       identities.set(path, {
         path,
         device: stats.dev,
@@ -134,7 +170,7 @@ export async function acquireDatabaseExclusion(
       });
     }
   } catch (error) {
-    await releaseHandles(handles, nativeLock).catch(() => undefined);
+    await releaseHandles(files, nativeLock, true).catch(() => undefined);
     throw error;
   }
 
@@ -146,7 +182,7 @@ export async function acquireDatabaseExclusion(
         return;
       }
       released = true;
-      await releaseHandles(handles, nativeLock);
+      await releaseHandles(files, nativeLock);
     },
   };
 }

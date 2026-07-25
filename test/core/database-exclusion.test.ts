@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { lstat, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -28,6 +28,7 @@ describe("database exclusion", () => {
     ]);
 
     const exclusion = await acquireDatabaseExclusion([path]);
+    expect((await lstat(path)).mode & 0o222).toBe(0);
     await expect(
       execFileAsync("sqlite3", [
         "-batch",
@@ -37,17 +38,18 @@ describe("database exclusion", () => {
         "SELECT * FROM values_table;",
       ]),
     ).rejects.toMatchObject({ code: 5 });
-    await expect(
-      execFileAsync("sqlite3", [
-        "-batch",
-        "-cmd",
-        ".timeout 0",
-        path,
-        "INSERT INTO values_table VALUES(2);",
-      ]),
-    ).rejects.toMatchObject({ code: 5 });
+    const waitingWrite = execFileAsync("sqlite3", [
+      "-batch",
+      "-cmd",
+      ".timeout 2000",
+      path,
+      "INSERT INTO values_table VALUES(2);",
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 50));
 
     await exclusion.release();
+    await expect(waitingWrite).rejects.toBeDefined();
+    expect((await lstat(path)).mode & 0o200).toBe(0o200);
     await expect(
       execFileAsync("sqlite3", ["-batch", path, "SELECT count(*) FROM values_table;"]),
     ).resolves.toMatchObject({ stdout: "1\n" });

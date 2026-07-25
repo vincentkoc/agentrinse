@@ -159,6 +159,53 @@ function assertLockedIdentity(
   }
 }
 
+async function assertSidecarIdentity(
+  path: string,
+  planned: DatabaseVacuumAction["target"]["wal"],
+  label: "WAL" | "SHM",
+): Promise<void> {
+  let stats;
+  try {
+    stats = await lstat(path);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT" &&
+      planned === undefined
+    ) {
+      return;
+    }
+    throw new DatabaseExecutionError(
+      `database ${label} identity changed while acquiring exclusive access`,
+      "skipped-stale",
+      "DATABASE_IDENTITY_CHANGED",
+    );
+  }
+  if (
+    planned === undefined ||
+    !stats.isFile() ||
+    stats.isSymbolicLink() ||
+    stats.dev !== planned.device ||
+    stats.ino !== planned.inode ||
+    stats.mode !== planned.mode ||
+    stats.mtimeMs !== planned.mtimeMs ||
+    stats.size !== planned.measuredBytes ||
+    (label === "WAL" && stats.size > 0)
+  ) {
+    throw new DatabaseExecutionError(
+      `database ${label} identity changed while acquiring exclusive access`,
+      "skipped-stale",
+      "DATABASE_IDENTITY_CHANGED",
+    );
+  }
+}
+
+async function assertSidecarsStable(action: DatabaseVacuumAction): Promise<void> {
+  await assertSidecarIdentity(`${action.target.path}-wal`, action.target.wal, "WAL");
+  await assertSidecarIdentity(`${action.target.path}-shm`, action.target.shm, "SHM");
+}
+
 async function persist(
   manifestPath: string,
   entry: DatabaseBackupEntry,
@@ -313,7 +360,14 @@ export async function executeDatabaseVacuum(
 
     let exclusion: DatabaseExclusion;
     try {
-      exclusion = await acquireExclusion([action.target.path, temporaryPath]);
+      exclusion = await acquireExclusion(
+        [action.target.path, temporaryPath],
+        process.platform,
+        new Map([
+          [action.target.path, current.identity.mode],
+          [temporaryPath, compacted.identity.mode],
+        ]),
+      );
     } catch (error) {
       throw new DatabaseExecutionError(
         error instanceof Error ? error.message : String(error),
@@ -332,6 +386,7 @@ export async function executeDatabaseVacuum(
       assertLockedIdentity(exclusion, action.target.path, current.identity);
       assertLockedIdentity(exclusion, temporaryPath, compacted.identity);
       await assertOffline(action.target.path, dependencies, new Set([process.pid]));
+      await assertSidecarsStable(action);
       assertAuthorized(dependencies);
 
       await exchange(action.target.path, temporaryPath);
@@ -370,6 +425,13 @@ export async function executeDatabaseVacuum(
         reclaimedBytes: 0,
       };
     } catch (installError) {
+      if (
+        installError instanceof DatabaseExecutionError &&
+        installError.outcome === "skipped-stale" &&
+        !exchanged
+      ) {
+        throw installError;
+      }
       try {
         if (archived) {
           await exchange(action.target.path, backupPath);

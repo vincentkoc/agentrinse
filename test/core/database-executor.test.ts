@@ -166,9 +166,9 @@ describe("database vacuum execution and recovery", () => {
           "-cmd",
           ".timeout 0",
           source,
-          "SELECT count(*) FROM _sqlx_migrations;",
+          "INSERT INTO threads(payload) VALUES(zeroblob(1));",
         ]),
-      ).rejects.toMatchObject({ code: 5 });
+      ).rejects.toBeDefined();
       exchanges += 1;
       await exchangePaths(source, destination);
     };
@@ -488,21 +488,58 @@ describe("database vacuum execution and recovery", () => {
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("refuses a WAL created after exclusive access is acquired", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-late-wal-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const baseDependencies = dependencies();
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-late-wal",
+        entryId: "entry-late-wal",
+        backupDirectory,
+        dependencies: {
+          ...baseDependencies,
+          async acquireExclusion(paths) {
+            const exclusion = await baseDependencies.acquireExclusion(paths);
+            await writeFile(`${originalPath}-wal`, "late commit");
+            return exclusion;
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "DATABASE_IDENTITY_CHANGED",
+    });
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+  });
+
   it("restores the original after a crash between exchange and archive", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-exchange-crash-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
-    await executeDatabaseVacuum(action(originalPath), {
+    await writeFile(`${originalPath}-wal`, "");
+    await writeFile(`${originalPath}-shm`, "synthetic shm");
+    const baseDependencies = dependencies();
+    const selectedAction = {
+      ...action(originalPath),
+      target: (await baseDependencies.inspectDatabase(originalPath)).identity,
+    };
+    await executeDatabaseVacuum(selectedAction, {
       runId: "run-exchange-crash",
       entryId: "entry-exchange-crash",
       backupDirectory,
-      dependencies: dependencies(),
+      dependencies: baseDependencies,
     });
     const manifestPath = join(backupDirectory, "entry-exchange-crash.json");
     const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
     await mkdir(dirname(manifest.temporaryPath));
     await rename(manifest.backupPath, manifest.temporaryPath);
+    await rename(manifest.backupWalPath!, `${originalPath}-wal`);
+    await rename(manifest.backupShmPath!, `${originalPath}-shm`);
 
     const restored = await undoDatabaseVacuum(
       {
@@ -518,6 +555,7 @@ describe("database vacuum execution and recovery", () => {
 
     expect(restored.status).toBe("restored");
     expect(await readFile(originalPath, "utf8")).toBe("original");
+    expect(await readFile(`${originalPath}-shm`, "utf8")).toBe("synthetic shm");
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -683,15 +721,37 @@ describe("database vacuum execution and recovery", () => {
     });
     const manifestPath = join(backupDirectory, "entry-4.json");
     const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    const baseDependencies = dependencies();
+    let processChecks = 0;
+    let releasedAfterDeletion = false;
 
     const purged = await purgeDatabaseBackup(manifest, {
       manifestPath,
       backupDirectory,
-      dependencies: dependencies(),
+      dependencies: {
+        ...baseDependencies,
+        inspectProcesses: async () => {
+          processChecks += 1;
+          return { status: "idle" as const, pids: [] as [] };
+        },
+        async acquireExclusion(paths) {
+          const exclusion = await baseDependencies.acquireExclusion(paths);
+          return {
+            identities: exclusion.identities,
+            async release() {
+              await expect(lstat(result.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+              releasedAfterDeletion = true;
+              await exclusion.release();
+            },
+          };
+        },
+      },
     });
 
     expect(purged.entry.status).toBe("purged");
     expect(purged.reclaimedBytes).toBe("original".length);
+    expect(processChecks).toBe(2);
+    expect(releasedAfterDeletion).toBe(true);
     await expect(lstat(result.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

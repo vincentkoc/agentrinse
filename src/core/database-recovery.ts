@@ -169,6 +169,97 @@ async function restoreSidecars(
   }
 }
 
+async function sidecarMatches(path: string, planned: DatabaseSidecarIdentity): Promise<boolean> {
+  try {
+    const stats = await lstat(path);
+    return (
+      stats.isFile() &&
+      !stats.isSymbolicLink() &&
+      stats.dev === planned.device &&
+      stats.ino === planned.inode &&
+      stats.mode === planned.mode &&
+      stats.mtimeMs === planned.mtimeMs &&
+      stats.size === planned.measuredBytes
+    );
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function assertRecoverableSidecars(entry: DatabaseBackupEntry): Promise<void> {
+  for (const sidecar of [
+    {
+      planned: entry.target.wal,
+      canonical: `${entry.originalPath}-wal`,
+      backup: entry.backupWalPath,
+      label: "WAL",
+    },
+    {
+      planned: entry.target.shm,
+      canonical: `${entry.originalPath}-shm`,
+      backup: entry.backupShmPath,
+      label: "SHM",
+    },
+  ]) {
+    const canonicalExists = await pathExists(sidecar.canonical);
+    const backupExists = sidecar.backup === undefined ? false : await pathExists(sidecar.backup);
+    if (sidecar.planned === undefined) {
+      if (canonicalExists || backupExists) {
+        throw new Error(`unexpected database ${sidecar.label} appeared during recovery`);
+      }
+      continue;
+    }
+    if (canonicalExists === backupExists) {
+      throw new Error(`database ${sidecar.label} recovery location is ambiguous`);
+    }
+    const path = canonicalExists ? sidecar.canonical : sidecar.backup!;
+    if (!(await sidecarMatches(path, sidecar.planned))) {
+      throw new Error(`database ${sidecar.label} no longer matches the recovery manifest`);
+    }
+  }
+}
+
+async function assertPurgeSidecars(entry: DatabaseBackupEntry): Promise<void> {
+  for (const sidecar of [
+    {
+      planned: entry.target.wal,
+      canonical: `${entry.originalPath}-wal`,
+      backup: entry.backupWalPath,
+      label: "WAL",
+    },
+    {
+      planned: entry.target.shm,
+      canonical: `${entry.originalPath}-shm`,
+      backup: entry.backupShmPath,
+      label: "SHM",
+    },
+  ]) {
+    if (await pathExists(sidecar.canonical)) {
+      throw new Error(`database ${sidecar.label} appeared at the canonical purge path`);
+    }
+    if (sidecar.backup === undefined) {
+      continue;
+    }
+    const backupExists = await pathExists(sidecar.backup);
+    if (!backupExists) {
+      if (entry.status === "purging") {
+        continue;
+      }
+      throw new Error(`database ${sidecar.label} rollback copy is missing`);
+    }
+    if (sidecar.planned === undefined || !(await sidecarMatches(sidecar.backup, sidecar.planned))) {
+      throw new Error(`database ${sidecar.label} no longer matches the purge manifest`);
+    }
+  }
+}
+
 async function removeTemporaryWorkspace(entry: DatabaseBackupEntry): Promise<void> {
   await rm(dirname(entry.temporaryPath), { recursive: true, force: true });
   await syncDirectory(dirname(entry.originalPath));
@@ -295,11 +386,19 @@ export async function undoDatabaseVacuum(
         ) {
           throw new Error("interrupted database exchange no longer contains the compacted copy");
         }
-        const exclusion = await acquireExclusion([entry.originalPath, entry.temporaryPath]);
+        const exclusion = await acquireExclusion(
+          [entry.originalPath, entry.temporaryPath],
+          process.platform,
+          new Map([
+            [entry.originalPath, original.identity.mode],
+            [entry.temporaryPath, temporary.identity.mode],
+          ]),
+        );
         try {
           assertLockedIdentity(exclusion, entry.originalPath, original.identity);
           assertLockedIdentity(exclusion, entry.temporaryPath, temporary.identity);
           await assertOffline(entry, dependencies, new Set([process.pid]));
+          await assertRecoverableSidecars(entry);
           await restoreSidecars(entry, rename);
           await removeTemporaryWorkspace(entry);
           return markRestored(options, entry, clock);
@@ -309,8 +408,7 @@ export async function undoDatabaseVacuum(
       }
       if (
         entry.installedIdentity === undefined ||
-        original.identity.fingerprint !== entry.installedIdentity.fingerprint ||
-        original.sidecarsPresent
+        !databaseMainIdentityMatches(original.identity, entry.installedIdentity)
       ) {
         throw new Error(
           "the compacted database changed after interrupted installation; automatic undo is no longer safe",
@@ -325,11 +423,19 @@ export async function undoDatabaseVacuum(
       if (!databaseMainIdentityMatches(temporary.identity, entry.target)) {
         throw new Error("interrupted database exchange no longer contains the planned original");
       }
-      const exclusion = await acquireExclusion([entry.originalPath, entry.temporaryPath]);
+      const exclusion = await acquireExclusion(
+        [entry.originalPath, entry.temporaryPath],
+        process.platform,
+        new Map([
+          [entry.originalPath, original.identity.mode],
+          [entry.temporaryPath, temporary.identity.mode],
+        ]),
+      );
       try {
         assertLockedIdentity(exclusion, entry.originalPath, original.identity);
         assertLockedIdentity(exclusion, entry.temporaryPath, temporary.identity);
         await assertOffline(entry, dependencies, new Set([process.pid]));
+        await assertRecoverableSidecars(entry);
         await exchange(entry.originalPath, entry.temporaryPath);
         await restoreSidecars(entry, rename);
         await removeTemporaryWorkspace(entry);
@@ -357,10 +463,15 @@ export async function undoDatabaseVacuum(
       if (!databaseMainIdentityMatches(restored.identity, entry.target)) {
         throw new Error("interrupted database restore no longer matches the retained original");
       }
-      const exclusion = await acquireExclusion([entry.originalPath]);
+      const exclusion = await acquireExclusion(
+        [entry.originalPath],
+        process.platform,
+        new Map([[entry.originalPath, restored.identity.mode]]),
+      );
       try {
         assertLockedIdentity(exclusion, entry.originalPath, restored.identity);
         await assertOffline(entry, dependencies, new Set([process.pid]));
+        await assertRecoverableSidecars(entry);
         await restoreSidecars(entry, rename);
         return markRestored(options, entry, clock);
       } finally {
@@ -382,11 +493,19 @@ export async function undoDatabaseVacuum(
       entry.installedIdentity !== undefined &&
       databaseMainIdentityMatches(displaced.identity, entry.installedIdentity)
     ) {
-      const exclusion = await acquireExclusion([entry.originalPath, entry.backupPath]);
+      const exclusion = await acquireExclusion(
+        [entry.originalPath, entry.backupPath],
+        process.platform,
+        new Map([
+          [entry.originalPath, restored.identity.mode],
+          [entry.backupPath, displaced.identity.mode],
+        ]),
+      );
       try {
         assertLockedIdentity(exclusion, entry.originalPath, restored.identity);
         assertLockedIdentity(exclusion, entry.backupPath, displaced.identity);
         await assertOffline(entry, dependencies, new Set([process.pid]));
+        await assertRecoverableSidecars(entry);
         await restoreSidecars(entry, rename);
         await rm(entry.backupPath);
         await syncDirectory(options.backupDirectory);
@@ -423,7 +542,14 @@ export async function undoDatabaseVacuum(
     );
   }
   entry = await persist(options, { ...entry, status: "restoring", backupIdentity });
-  const exclusion = await acquireExclusion([entry.originalPath, entry.backupPath]);
+  const exclusion = await acquireExclusion(
+    [entry.originalPath, entry.backupPath],
+    process.platform,
+    new Map([
+      [entry.originalPath, boundaryInstalled.identity.mode],
+      [entry.backupPath, backupIdentity.mode],
+    ]),
+  );
   let exchanged = false;
   try {
     // Keep both inodes excluded until the restored layout and manifest agree;
@@ -431,6 +557,7 @@ export async function undoDatabaseVacuum(
     assertLockedIdentity(exclusion, entry.originalPath, boundaryInstalled.identity);
     assertLockedIdentity(exclusion, entry.backupPath, backupIdentity);
     await assertOffline(entry, dependencies, new Set([process.pid]));
+    await assertRecoverableSidecars(entry);
     await exchange(entry.originalPath, entry.backupPath);
     exchanged = true;
     await restoreSidecars(entry, rename);
@@ -467,16 +594,15 @@ export async function purgeDatabaseBackup(
   }
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
+  const acquireExclusion = dependencies.acquireExclusion ?? acquireDatabaseExclusion;
+  const inspect = dependencies.inspectDatabase ?? inspectCodexDatabase;
   await assertOffline(entry, dependencies);
   const originalExists = await pathExists(entry.originalPath);
   const backupExists = await pathExists(entry.backupPath);
   if (!originalExists || (entry.status === "installed" && !backupExists)) {
     throw new Error("database purge paths do not match the recovery manifest");
   }
-  const current = await (dependencies.inspectDatabase ?? inspectCodexDatabase)(
-    entry.originalPath,
-    dependencies,
-  );
+  const current = await inspect(entry.originalPath, dependencies);
   if (current.sidecarsPresent) {
     throw new Error("database WAL or SHM companion exists; purge is refused");
   }
@@ -485,37 +611,59 @@ export async function purgeDatabaseBackup(
     dependencies,
   );
   let reclaimedBytes = 0;
+  let backupIdentity: DatabaseIdentity | undefined;
   if (backupExists) {
-    await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
-      entry.backupPath,
-      dependencies,
-    );
+    backupIdentity = await verifyRetainedOriginal(entry, dependencies, inspect);
     const backupStats = await lstat(entry.backupPath);
     if (!backupStats.isFile() || backupStats.isSymbolicLink()) {
       throw new Error("database rollback copy is not a regular file");
     }
     reclaimedBytes += backupStats.size;
   }
-  entry = await persist(options, { ...entry, status: "purging" });
-  for (const sidecar of backupSidecars(entry)) {
-    if (await pathExists(sidecar.backup)) {
-      const stats = await lstat(sidecar.backup);
-      if (!stats.isFile() || stats.isSymbolicLink()) {
-        throw new Error("database rollback sidecar is not a regular file");
-      }
-      reclaimedBytes += stats.size;
-      await rm(sidecar.backup);
+  const exclusionPaths = [
+    entry.originalPath,
+    ...(backupIdentity === undefined ? [] : [entry.backupPath]),
+  ];
+  const exclusion = await acquireExclusion(
+    exclusionPaths,
+    process.platform,
+    new Map([
+      [entry.originalPath, current.identity.mode],
+      ...(backupIdentity === undefined
+        ? []
+        : ([[entry.backupPath, backupIdentity.mode]] as Array<[string, number]>)),
+    ]),
+  );
+  try {
+    assertLockedIdentity(exclusion, entry.originalPath, current.identity);
+    if (backupIdentity !== undefined) {
+      assertLockedIdentity(exclusion, entry.backupPath, backupIdentity);
     }
+    await assertOffline(entry, dependencies, new Set([process.pid]));
+    await assertPurgeSidecars(entry);
+    entry = await persist(options, { ...entry, status: "purging" });
+    for (const sidecar of backupSidecars(entry)) {
+      if (await pathExists(sidecar.backup)) {
+        const stats = await lstat(sidecar.backup);
+        if (!stats.isFile() || stats.isSymbolicLink()) {
+          throw new Error("database rollback sidecar is not a regular file");
+        }
+        reclaimedBytes += stats.size;
+        await rm(sidecar.backup);
+      }
+    }
+    if (await pathExists(entry.backupPath)) {
+      await rm(entry.backupPath);
+    }
+    await syncDirectory(options.backupDirectory);
+    entry = await persist(options, {
+      ...entry,
+      status: "purged",
+      purgedAt: clock().toISOString(),
+      diagnostic: undefined,
+    });
+    return { entry, reclaimedBytes };
+  } finally {
+    await exclusion.release();
   }
-  if (await pathExists(entry.backupPath)) {
-    await rm(entry.backupPath);
-  }
-  await syncDirectory(options.backupDirectory);
-  entry = await persist(options, {
-    ...entry,
-    status: "purged",
-    purgedAt: clock().toISOString(),
-    diagnostic: undefined,
-  });
-  return { entry, reclaimedBytes };
 }
