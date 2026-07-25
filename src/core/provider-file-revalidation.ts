@@ -11,6 +11,7 @@ export type ProviderFileRevalidationResult =
   | { status: "stale"; diagnostic: Diagnostic };
 
 export type ProviderFileRevalidationDependencies = {
+  clock?: () => Date;
   authorizeTarget?: (action: ProviderFileQuarantineAction) => Promise<void>;
   allowedHandlePids?: ReadonlySet<number>;
   inspectProcesses?: (
@@ -47,7 +48,14 @@ export async function revalidateProviderFileQuarantine(
       dependencies.authorizeTarget ??
       (home !== undefined && config !== undefined
         ? (selectedAction: ProviderFileQuarantineAction) =>
-            authorizeProviderFileAction(selectedAction, home, config)
+            authorizeProviderFileAction(
+              selectedAction,
+              home,
+              config,
+              process.platform,
+              process.env,
+              (dependencies.clock ?? (() => new Date()))(),
+            )
         : undefined);
     if (authorizeTarget === undefined) {
       throw new Error("provider-file execution requires an approved provider policy");

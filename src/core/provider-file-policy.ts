@@ -10,6 +10,7 @@ export type ProviderFilePolicy = {
   id: string;
   provider: ProviderMutationId;
   matchesRelativePath(relativePath: string): boolean;
+  validateAction(action: ProviderFileQuarantineAction, now: Date): string | undefined;
 };
 
 export const CLAUDE_DEBUG_LOG_POLICY_ID = "claude.debug-log";
@@ -31,6 +32,18 @@ export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [
     id: CLAUDE_DEBUG_LOG_POLICY_ID,
     provider: "claude",
     matchesRelativePath: isClaudeDebugLogRelativePath,
+    validateAction(action, now) {
+      if (action.pendingQuarantineBytes !== action.target.measuredBytes) {
+        return "pending quarantine bytes must match the exact file identity";
+      }
+      if (action.quarantineTtlMinutes < CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES) {
+        return "Claude debug logs require at least seven days of recoverable quarantine";
+      }
+      if (now.getTime() - action.target.mtimeMs < CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES * 60_000) {
+        return "Claude debug logs must be at least 30 days old";
+      }
+      return undefined;
+    },
   },
 ];
 
@@ -40,6 +53,7 @@ export async function authorizeProviderFileAction(
   config: AgentRinseConfig,
   platform: NodeJS.Platform = process.platform,
   environment: NodeJS.ProcessEnv = process.env,
+  now: Date = new Date(),
 ): Promise<void> {
   const explicitRoot = config.adapters[action.adapter]?.root;
   const configuredRoot = resolveProviderRoot(PROVIDER_SPECS[action.adapter], resolve(home), {
@@ -57,6 +71,12 @@ export async function authorizeProviderFileAction(
   if (policy === undefined || !policy.matchesRelativePath(action.target.relativePath)) {
     throw new Error(
       `provider-file target is not approved by policy ${action.adapter}:${action.policyId}`,
+    );
+  }
+  const refusal = policy.validateAction(action, now);
+  if (refusal !== undefined) {
+    throw new Error(
+      `provider-file action violates policy ${action.adapter}:${action.policyId}: ${refusal}`,
     );
   }
 }
