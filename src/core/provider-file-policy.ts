@@ -1,6 +1,7 @@
 import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 
+import { resolveProviderRoot } from "../adapters/provider-root.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { ProviderFileQuarantineAction, ProviderMutationId } from "../contracts/action.js";
@@ -20,11 +21,15 @@ export async function authorizeProviderFileAction(
   home: string,
   config: AgentRinseConfig,
   platform: NodeJS.Platform = process.platform,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
-  const configuredRoot =
-    config.adapters[action.adapter]?.root ??
-    PROVIDER_SPECS[action.adapter].defaultRoot(resolve(home), platform);
-  const physicalRoot = await realpath(resolve(configuredRoot));
+  const explicitRoot = config.adapters[action.adapter]?.root;
+  const configuredRoot = resolveProviderRoot(PROVIDER_SPECS[action.adapter], resolve(home), {
+    ...(explicitRoot === undefined ? {} : { root: explicitRoot }),
+    platform,
+    environment,
+  });
+  const physicalRoot = await realpath(configuredRoot);
   if (action.target.ownerRoot !== physicalRoot) {
     throw new Error(`provider-file target is outside the configured ${action.adapter} root`);
   }

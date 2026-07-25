@@ -102,7 +102,8 @@ are enabled for read-only inventory by default. Each accepts an optional
 `root`. Claude resolves its root from the explicit adapter `root`, then an
 absolute `$CLAUDE_CONFIG_DIR`, then `$HOME/.claude`. A relative
 `$CLAUDE_CONFIG_DIR` degrades the Claude adapter rather than auditing the wrong
-directory. Missing default roots mean the provider is absent, not broken.
+directory. The same resolution is repeated before any provider-file action is
+authorized. Missing default roots mean the provider is absent, not broken.
 Codex can propose offline database maintenance only with
 `audit --allow-offline-vacuum`; the flag is intentionally not persisted in
 configuration. A

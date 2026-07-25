@@ -1270,7 +1270,8 @@ Avoid a large product-specific environment-variable surface.
 
 Claude root precedence is the explicit adapter root, an absolute
 `$CLAUDE_CONFIG_DIR`, then `$HOME/.claude`. A relative
-`$CLAUDE_CONFIG_DIR` is invalid and degrades only the Claude adapter.
+`$CLAUDE_CONFIG_DIR` is invalid and degrades only the Claude adapter. Discovery
+and mutation authorization use the same resolver.
 
 `$COPILOT_HOME` falls back to `$HOME/.copilot`.
 
