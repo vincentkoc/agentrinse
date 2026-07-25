@@ -36,6 +36,11 @@ import { WorktreeExecutionError } from "../../src/core/worktree-executor.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import { createRunJournal } from "../../src/state/run-journal.js";
 
+type ClaudeProviderFileQuarantineAction = Extract<
+  ProviderFileQuarantineAction,
+  { adapter: "claude" }
+>;
+
 async function fixture(): Promise<{
   action: ArtifactRemoveAction;
   config: AgentRinseConfig;
@@ -251,7 +256,7 @@ async function databaseFixture(): Promise<{
 }
 
 async function providerFileFixture(): Promise<{
-  action: ProviderFileQuarantineAction;
+  action: ClaudeProviderFileQuarantineAction;
   config: AgentRinseConfig;
   plan: CleanupPlan;
   stateRoot: string;
@@ -275,7 +280,7 @@ async function providerFileFixture(): Promise<{
       maxRisk: "recoverable",
     },
   };
-  const action: ProviderFileQuarantineAction = {
+  const action: ClaudeProviderFileQuarantineAction = {
     actionId: "provider.file-quarantine:fixture",
     type: "provider.file-quarantine",
     adapter: "claude",

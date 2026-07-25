@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { describe, expect, it } from "vitest";
 
 import { providerFileQuarantineActionSchema } from "../../src/contracts/action.js";
@@ -17,6 +19,25 @@ const target = {
   contentSha256: "a".repeat(64),
   fingerprint: "b".repeat(64),
 };
+
+function collectProviderOwnershipPairs(value: unknown, pairs = new Set<string>()): Set<string> {
+  if (value === null || typeof value !== "object") {
+    return pairs;
+  }
+  const record = value as Record<string, unknown>;
+  const properties = record.properties as Record<string, unknown> | undefined;
+  const adapter = properties?.adapter as Record<string, unknown> | undefined;
+  const targetProperty = properties?.target as Record<string, unknown> | undefined;
+  const targetProperties = targetProperty?.properties as Record<string, unknown> | undefined;
+  const provider = targetProperties?.provider as Record<string, unknown> | undefined;
+  if (typeof adapter?.const === "string" && typeof provider?.const === "string") {
+    pairs.add(`${adapter.const}:${provider.const}`);
+  }
+  for (const child of Object.values(record)) {
+    collectProviderOwnershipPairs(child, pairs);
+  }
+  return pairs;
+}
 
 describe("provider-file quarantine contracts", () => {
   it("accepts a complete recoverable manifest", () => {
@@ -47,8 +68,8 @@ describe("provider-file quarantine contracts", () => {
   });
 
   it("requires the action adapter to own the target", () => {
-    expect(() =>
-      providerFileQuarantineActionSchema.parse({
+    expect(
+      providerFileQuarantineActionSchema.safeParse({
         actionId: "provider.file-quarantine:fixture",
         type: "provider.file-quarantine",
         adapter: "cursor",
@@ -60,8 +81,23 @@ describe("provider-file quarantine contracts", () => {
         pendingQuarantineBytes: 64,
         quarantineTtlMinutes: 60,
         target,
-      }),
-    ).toThrow("must own the target");
+      }).success,
+    ).toBe(false);
+  });
+
+  it("publishes matching adapter and provider branches", async () => {
+    const expected = new Set([
+      "claude:claude",
+      "cursor:cursor",
+      "copilot:copilot",
+      "zed:zed",
+      "opencode:opencode",
+      "grok:grok",
+    ]);
+    for (const path of ["schemas/plan.schema.json", "schemas/audit.schema.json"]) {
+      const schema = JSON.parse(await readFile(path, "utf8")) as unknown;
+      expect(collectProviderOwnershipPairs(schema)).toEqual(expected);
+    }
   });
 
   it("requires moved identity for a live payload", () => {

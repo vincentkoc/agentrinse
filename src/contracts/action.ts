@@ -141,31 +141,38 @@ export const providerFileIdentitySchema = z.object({
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 
-export const providerFileQuarantineActionSchema = z
-  .object({
-    actionId: z.string().min(1),
-    type: z.literal("provider.file-quarantine"),
-    adapter: providerMutationIdSchema,
-    resourceId: z.string().min(1),
-    policyId: z.string().regex(/^[a-z0-9][a-z0-9.-]*$/u),
-    risk: z.literal("recoverable"),
-    description: z.string().min(1),
-    expectedReclaimBytes: z.literal(0),
-    pendingQuarantineBytes: z.number().int().nonnegative(),
-    quarantineTtlMinutes: z.number().int().positive(),
-    target: providerFileIdentitySchema,
-  })
-  .superRefine((action, context) => {
-    if (action.adapter !== action.target.provider) {
-      context.addIssue({
-        code: "custom",
-        message: "provider-file action adapter must own the target",
-        path: ["adapter"],
-      });
-    }
-  });
+const providerFileQuarantineActionBaseShape = {
+  actionId: z.string().min(1),
+  type: z.literal("provider.file-quarantine"),
+  resourceId: z.string().min(1),
+  policyId: z.string().regex(/^[a-z0-9][a-z0-9.-]*$/u),
+  risk: z.literal("recoverable"),
+  description: z.string().min(1),
+  expectedReclaimBytes: z.literal(0),
+  pendingQuarantineBytes: z.number().int().nonnegative(),
+  quarantineTtlMinutes: z.number().int().positive(),
+};
 
-export const plannedActionSchema = z.discriminatedUnion("type", [
+function providerFileQuarantineActionFor<T extends ProviderMutationId>(provider: T) {
+  return z.object({
+    ...providerFileQuarantineActionBaseShape,
+    adapter: z.literal(provider),
+    target: providerFileIdentitySchema.extend({
+      provider: z.literal(provider),
+    }),
+  });
+}
+
+export const providerFileQuarantineActionSchema = z.discriminatedUnion("adapter", [
+  providerFileQuarantineActionFor("claude"),
+  providerFileQuarantineActionFor("cursor"),
+  providerFileQuarantineActionFor("copilot"),
+  providerFileQuarantineActionFor("zed"),
+  providerFileQuarantineActionFor("opencode"),
+  providerFileQuarantineActionFor("grok"),
+]);
+
+export const plannedActionSchema = z.union([
   artifactRemoveActionSchema,
   worktreeQuarantineActionSchema,
   databaseVacuumActionSchema,
