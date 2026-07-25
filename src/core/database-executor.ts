@@ -1,5 +1,6 @@
 import { chmod, lstat, open, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   inspectCodexDatabase,
@@ -297,6 +298,7 @@ export async function executeDatabaseVacuum(
   await ensurePrivateDirectory(temporaryDirectory);
 
   let entry: DatabaseBackupEntry;
+  let mutationStarted = false;
   try {
     entry = await persist(
       manifestPath,
@@ -366,7 +368,7 @@ export async function executeDatabaseVacuum(
     assertAuthorized(dependencies);
     const current = await inspect(action.target.path, dependencies);
     if (
-      current.identity.fingerprint !== action.target.fingerprint ||
+      !isDeepStrictEqual(current.identity, action.target) ||
       (current.identity.wal?.measuredBytes ?? 0) > 0
     ) {
       throw new DatabaseExecutionError(
@@ -452,6 +454,7 @@ export async function executeDatabaseVacuum(
 
         await exchange(action.target.path, temporaryPath);
         exchanged = true;
+        mutationStarted = true;
         if (action.target.wal !== undefined && backupWalPath !== undefined) {
           const source = `${action.target.path}-wal`;
           await rename(source, backupWalPath);
@@ -633,30 +636,38 @@ export async function executeDatabaseVacuum(
       }
       throw interruptionFrom(options.signal) ?? error;
     }
-    if (error instanceof DatabaseExecutionError) {
-      const sourceExists = await pathExists(action.target.path).catch(() => false);
-      const backupExists = await pathExists(backupPath).catch(() => false);
-      if (error.outcome === "skipped-stale" && sourceExists && !backupExists) {
-        await rm(temporaryDirectory, { recursive: true, force: true });
-        await syncDirectory(originalDirectory);
-        entry = await persist(
-          manifestPath,
-          {
-            ...entry,
-            status: "restored",
-            restoredAt: clock().toISOString(),
-            diagnostic: {
-              severity: "warning",
-              code: error.diagnosticCode,
-              message: error.message,
-              adapter: action.adapter,
-              resourceId: action.resourceId,
-            },
+    if (
+      !mutationStarted &&
+      !(error instanceof DatabaseExecutionError && error.outcome === "partially-applied")
+    ) {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+      await syncDirectory(originalDirectory);
+      const executionError = error instanceof DatabaseExecutionError ? error : undefined;
+      const diagnosticCode = executionError?.diagnosticCode ?? "DATABASE_VACUUM_FAILED";
+      entry = await persist(
+        manifestPath,
+        {
+          ...entry,
+          status: "restored",
+          restoredAt: clock().toISOString(),
+          diagnostic: {
+            severity: executionError?.outcome === "skipped-stale" ? "warning" : "error",
+            code: diagnosticCode,
+            message: error instanceof Error ? error.message : String(error),
+            adapter: action.adapter,
+            resourceId: action.resourceId,
           },
-          options.backupDirectory,
-        );
-        throw new DatabaseExecutionError(error.message, error.outcome, error.diagnosticCode, entry);
-      }
+        },
+        options.backupDirectory,
+      );
+      throw new DatabaseExecutionError(
+        error instanceof Error ? error.message : String(error),
+        executionError?.outcome ?? "failed",
+        diagnosticCode,
+        entry,
+      );
+    }
+    if (error instanceof DatabaseExecutionError) {
       throw error;
     }
     const sourceExists = await pathExists(action.target.path).catch(() => false);

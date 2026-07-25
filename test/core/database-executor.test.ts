@@ -450,7 +450,7 @@ describe("database vacuum execution and recovery", () => {
     expect(await readFile(`${originalPath}-shm`, "utf8")).toBe("synthetic shm");
   });
 
-  it("removes the compacted temporary file when the pre-swap identity becomes stale", async () => {
+  it("removes the compacted temporary file when pre-swap metadata becomes stale", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-stale-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
@@ -471,7 +471,7 @@ describe("database vacuum execution and recovery", () => {
                   ...inspection,
                   identity: {
                     ...inspection.identity,
-                    fingerprint: "d".repeat(64),
+                    mode: inspection.identity.mode ^ 0o020,
                   },
                 }
               : inspection;
@@ -486,6 +486,79 @@ describe("database vacuum execution and recovery", () => {
     const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
     expect(manifest.status).toBe("restored");
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("removes partial vacuum output when the compaction subprocess fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-vacuum-failure-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-vacuum-failure",
+        entryId: "entry-vacuum-failure",
+        backupDirectory,
+        dependencies: {
+          ...dependencies(),
+          async vacuumInto(_source, destination) {
+            await writeFile(destination, "partial compacted copy");
+            throw new Error("injected normalization failure");
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "failed",
+      diagnosticCode: "DATABASE_VACUUM_FAILED",
+    });
+
+    const manifest = databaseBackupEntrySchema.parse(
+      await readJsonFile(join(backupDirectory, "entry-vacuum-failure.json")),
+    );
+    expect(manifest.status).toBe("restored");
+    await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+  });
+
+  it("removes a rejected compacted copy after contract validation fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-contract-failure-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const baseDependencies = dependencies();
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-contract-failure",
+        entryId: "entry-contract-failure",
+        backupDirectory,
+        dependencies: {
+          ...baseDependencies,
+          async inspectDatabase(path) {
+            const inspection = await baseDependencies.inspectDatabase(path);
+            return path === originalPath
+              ? inspection
+              : {
+                  ...inspection,
+                  identity: {
+                    ...inspection.identity,
+                    autoVacuum: 0,
+                  },
+                };
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "failed",
+      diagnosticCode: "DATABASE_COMPACTED_CONTRACT_CHANGED",
+    });
+
+    const manifest = databaseBackupEntrySchema.parse(
+      await readJsonFile(join(backupDirectory, "entry-contract-failure.json")),
+    );
+    expect(manifest.status).toBe("restored");
+    await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(originalPath, "utf8")).toBe("original");
   });
 
   it("refuses a WAL created after exclusive access is acquired", async () => {
