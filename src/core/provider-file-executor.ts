@@ -58,11 +58,24 @@ export type ProviderFileExecutionResult = {
   manifestPath: string;
 };
 
-export function providerFileQuarantinePath(
-  quarantineDirectory: string,
-  entryId: string,
-): string {
+export function providerFileQuarantinePath(quarantineDirectory: string, entryId: string): string {
   return join(quarantineDirectory, `${entryId}.payload`);
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 async function syncFile(path: string): Promise<void> {
@@ -128,28 +141,13 @@ export async function executeProviderFileQuarantine(
       "PROVIDER_FILE_QUARANTINE_CROSS_DEVICE",
     );
   }
-  await Promise.all([
-    lstat(quarantinePath).then(
-      () => {
-        throw new Error("payload exists");
-      },
-      () => undefined,
-    ),
-    lstat(manifestPath).then(
-      () => {
-        throw new Error("manifest exists");
-      },
-      () => undefined,
-    ),
-  ]).catch((error: unknown) => {
+  if ((await pathExists(quarantinePath)) || (await pathExists(manifestPath))) {
     throw new ProviderFileExecutionError(
       "provider-file quarantine destination already exists",
       "failed",
       "PROVIDER_FILE_DESTINATION_OCCUPIED",
-      undefined,
-      { cause: error },
     );
-  });
+  }
 
   let entry = await persist(manifestPath, options.quarantineDirectory, {
     schemaVersion: 1,
@@ -161,9 +159,7 @@ export async function executeProviderFileQuarantine(
     originalPath: action.target.path,
     quarantinePath,
     createdAt: clock().toISOString(),
-    expiresAt: new Date(
-      clock().getTime() + action.quarantineTtlMinutes * 60_000,
-    ).toISOString(),
+    expiresAt: new Date(clock().getTime() + action.quarantineTtlMinutes * 60_000).toISOString(),
     target: action.target,
   });
 

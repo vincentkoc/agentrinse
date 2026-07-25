@@ -21,7 +21,9 @@ const PROCESS_NAMES: Record<ProviderMutationId, string[]> = {
 };
 
 function normalizeCommand(command: string): string {
-  return basename(command).replace(/\.exe$/iu, "").toLowerCase();
+  return basename(command)
+    .replace(/\.exe$/iu, "")
+    .toLowerCase();
 }
 
 function commandMatches(provider: ProviderMutationId, command: string): boolean {

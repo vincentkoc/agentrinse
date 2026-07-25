@@ -2,17 +2,16 @@ import type { ProviderFileQuarantineAction } from "../contracts/action.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import { inspectProviderFile, providerFileIdentityMatches } from "./provider-file-identity.js";
 import { inspectProviderProcesses, type ProviderProcessResult } from "./provider-processes.js";
-import {
-  findProcessesUsingFile,
-  type ProcessOwnershipResult,
-} from "./process-ownership.js";
+import { findProcessesUsingFile, type ProcessOwnershipResult } from "./process-ownership.js";
 
 export type ProviderFileRevalidationResult =
   | { status: "ready" }
   | { status: "stale"; diagnostic: Diagnostic };
 
 export type ProviderFileRevalidationDependencies = {
-  inspectProcesses?: (provider: ProviderFileQuarantineAction["adapter"]) => Promise<ProviderProcessResult>;
+  inspectProcesses?: (
+    provider: ProviderFileQuarantineAction["adapter"],
+  ) => Promise<ProviderProcessResult>;
   inspectOpenHandles?: (path: string) => Promise<ProcessOwnershipResult>;
 };
 

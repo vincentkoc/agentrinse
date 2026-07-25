@@ -140,18 +140,28 @@ export const providerFileIdentitySchema = z.object({
   fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
 });
 
-export const providerFileQuarantineActionSchema = z.object({
-  actionId: z.string().min(1),
-  type: z.literal("provider.file-quarantine"),
-  adapter: providerMutationIdSchema,
-  resourceId: z.string().min(1),
-  risk: z.literal("recoverable"),
-  description: z.string().min(1),
-  expectedReclaimBytes: z.literal(0),
-  pendingQuarantineBytes: z.number().int().nonnegative(),
-  quarantineTtlMinutes: z.number().int().positive(),
-  target: providerFileIdentitySchema,
-});
+export const providerFileQuarantineActionSchema = z
+  .object({
+    actionId: z.string().min(1),
+    type: z.literal("provider.file-quarantine"),
+    adapter: providerMutationIdSchema,
+    resourceId: z.string().min(1),
+    risk: z.literal("recoverable"),
+    description: z.string().min(1),
+    expectedReclaimBytes: z.literal(0),
+    pendingQuarantineBytes: z.number().int().nonnegative(),
+    quarantineTtlMinutes: z.number().int().positive(),
+    target: providerFileIdentitySchema,
+  })
+  .superRefine((action, context) => {
+    if (action.adapter !== action.target.provider) {
+      context.addIssue({
+        code: "custom",
+        message: "provider-file action adapter must own the target",
+        path: ["adapter"],
+      });
+    }
+  });
 
 export const plannedActionSchema = z.discriminatedUnion("type", [
   artifactRemoveActionSchema,

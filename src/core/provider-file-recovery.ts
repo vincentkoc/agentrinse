@@ -10,10 +10,7 @@ import { renameNoReplace } from "./no-clobber-rename.js";
 import { inspectProviderFile, providerFileIdentityMatches } from "./provider-file-identity.js";
 import { providerFileQuarantinePath } from "./provider-file-executor.js";
 import { inspectProviderProcesses, type ProviderProcessResult } from "./provider-processes.js";
-import {
-  findProcessesUsingFile,
-  type ProcessOwnershipResult,
-} from "./process-ownership.js";
+import { findProcessesUsingFile, type ProcessOwnershipResult } from "./process-ownership.js";
 
 export type ProviderFileRecoveryDependencies = {
   clock?: () => Date;
@@ -99,11 +96,7 @@ async function inspectOriginal(
   if (!(await pathExists(entry.originalPath))) {
     return undefined;
   }
-  return inspectProviderFile(
-    entry.originalPath,
-    entry.target.ownerRoot,
-    entry.target.provider,
-  );
+  return inspectProviderFile(entry.originalPath, entry.target.ownerRoot, entry.target.provider);
 }
 
 async function inspectQuarantine(
@@ -138,7 +131,8 @@ async function reconcile(
         {
           ...entry,
           status: "purged",
-          purgedAt: entry.purgedAt ?? (options.dependencies?.clock ?? (() => new Date()))().toISOString(),
+          purgedAt:
+            entry.purgedAt ?? (options.dependencies?.clock ?? (() => new Date()))().toISOString(),
         },
         options,
       );

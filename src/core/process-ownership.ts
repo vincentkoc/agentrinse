@@ -121,11 +121,15 @@ async function inspectWithLsof(
   try {
     const result =
       options.runLsof === undefined
-        ? await execFileAsync("lsof", exact ? ["-nP", "--", target, "-Fpcfn"] : ["-nP", "+D", target, "-Fpcfn"], {
-            encoding: "utf8",
-            maxBuffer: 4 * 1024 * 1024,
-            timeout: 10_000,
-          })
+        ? await execFileAsync(
+            "lsof",
+            exact ? ["-nP", "-Fpcfn", "--", target] : ["-nP", "+D", target, "-Fpcfn"],
+            {
+              encoding: "utf8",
+              maxBuffer: 4 * 1024 * 1024,
+              timeout: 10_000,
+            },
+          )
         : await options.runLsof(target);
     if (result.stderr !== "") {
       return {

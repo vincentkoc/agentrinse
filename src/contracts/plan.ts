@@ -43,10 +43,7 @@ export const cleanupPlanSchema = z
       }
       targetPaths.add(action.target.path);
 
-      if (
-        action.type === "worktree.quarantine" ||
-        action.type === "provider.file-quarantine"
-      ) {
+      if (action.type === "worktree.quarantine" || action.type === "provider.file-quarantine") {
         if (action.pendingQuarantineBytes !== action.target.measuredBytes) {
           context.addIssue({
             code: "custom",
