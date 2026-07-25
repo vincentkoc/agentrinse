@@ -22,6 +22,10 @@
       "type": "string",
       "minLength": 1
     },
+    "policyId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9.-]*$"
+    },
     "status": {
       "type": "string",
       "enum": ["preparing", "quarantined", "restoring", "restored", "purging", "purged", "partial"]
@@ -221,6 +225,7 @@
     "runId",
     "actionId",
     "resourceId",
+    "policyId",
     "status",
     "originalPath",
     "quarantinePath",

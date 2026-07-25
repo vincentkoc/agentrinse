@@ -44,10 +44,10 @@ $XDG_STATE_HOME/agentrinse/provider-quarantine/<entry-id>.json
 $XDG_STATE_HOME/agentrinse/provider-quarantine/<entry-id>.payload
 ```
 
-They record the exact owner root, relative path, provider, inode, mode, size,
-mtime, and streamed content digest. Provider adapters must opt into this
-primitive with their own disposal policy; the recovery layer never discovers
-or widens provider targets.
+They record the exact owner root, relative path, provider, policy ID, inode,
+mode, size, mtime, and streamed content digest. Provider adapters must opt into
+this primitive with their own registered disposal policy; the recovery layer
+never discovers or widens provider targets.
 
 ## Restore a Quarantined Worktree
 

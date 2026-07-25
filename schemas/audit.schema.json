@@ -688,6 +688,10 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "policyId": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                    },
                     "risk": {
                       "type": "string",
                       "const": "recoverable"
@@ -781,6 +785,7 @@
                     "type",
                     "adapter",
                     "resourceId",
+                    "policyId",
                     "risk",
                     "description",
                     "expectedReclaimBytes",

@@ -17,7 +17,8 @@ The project follows semantic versioning after its first supported release.
 ### Safety
 
 - no provider adapter emits the new action until a provider-specific owner
-  contract defines which log or cache files are disposable
+  contract registers a policy ID, configured owner root, and exact relative
+  path contract for disposable log or cache files
 - directories, symlinks, sessions, transcripts, databases, credentials,
   configuration, and ambiguous recovery state remain outside this boundary
 

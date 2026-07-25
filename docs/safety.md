@@ -31,6 +31,7 @@ disposable.
 
 The action records and revalidates:
 
+- an immutable provider-owned `policyId`
 - the provider and canonical owner root
 - the canonical path and exact relative path beneath that root
 - regular-file and non-symlink type
@@ -40,9 +41,12 @@ The action records and revalidates:
 - same-filesystem AgentRinse recovery storage
 - unexpired plan authorization immediately before the atomic move
 
-Apply temporarily removes write bits while repeating identity and liveness
-checks, atomically moves the same inode into owner-only state, restores the
-recorded mode, fsyncs both directories, and persists the moved identity.
+Apply refuses unless the policy registry binds that `policyId` to the
+configured provider root and exact relative-path contract. It then opens the
+file with `O_NOFOLLOW`, ties permission sealing to the validated inode,
+temporarily removes write bits while repeating identity and liveness checks,
+atomically moves the same inode into owner-only state, restores the recorded
+mode, fsyncs both directories, and persists the moved identity.
 Undo and purge use only the durable manifest and refuse ambiguous paths,
 changed content, active providers, open descriptors, or cross-owned paths.
 Directories, sessions, transcripts, databases, credentials, configuration,
