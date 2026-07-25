@@ -386,6 +386,9 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             },
           });
         } catch (error) {
+          if (error instanceof CommandInterruptedError) {
+            throw error;
+          }
           const executionError = error instanceof DatabaseExecutionError ? error : undefined;
           await journal.updateAction(action.actionId, {
             status: executionError?.outcome ?? "failed",

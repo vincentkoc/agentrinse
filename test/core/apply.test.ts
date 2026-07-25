@@ -13,13 +13,19 @@ import { join } from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { CODEX_DATABASE_CONTRACTS } from "../../src/adapters/codex-database.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { AgentRinseConfig } from "../../src/config/schema.js";
-import type { ArtifactRemoveAction, WorktreeQuarantineAction } from "../../src/contracts/action.js";
+import type {
+  ArtifactRemoveAction,
+  DatabaseVacuumAction,
+  WorktreeQuarantineAction,
+} from "../../src/contracts/action.js";
 import type { CleanupPlan } from "../../src/contracts/plan.js";
 import { ArtifactExecutionError, executeArtifactRemove } from "../../src/core/artifact-executor.js";
 import { ApplySafetyError, applyCleanupPlan } from "../../src/core/apply.js";
 import { sha256Json } from "../../src/core/digest.js";
+import { CommandInterruptedError } from "../../src/core/interruption.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
@@ -155,6 +161,83 @@ async function worktreeFixture(): Promise<{
     actions: [action],
     expectedReclaimBytes: 0,
     pendingQuarantineBytes: measurement.bytes,
+  };
+  return {
+    action,
+    config,
+    plan: { ...content, planId: cleanupPlanId(content) },
+    stateRoot,
+  };
+}
+
+async function databaseFixture(): Promise<{
+  action: DatabaseVacuumAction;
+  config: AgentRinseConfig;
+  plan: CleanupPlan;
+  stateRoot: string;
+}> {
+  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-database-apply-")));
+  await assertDestructiveFixtureRoot(home);
+  const root = join(home, ".codex");
+  const path = join(root, "state_5.sqlite");
+  const stateRoot = join(home, "state");
+  await mkdir(root);
+  await writeFile(path, "synthetic");
+  const stats = await stat(path);
+  const contract = CODEX_DATABASE_CONTRACTS["state_5.sqlite"];
+  const config: AgentRinseConfig = {
+    ...structuredClone(DEFAULT_CONFIG),
+    adapters: {
+      ...structuredClone(DEFAULT_CONFIG.adapters),
+      codex: { enabled: true, root },
+    },
+    plan: {
+      ...structuredClone(DEFAULT_CONFIG.plan),
+      maxRisk: "experimental",
+    },
+  };
+  const action: DatabaseVacuumAction = {
+    actionId: "database.vacuum:fixture",
+    type: "database.vacuum",
+    adapter: "codex",
+    resourceId: "codex:agent-database:fixture",
+    risk: "experimental",
+    description: "compact fixture database",
+    expectedReclaimBytes: 1,
+    backupTtlMinutes: 60,
+    target: {
+      path,
+      database: "state",
+      filename: "state_5.sqlite",
+      device: stats.dev,
+      inode: stats.ino,
+      mode: stats.mode,
+      mtimeMs: stats.mtimeMs,
+      measuredBytes: stats.size,
+      pageSize: 4096,
+      pageCount: 1,
+      freelistCount: 1,
+      journalMode: "wal",
+      autoVacuum: 2,
+      migrationVersion: contract.migrationVersion,
+      migrationDigest: contract.migrationDigest,
+      tables: ["_sqlx_migrations", "threads"],
+      schemaDigest: contract.schemaDigest,
+      fingerprint: "b".repeat(64),
+    },
+  };
+  const content: Omit<CleanupPlan, "planId"> = {
+    schemaVersion: 1,
+    auditId: "audit-database",
+    home,
+    createdAt: "2026-07-23T00:00:00.000Z",
+    expiresAt: "2026-07-23T00:30:00.000Z",
+    policyVersion: 1,
+    riskCeiling: "experimental",
+    configDigest: sha256Json(config),
+    auditDigest: "audit",
+    actions: [action],
+    expectedReclaimBytes: action.expectedReclaimBytes,
   };
   return {
     action,
@@ -773,6 +856,32 @@ describe("applyCleanupPlan", () => {
     expect(result.run.actions[0]?.status).toBe("skipped-stale");
     expect(result.run.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
     expect(await exists(value.target)).toBe(true);
+  });
+
+  it("journals database executor cancellation as an interrupted run", async () => {
+    const value = await databaseFixture();
+    const controller = new AbortController();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      signal: controller.signal,
+      dependencies: {
+        clock: CLOCK,
+        revalidateDatabase: async () => ({ status: "eligible" }),
+        executeDatabase: async (_action, options) => {
+          expect(options.signal).toBe(controller.signal);
+          const interruption = new CommandInterruptedError("fixture interruption");
+          controller.abort(interruption);
+          throw interruption;
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("interrupted");
+    expect(result.run.actions[0]?.status).toBe("applying");
+    expect(result.run.diagnostics[0]?.code).toBe("COMMAND_INTERRUPTED");
   });
 
   it("journals interruption requested while finalizing a completed run", async () => {

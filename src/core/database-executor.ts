@@ -411,76 +411,34 @@ export async function executeDatabaseVacuum(
     let exchanged = false;
     let archived = false;
     const movedSidecars: Array<{ source: string; destination: string }> = [];
+    let transitionResult: DatabaseExecutionResult | undefined;
+    let transitionError: unknown;
+    let transitionFailed = false;
     try {
-      // Both inode locks stay held across exchange, archival, and the durable
-      // manifest write so Codex can never reopen a half-transitioned layout.
-      assertLockedIdentity(exclusion, action.target.path, current.identity);
-      assertLockedIdentity(exclusion, temporaryPath, compacted.identity);
-      await assertOffline(action.target.path, dependencies, new Set([process.pid]));
-      await assertSidecarsStable(action);
-      assertAuthorized(dependencies);
-      throwIfInterrupted(options.signal);
-
-      await exchange(action.target.path, temporaryPath);
-      exchanged = true;
-      if (action.target.wal !== undefined && backupWalPath !== undefined) {
-        const source = `${action.target.path}-wal`;
-        await rename(source, backupWalPath);
-        movedSidecars.push({ source, destination: backupWalPath });
-      }
-      if (action.target.shm !== undefined && backupShmPath !== undefined) {
-        const source = `${action.target.path}-shm`;
-        await rename(source, backupShmPath);
-        movedSidecars.push({ source, destination: backupShmPath });
-      }
-      await rename(temporaryPath, backupPath);
-      archived = true;
-      await syncDirectory(originalDirectory);
-      await syncDirectory(options.backupDirectory);
-      await rm(temporaryDirectory, { recursive: true, force: true });
-      await syncDirectory(originalDirectory);
-      entry = await persist(
-        manifestPath,
-        {
-          ...entry,
-          status: "installed",
-        },
-        options.backupDirectory,
-      );
-      return {
-        backupEntryId: entry.entryId,
-        backupPath: entry.backupPath,
-        originalBytes: action.target.measuredBytes,
-        compactedBytes: compacted.identity.measuredBytes,
-        retainedBackupBytes:
-          action.target.measuredBytes +
-          (action.target.wal?.measuredBytes ?? 0) +
-          (action.target.shm?.measuredBytes ?? 0),
-        reclaimedBytes: 0,
-      };
-    } catch (installError) {
-      if (isInterruptionError(installError, options.signal) && !exchanged) {
-        throw interruptionFrom(options.signal) ?? installError;
-      }
-      if (
-        installError instanceof DatabaseExecutionError &&
-        installError.outcome === "skipped-stale" &&
-        !exchanged
-      ) {
-        throw installError;
-      }
       try {
-        if (archived) {
-          await exchange(action.target.path, backupPath);
-          await rm(backupPath);
-        } else if (exchanged) {
-          await exchange(action.target.path, temporaryPath);
+        // Both inode locks stay held across exchange, archival, and the durable
+        // manifest write so Codex can never reopen a half-transitioned layout.
+        assertLockedIdentity(exclusion, action.target.path, current.identity);
+        assertLockedIdentity(exclusion, temporaryPath, compacted.identity);
+        await assertOffline(action.target.path, dependencies, new Set([process.pid]));
+        await assertSidecarsStable(action);
+        assertAuthorized(dependencies);
+        throwIfInterrupted(options.signal);
+
+        await exchange(action.target.path, temporaryPath);
+        exchanged = true;
+        if (action.target.wal !== undefined && backupWalPath !== undefined) {
+          const source = `${action.target.path}-wal`;
+          await rename(source, backupWalPath);
+          movedSidecars.push({ source, destination: backupWalPath });
         }
-        for (const sidecar of movedSidecars.reverse()) {
-          if (!(await pathExists(sidecar.source)) && (await pathExists(sidecar.destination))) {
-            await rename(sidecar.destination, sidecar.source);
-          }
+        if (action.target.shm !== undefined && backupShmPath !== undefined) {
+          const source = `${action.target.path}-shm`;
+          await rename(source, backupShmPath);
+          movedSidecars.push({ source, destination: backupShmPath });
         }
+        await rename(temporaryPath, backupPath);
+        archived = true;
         await syncDirectory(originalDirectory);
         await syncDirectory(options.backupDirectory);
         await rm(temporaryDirectory, { recursive: true, force: true });
@@ -489,28 +447,112 @@ export async function executeDatabaseVacuum(
           manifestPath,
           {
             ...entry,
-            status: "restored",
-            restoredAt: clock().toISOString(),
-            diagnostic: {
-              severity: "error",
-              code: "DATABASE_INSTALL_ROLLED_BACK",
-              message: installError instanceof Error ? installError.message : String(installError),
-              adapter: action.adapter,
-              resourceId: action.resourceId,
-            },
+            status: "installed",
           },
           options.backupDirectory,
         );
-        throw new DatabaseExecutionError(
-          "database installation failed and the original was restored",
-          "rolled-back",
-          "DATABASE_INSTALL_ROLLED_BACK",
-          entry,
-        );
-      } catch (rollbackError) {
-        if (rollbackError instanceof DatabaseExecutionError) {
-          throw rollbackError;
+        transitionResult = {
+          backupEntryId: entry.entryId,
+          backupPath: entry.backupPath,
+          originalBytes: action.target.measuredBytes,
+          compactedBytes: compacted.identity.measuredBytes,
+          retainedBackupBytes:
+            action.target.measuredBytes +
+            (action.target.wal?.measuredBytes ?? 0) +
+            (action.target.shm?.measuredBytes ?? 0),
+          reclaimedBytes: 0,
+        };
+      } catch (installError) {
+        if (isInterruptionError(installError, options.signal) && !exchanged) {
+          throw interruptionFrom(options.signal) ?? installError;
         }
+        try {
+          if (
+            installError instanceof DatabaseExecutionError &&
+            installError.outcome === "skipped-stale" &&
+            !exchanged
+          ) {
+            throw installError;
+          }
+          if (archived) {
+            await exchange(action.target.path, backupPath);
+            await rm(backupPath);
+          } else if (exchanged) {
+            await exchange(action.target.path, temporaryPath);
+          }
+          for (const sidecar of movedSidecars.reverse()) {
+            if (!(await pathExists(sidecar.source)) && (await pathExists(sidecar.destination))) {
+              await rename(sidecar.destination, sidecar.source);
+            }
+          }
+          await syncDirectory(originalDirectory);
+          await syncDirectory(options.backupDirectory);
+          await rm(temporaryDirectory, { recursive: true, force: true });
+          await syncDirectory(originalDirectory);
+          entry = await persist(
+            manifestPath,
+            {
+              ...entry,
+              status: "restored",
+              restoredAt: clock().toISOString(),
+              diagnostic: {
+                severity: "error",
+                code: "DATABASE_INSTALL_ROLLED_BACK",
+                message:
+                  installError instanceof Error ? installError.message : String(installError),
+                adapter: action.adapter,
+                resourceId: action.resourceId,
+              },
+            },
+            options.backupDirectory,
+          );
+          throw new DatabaseExecutionError(
+            "database installation failed and the original was restored",
+            "rolled-back",
+            "DATABASE_INSTALL_ROLLED_BACK",
+            entry,
+          );
+        } catch (rollbackError) {
+          if (rollbackError instanceof DatabaseExecutionError) {
+            throw rollbackError;
+          }
+          entry = await persist(
+            manifestPath,
+            {
+              ...entry,
+              status: "partial",
+              diagnostic: {
+                severity: "error",
+                code: "DATABASE_INSTALL_ROLLBACK_PARTIAL",
+                message: `install failed: ${
+                  installError instanceof Error ? installError.message : String(installError)
+                }; rollback failed: ${
+                  rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
+                }`,
+                adapter: action.adapter,
+                resourceId: action.resourceId,
+              },
+            },
+            options.backupDirectory,
+          );
+          throw new DatabaseExecutionError(
+            "database installation and automatic rollback did not complete",
+            "partially-applied",
+            "DATABASE_INSTALL_ROLLBACK_PARTIAL",
+            entry,
+          );
+        }
+      }
+    } catch (error) {
+      transitionFailed = true;
+      transitionError = error;
+    }
+
+    try {
+      await exclusion.release();
+    } catch (releaseError) {
+      const message = releaseError instanceof Error ? releaseError.message : String(releaseError);
+      try {
         entry = await persist(
           manifestPath,
           {
@@ -518,28 +560,28 @@ export async function executeDatabaseVacuum(
             status: "partial",
             diagnostic: {
               severity: "error",
-              code: "DATABASE_INSTALL_ROLLBACK_PARTIAL",
-              message: `install failed: ${
-                installError instanceof Error ? installError.message : String(installError)
-              }; rollback failed: ${
-                rollbackError instanceof Error ? rollbackError.message : String(rollbackError)
-              }`,
+              code: "DATABASE_EXCLUSION_RELEASE_PARTIAL",
+              message,
               adapter: action.adapter,
               resourceId: action.resourceId,
             },
           },
           options.backupDirectory,
         );
-        throw new DatabaseExecutionError(
-          "database installation and automatic rollback did not complete",
-          "partially-applied",
-          "DATABASE_INSTALL_ROLLBACK_PARTIAL",
-          entry,
-        );
+      } catch {
+        // The run journal still receives the last durable manifest identity.
       }
-    } finally {
-      await exclusion.release();
+      throw new DatabaseExecutionError(
+        "database exclusion could not be fully released; recovery is required",
+        "partially-applied",
+        "DATABASE_EXCLUSION_RELEASE_PARTIAL",
+        entry,
+      );
     }
+    if (transitionFailed) {
+      throw transitionError;
+    }
+    return transitionResult!;
   } catch (error) {
     if (isInterruptionError(error, options.signal)) {
       const sourceExists = await pathExists(action.target.path).catch(() => false);

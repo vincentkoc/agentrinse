@@ -782,6 +782,45 @@ describe("database vacuum execution and recovery", () => {
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("records a partial installation when exclusion release fails", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-release-failure-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const baseDependencies = dependencies();
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-release-failure",
+        entryId: "entry-release-failure",
+        backupDirectory,
+        dependencies: {
+          ...baseDependencies,
+          async acquireExclusion(paths) {
+            const exclusion = await baseDependencies.acquireExclusion(paths);
+            return {
+              identities: exclusion.identities,
+              async release() {
+                await exclusion.release();
+                throw new Error("injected permission restore failure");
+              },
+            };
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "partially-applied",
+      diagnosticCode: "DATABASE_EXCLUSION_RELEASE_PARTIAL",
+    });
+
+    expect(await readFile(originalPath, "utf8")).toBe("compacted");
+    const manifest = databaseBackupEntrySchema.parse(
+      await readJsonFile(join(backupDirectory, "entry-release-failure.json")),
+    );
+    expect(manifest.status).toBe("partial");
+    expect(await readFile(manifest.backupPath, "utf8")).toBe("original");
+  });
+
   it("refuses undo after the installed database changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-drift-"));
     const originalPath = join(root, "state_5.sqlite");
@@ -941,5 +980,45 @@ describe("database vacuum execution and recovery", () => {
 
     expect(purged.entry.status).toBe("purged");
     expect(purged.reclaimedBytes).toBe(0);
+  });
+
+  it("resumes purge after only one retained sidecar was deleted", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-purge-sidecar-resume-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await writeFile(`${originalPath}-wal`, "");
+    await writeFile(`${originalPath}-shm`, "synthetic shm");
+    const baseDependencies = dependencies();
+    const selectedAction = {
+      ...action(originalPath),
+      target: (await baseDependencies.inspectDatabase(originalPath)).identity,
+    };
+    await executeDatabaseVacuum(selectedAction, {
+      runId: "run-purge-sidecar-resume",
+      entryId: "entry-purge-sidecar-resume",
+      backupDirectory,
+      dependencies: baseDependencies,
+    });
+    const manifestPath = join(backupDirectory, "entry-purge-sidecar-resume.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await rm(manifest.backupWalPath!);
+
+    const purged = await purgeDatabaseBackup(
+      {
+        ...manifest,
+        status: "purging",
+      },
+      {
+        manifestPath,
+        backupDirectory,
+        dependencies: baseDependencies,
+      },
+    );
+
+    expect(purged.entry.status).toBe("purged");
+    expect(purged.reclaimedBytes).toBe("original".length + Buffer.byteLength("synthetic shm"));
+    await expect(lstat(manifest.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(manifest.backupShmPath!)).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

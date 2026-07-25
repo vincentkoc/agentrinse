@@ -282,6 +282,13 @@ function movedSidecarMatches(
   );
 }
 
+function movedSidecarMatchesWhenPresent(
+  actual: DatabaseSidecarIdentity | undefined,
+  planned: DatabaseSidecarIdentity | undefined,
+): boolean {
+  return actual === undefined || (planned !== undefined && movedSidecarMatches(actual, planned));
+}
+
 function databaseModeMatches(actual: number, planned: number, allowSealedMode: boolean): boolean {
   return (
     actual === planned ||
@@ -330,6 +337,7 @@ async function verifyRetainedOriginal(
   entry: DatabaseBackupEntry,
   dependencies: DatabaseRecoveryDependencies,
   inspect: typeof inspectCodexDatabase,
+  allowMissingSidecars = false,
 ): Promise<DatabaseIdentity> {
   await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
     entry.backupPath,
@@ -338,7 +346,13 @@ async function verifyRetainedOriginal(
   const backup = await inspect(entry.backupPath, dependencies, entry.originalPath);
   const planned = entry.backupIdentity ?? entry.target;
   const allowSealedMode = ["installing", "restoring", "partial", "purging"].includes(entry.status);
-  const matches = movedOriginalMatches(backup.identity, planned, allowSealedMode);
+  const matches =
+    databaseMainIdentityMatches(backup.identity, planned, allowSealedMode) &&
+    (allowMissingSidecars
+      ? movedSidecarMatchesWhenPresent(backup.identity.wal, planned.wal) &&
+        movedSidecarMatchesWhenPresent(backup.identity.shm, planned.shm)
+      : movedSidecarMatches(backup.identity.wal, planned.wal) &&
+        movedSidecarMatches(backup.identity.shm, planned.shm));
   if (!matches || (backup.identity.wal?.measuredBytes ?? 0) > 0) {
     throw new Error("the retained original database no longer matches its recovery manifest");
   }
@@ -749,7 +763,12 @@ export async function purgeDatabaseBackup(
   let reclaimedBytes = 0;
   let backupIdentity: DatabaseIdentity | undefined;
   if (backupExists) {
-    backupIdentity = await verifyRetainedOriginal(entry, dependencies, inspect);
+    backupIdentity = await verifyRetainedOriginal(
+      entry,
+      dependencies,
+      inspect,
+      entry.status === "purging",
+    );
     const backupStats = await lstat(entry.backupPath);
     if (!backupStats.isFile() || backupStats.isSymbolicLink()) {
       throw new Error("database rollback copy is not a regular file");
