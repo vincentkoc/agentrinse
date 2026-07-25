@@ -1,5 +1,5 @@
 import { lstat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import type { AuditAdapter, AuditContext, CollectionResult } from "../contracts/adapter.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
@@ -23,6 +23,7 @@ import type { ProviderSpec } from "./provider-specs.js";
 
 export type ProviderAdapterOptions = {
   root?: string;
+  environment?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   measureBytes: boolean;
   maxEntries: number;
@@ -57,14 +58,40 @@ export class ProviderAuditAdapter implements AuditAdapter {
   }
 
   private root(context: AuditContext): string {
-    return resolve(
-      this.options.root ??
-        this.spec.defaultRoot(context.home, this.options.platform ?? process.platform),
-    );
+    if (this.options.root !== undefined) {
+      return resolve(this.options.root);
+    }
+    if (this.spec.id === "claude") {
+      const configuredRoot = this.options.environment?.CLAUDE_CONFIG_DIR;
+      if (configuredRoot !== undefined && configuredRoot !== "") {
+        if (!isAbsolute(configuredRoot)) {
+          throw new Error("CLAUDE_CONFIG_DIR must be an absolute path");
+        }
+        return resolve(configuredRoot);
+      }
+    }
+    return resolve(this.spec.defaultRoot(context.home, this.options.platform ?? process.platform));
   }
 
   async probe(context: AuditContext): Promise<AdapterProbe> {
-    const root = this.root(context);
+    let root: string;
+    try {
+      root = this.root(context);
+    } catch (error) {
+      return {
+        adapter: this.id,
+        status: "degraded",
+        detail: `${this.spec.displayName} root configuration is invalid`,
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "PROVIDER_ROOT_INVALID",
+            message: error instanceof Error ? error.message : String(error),
+            adapter: this.id,
+          },
+        ],
+      };
+    }
 
     try {
       const stats = await lstat(root);

@@ -93,6 +93,62 @@ describe("ProviderAuditAdapter", () => {
     expect(probe.diagnostics[0]?.code).toBe("PROVIDER_ROOT_SYMLINK");
   });
 
+  it("uses CLAUDE_CONFIG_DIR as the default Claude root", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "claude-state");
+    await mkdir(join(root, "debug"), { recursive: true });
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.claude, {
+      environment: { CLAUDE_CONFIG_DIR: root },
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+
+    expect(probe).toMatchObject({ status: "available", root });
+    expect(collection.resources[0]?.resource.path).toBe(join(root, "debug"));
+  });
+
+  it("fails closed for a relative CLAUDE_CONFIG_DIR", async () => {
+    const context = await fixtureContext();
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.claude, {
+      environment: { CLAUDE_CONFIG_DIR: "relative/claude-state" },
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+
+    expect(probe).toMatchObject({
+      status: "degraded",
+      detail: "Claude Code root configuration is invalid",
+      diagnostics: [
+        {
+          code: "PROVIDER_ROOT_INVALID",
+          message: "CLAUDE_CONFIG_DIR must be an absolute path",
+        },
+      ],
+    });
+    expect((await adapter.collect(context, probe)).resources).toEqual([]);
+  });
+
+  it("prefers an explicit Claude root over CLAUDE_CONFIG_DIR", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "configured-claude");
+    await mkdir(root);
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.claude, {
+      root,
+      environment: { CLAUDE_CONFIG_DIR: join(context.home, "environment-claude") },
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+
+    expect(probe).toMatchObject({ status: "available", root });
+  });
+
   it("proposes an experimental offline vacuum only with explicit authorization", async () => {
     const context = await fixtureContext();
     const path = join(context.home, ".codex", "state_5.sqlite");
