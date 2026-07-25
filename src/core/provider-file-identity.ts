@@ -11,14 +11,23 @@ function inside(root: string, candidate: string): boolean {
   return result !== "" && !result.startsWith("..") && !isAbsolute(result);
 }
 
-async function hashFileDescriptor(handle: Awaited<ReturnType<typeof open>>): Promise<string> {
+async function hashFileDescriptor(
+  handle: Awaited<ReturnType<typeof open>>,
+  measuredBytes: number,
+): Promise<string> {
   const hash = createHash("sha256");
   const buffer = Buffer.allocUnsafe(64 * 1024);
   let position = 0;
-  for (;;) {
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, position);
+  while (position < measuredBytes) {
+    const remaining = measuredBytes - position;
+    const { bytesRead } = await handle.read(
+      buffer,
+      0,
+      Math.min(buffer.length, remaining),
+      position,
+    );
     if (bytesRead === 0) {
-      break;
+      throw new Error("provider file reached end-of-file before its measured size");
     }
     hash.update(buffer.subarray(0, bytesRead));
     position += bytesRead;
@@ -92,11 +101,17 @@ export async function inspectProviderFile(
     throw new Error(`provider file is outside its owner root: ${path}`);
   }
 
-  const handle = await open(physicalPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const handle = await open(
+    physicalPath,
+    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+  );
   let after: Awaited<ReturnType<typeof lstat>>;
   let contentSha256: string;
   try {
     const before = await handle.stat();
+    if (!before.isFile()) {
+      throw new Error(`provider cleanup target is not a regular file: ${path}`);
+    }
     const pathBefore = await lstat(physicalPath);
     if (!sameFileStats(pathBefore, before)) {
       throw new Error(`provider file changed while its descriptor was acquired: ${path}`);
@@ -104,7 +119,7 @@ export async function inspectProviderFile(
     if (before.nlink !== 1) {
       throw new Error(`provider cleanup target has multiple hard links: ${path}`);
     }
-    contentSha256 = await hashFileDescriptor(handle);
+    contentSha256 = await hashFileDescriptor(handle, before.size);
     after = await handle.stat();
     const pathAfter = await lstat(physicalPath);
     if (!stableFileStats(before, after) || !sameFileStats(pathAfter, after)) {
