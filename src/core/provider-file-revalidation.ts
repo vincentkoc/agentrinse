@@ -1,6 +1,8 @@
 import type { ProviderFileQuarantineAction } from "../contracts/action.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
+import type { AgentRinseConfig } from "../config/schema.js";
 import { inspectProviderFile, providerFileIdentityMatches } from "./provider-file-identity.js";
+import { authorizeProviderFileAction } from "./provider-file-policy.js";
 import { inspectProviderProcesses, type ProviderProcessResult } from "./provider-processes.js";
 import { findProcessesUsingFile, type ProcessOwnershipResult } from "./process-ownership.js";
 
@@ -9,6 +11,7 @@ export type ProviderFileRevalidationResult =
   | { status: "stale"; diagnostic: Diagnostic };
 
 export type ProviderFileRevalidationDependencies = {
+  authorizeTarget?: (action: ProviderFileQuarantineAction) => Promise<void>;
   inspectProcesses?: (
     provider: ProviderFileQuarantineAction["adapter"],
   ) => Promise<ProviderProcessResult>;
@@ -34,8 +37,28 @@ function stale(
 
 export async function revalidateProviderFileQuarantine(
   action: ProviderFileQuarantineAction,
+  home?: string,
+  config?: AgentRinseConfig,
   dependencies: ProviderFileRevalidationDependencies = {},
 ): Promise<ProviderFileRevalidationResult> {
+  try {
+    const authorizeTarget =
+      dependencies.authorizeTarget ??
+      (home !== undefined && config !== undefined
+        ? (selectedAction: ProviderFileQuarantineAction) =>
+            authorizeProviderFileAction(selectedAction, home, config)
+        : undefined);
+    if (authorizeTarget === undefined) {
+      throw new Error("provider-file execution requires an approved provider policy");
+    }
+    await authorizeTarget(action);
+  } catch (error) {
+    return stale(
+      action,
+      "PROVIDER_FILE_POLICY_REFUSED",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
   try {
     const actual = await inspectProviderFile(
       action.target.path,

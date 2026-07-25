@@ -146,6 +146,7 @@ export const providerFileQuarantineActionSchema = z
     type: z.literal("provider.file-quarantine"),
     adapter: providerMutationIdSchema,
     resourceId: z.string().min(1),
+    policyId: z.string().regex(/^[a-z0-9][a-z0-9.-]*$/u),
     risk: z.literal("recoverable"),
     description: z.string().min(1),
     expectedReclaimBytes: z.literal(0),

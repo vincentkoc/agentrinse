@@ -137,6 +137,7 @@ function providerFileEntry(
     runId: "run-provider",
     actionId: "provider.file-quarantine:fixture",
     resourceId: "claude:agent-log:fixture",
+    policyId: "claude.debug-log",
     status,
     originalPath,
     quarantinePath,

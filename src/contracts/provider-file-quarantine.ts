@@ -21,6 +21,7 @@ export const providerFileQuarantineEntrySchema = z
     runId: quarantineEntryIdSchema,
     actionId: z.string().min(1),
     resourceId: z.string().min(1),
+    policyId: z.string().regex(/^[a-z0-9][a-z0-9.-]*$/u),
     status: providerFileQuarantineStatusSchema,
     originalPath: z.string().min(1),
     quarantinePath: z.string().min(1),

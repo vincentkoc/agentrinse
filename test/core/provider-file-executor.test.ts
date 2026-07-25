@@ -35,6 +35,7 @@ function idleDependencies() {
   return {
     clock: () => NOW,
     move: rename,
+    authorizeTarget: async () => undefined,
     inspectProcesses: async () => ({ status: "idle" as const, pids: [] as [] }),
     inspectOpenHandles: async () => ({ status: "idle" as const, matches: [] as [] }),
   };
@@ -63,6 +64,7 @@ async function fixture(): Promise<{
       type: "provider.file-quarantine",
       adapter: "claude",
       resourceId: "claude:agent-log:fixture",
+      policyId: "claude.debug-log",
       risk: "recoverable",
       description: "archive a synthetic Claude debug log",
       expectedReclaimBytes: 0,
@@ -147,6 +149,62 @@ describe("provider-file quarantine execution and recovery", () => {
 
     expect((await lstat(selected.file)).mode).toBe(originalMode);
     await expect(readFile(selected.file, "utf8")).resolves.toBe("synthetic debug output\n");
+    await expect(
+      readJsonFile(join(selected.quarantineDirectory, "entry-active.json")),
+    ).resolves.toMatchObject({ status: "restored" });
+  });
+
+  it("refuses direct execution without an approved provider policy", async () => {
+    const selected = await fixture();
+    const { authorizeTarget: _authorizeTarget, ...dependencies } = idleDependencies();
+
+    await expect(
+      executeProviderFileQuarantine(selected.action, {
+        runId: "run-policy",
+        entryId: "entry-policy",
+        quarantineDirectory: selected.quarantineDirectory,
+        dependencies,
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "PROVIDER_FILE_POLICY_REFUSED",
+    });
+    await expect(readFile(selected.file, "utf8")).resolves.toBe("synthetic debug output\n");
+  });
+
+  it("does not chmod a symlink target raced into the source path", async () => {
+    const selected = await fixture();
+    const original = join(selected.action.target.ownerRoot, "debug", "original.txt");
+    const protectedFile = join(selected.action.target.ownerRoot, "config.json");
+    await writeFile(protectedFile, '{"token":"synthetic"}\n', { mode: 0o660 });
+    const protectedMode = (await lstat(protectedFile)).mode;
+    let authorized = false;
+
+    await expect(
+      executeProviderFileQuarantine(selected.action, {
+        runId: "run-race",
+        entryId: "entry-race",
+        quarantineDirectory: selected.quarantineDirectory,
+        dependencies: {
+          ...idleDependencies(),
+          authorizeTarget: async () => {
+            if (!authorized) {
+              authorized = true;
+              await rename(selected.action.target.path, original);
+              await symlink(protectedFile, selected.action.target.path);
+            }
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "failed",
+    });
+
+    expect((await lstat(protectedFile)).mode).toBe(protectedMode);
+    await expect(readFile(protectedFile, "utf8")).resolves.toBe('{"token":"synthetic"}\n');
+    await expect(
+      readJsonFile(join(selected.quarantineDirectory, "entry-race.json")),
+    ).resolves.toMatchObject({ status: "restored" });
   });
 
   it("rejects content changed after planning", async () => {
@@ -179,6 +237,7 @@ describe("provider-file quarantine execution and recovery", () => {
       runId: "run-interrupted",
       actionId: selected.action.actionId,
       resourceId: selected.action.resourceId,
+      policyId: selected.action.policyId,
       status: "preparing",
       originalPath: selected.action.target.path,
       quarantinePath,

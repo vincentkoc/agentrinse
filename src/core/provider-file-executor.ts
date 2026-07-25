@@ -1,4 +1,6 @@
-import { chmod, lstat, open } from "node:fs/promises";
+import { constants } from "node:fs";
+import type { Stats } from "node:fs";
+import { lstat, open, rm, type FileHandle } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { ProviderFileQuarantineAction } from "../contracts/action.js";
@@ -78,15 +80,6 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
-async function syncFile(path: string): Promise<void> {
-  const handle = await open(path, "r");
-  try {
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
-
 async function persist(
   manifestPath: string,
   quarantineDirectory: string,
@@ -97,6 +90,41 @@ async function persist(
     privateDirectories: [quarantineDirectory],
   });
   return parsed;
+}
+
+function openedIdentityMatches(
+  stats: Stats,
+  action: ProviderFileQuarantineAction,
+  sealed = false,
+): boolean {
+  return (
+    stats.isFile() &&
+    !stats.isSymbolicLink() &&
+    stats.dev === action.target.device &&
+    stats.ino === action.target.inode &&
+    stats.mode === (sealed ? action.target.mode & ~0o222 : action.target.mode) &&
+    stats.mtimeMs === action.target.mtimeMs &&
+    stats.size === action.target.measuredBytes
+  );
+}
+
+async function finalizeUnmovedEntry(
+  entry: ProviderFileQuarantineEntry,
+  manifestPath: string,
+  quarantineDirectory: string,
+  clock: () => Date,
+): Promise<ProviderFileQuarantineEntry> {
+  try {
+    return await persist(manifestPath, quarantineDirectory, {
+      ...entry,
+      status: "restored",
+      restoredAt: clock().toISOString(),
+    });
+  } catch (error) {
+    await rm(manifestPath, { force: true }).catch(() => undefined);
+    await syncDirectory(quarantineDirectory).catch(() => undefined);
+    throw error;
+  }
 }
 
 function assertAuthorized(
@@ -129,6 +157,32 @@ export async function executeProviderFileQuarantine(
   const quarantinePath = providerFileQuarantinePath(options.quarantineDirectory, options.entryId);
   const manifestPath = join(options.quarantineDirectory, `${options.entryId}.json`);
 
+  if (!["darwin", "linux"].includes(dependencies.platform ?? process.platform)) {
+    throw new ProviderFileExecutionError(
+      `provider-file quarantine is unsupported on ${dependencies.platform ?? process.platform}`,
+      "skipped-stale",
+      "PROVIDER_FILE_PLATFORM_UNSUPPORTED",
+    );
+  }
+  if (dependencies.authorizeTarget === undefined) {
+    throw new ProviderFileExecutionError(
+      "provider-file execution requires an approved provider policy",
+      "skipped-stale",
+      "PROVIDER_FILE_POLICY_REFUSED",
+    );
+  }
+  try {
+    await dependencies.authorizeTarget(action);
+  } catch (error) {
+    throw new ProviderFileExecutionError(
+      error instanceof Error ? error.message : String(error),
+      "skipped-stale",
+      "PROVIDER_FILE_POLICY_REFUSED",
+      undefined,
+      { cause: error },
+    );
+  }
+
   await ensurePrivateDirectory(options.quarantineDirectory);
   const [quarantineStats, sourceStats] = await Promise.all([
     lstat(options.quarantineDirectory),
@@ -155,6 +209,7 @@ export async function executeProviderFileQuarantine(
     runId: options.runId,
     actionId: action.actionId,
     resourceId: action.resourceId,
+    policyId: action.policyId,
     status: "preparing",
     originalPath: action.target.path,
     quarantinePath,
@@ -164,10 +219,28 @@ export async function executeProviderFileQuarantine(
   });
 
   let moved = false;
+  let sourceHandle: FileHandle | undefined;
   const originalMode = action.target.mode & 0o7777;
   try {
-    await chmod(action.target.path, originalMode & ~0o222);
-    await syncFile(action.target.path);
+    sourceHandle = await open(action.target.path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    if (!openedIdentityMatches(await sourceHandle.stat(), action)) {
+      throw new ProviderFileExecutionError(
+        "provider file identity changed while acquiring exclusive access",
+        "skipped-stale",
+        "PROVIDER_FILE_IDENTITY_CHANGED",
+        entry,
+      );
+    }
+    await sourceHandle.chmod(originalMode & ~0o222);
+    await sourceHandle.sync();
+    if (!openedIdentityMatches(await sourceHandle.stat(), action, true)) {
+      throw new ProviderFileExecutionError(
+        "provider file identity changed while sealing exclusive access",
+        "skipped-stale",
+        "PROVIDER_FILE_IDENTITY_CHANGED",
+        entry,
+      );
+    }
     const sealed = await inspectProviderFile(
       action.target.path,
       action.target.ownerRoot,
@@ -186,6 +259,8 @@ export async function executeProviderFileQuarantine(
         ...action,
         target: sealed,
       },
+      undefined,
+      undefined,
       dependencies,
     );
     if (readiness.status === "stale") {
@@ -203,8 +278,8 @@ export async function executeProviderFileQuarantine(
       syncDirectory(dirname(action.target.path)),
       syncDirectory(options.quarantineDirectory),
     ]);
-    await chmod(quarantinePath, originalMode);
-    await syncFile(quarantinePath);
+    await sourceHandle.chmod(originalMode);
+    await sourceHandle.sync();
     const quarantineIdentity = await inspectProviderFile(
       quarantinePath,
       options.quarantineDirectory,
@@ -238,7 +313,8 @@ export async function executeProviderFileQuarantine(
     };
   } catch (error) {
     if (!moved) {
-      await chmod(action.target.path, originalMode).catch(() => undefined);
+      await sourceHandle?.chmod(originalMode).catch(() => undefined);
+      entry = await finalizeUnmovedEntry(entry, manifestPath, options.quarantineDirectory, clock);
       if (error instanceof ProviderFileExecutionError) {
         throw error;
       }
@@ -277,5 +353,7 @@ export async function executeProviderFileQuarantine(
       entry,
       { cause: error },
     );
+  } finally {
+    await sourceHandle?.close().catch(() => undefined);
   }
 }

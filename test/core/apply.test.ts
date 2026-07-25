@@ -279,6 +279,7 @@ async function providerFileFixture(): Promise<{
     type: "provider.file-quarantine",
     adapter: "claude",
     resourceId: "claude:agent-log:fixture",
+    policyId: "claude.debug-log",
     risk: "recoverable",
     description: "archive fixture provider log",
     expectedReclaimBytes: 0,

@@ -215,9 +215,10 @@ export async function executePurgeCommand(
   const providerFileEntries = providerFileRecords.filter(
     ({ value: entry }) =>
       ["quarantined", "purging", "partial"].includes(entry.status) &&
-      (options.expired
-        ? entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()
-        : options.runId === undefined || entry.runId === options.runId),
+      (options.runId === undefined || entry.runId === options.runId) &&
+      (!options.expired ||
+        entry.status === "purging" ||
+        Date.parse(entry.expiresAt) <= now.getTime()),
   );
   const selected = [
     ...entries.map((record) => record.value),

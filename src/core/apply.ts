@@ -47,6 +47,7 @@ import {
   revalidateProviderFileQuarantine,
   type ProviderFileRevalidationResult,
 } from "./provider-file-revalidation.js";
+import { authorizeProviderFileAction } from "./provider-file-policy.js";
 import { isPathInside, resolvePhysicalPath } from "./safety.js";
 import {
   executeWorktreeQuarantine,
@@ -194,7 +195,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
               : await options.dependencies.revalidateWorktree(action, plan.home, config)
             : action.type === "provider.file-quarantine"
               ? options.dependencies?.revalidateProviderFile === undefined
-                ? await revalidateProviderFileQuarantine(action)
+                ? await revalidateProviderFileQuarantine(action, plan.home, config)
                 : await options.dependencies.revalidateProviderFile(action)
               : options.dependencies?.revalidateDatabase === undefined
                 ? await revalidateDatabaseVacuum(action, plan.home, config)
@@ -404,6 +405,8 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             quarantineDirectory: layout.providerQuarantine,
             dependencies: {
               clock,
+              authorizeTarget: (selectedAction) =>
+                authorizeProviderFileAction(selectedAction, plan.home, config),
               authorization: {
                 expiresAtMs: Date.parse(plan.expiresAt),
                 now: clock,
