@@ -12,7 +12,10 @@ import { executeDatabaseVacuum } from "../../src/core/database-executor.js";
 import { purgeDatabaseBackup, undoDatabaseVacuum } from "../../src/core/database-recovery.js";
 import { exchangePaths } from "../../src/core/no-clobber-rename.js";
 import { readJsonFile } from "../../src/state/json-file.js";
-import { inspectCodexDatabase } from "../../src/adapters/codex-database.js";
+import {
+  CODEX_DATABASE_CONTRACTS,
+  inspectCodexDatabase,
+} from "../../src/adapters/codex-database.js";
 
 const execFileAsync = promisify(execFile);
 const hasSqlite = (() => {
@@ -24,26 +27,29 @@ const hasSqlite = (() => {
   }
 })();
 
-function identity(path: string, content: "original" | "compacted"): DatabaseIdentity {
+function identity(path: string, content: "original" | "compacted" | "used"): DatabaseIdentity {
+  const contract = CODEX_DATABASE_CONTRACTS["state_5.sqlite"];
+  const original = content === "original";
+  const compacted = content === "compacted";
   return {
     path,
     database: "state",
     filename: "state_5.sqlite",
     device: 1,
-    inode: content === "original" ? 10 : 11,
+    inode: original ? 10 : compacted ? 11 : 12,
     mode: 0o100600,
-    mtimeMs: content === "original" ? 100 : 200,
-    measuredBytes: content === "original" ? 1024 : 256,
+    mtimeMs: original ? 100 : compacted ? 200 : 300,
+    measuredBytes: original ? 1024 : compacted ? 256 : 512,
     pageSize: 4096,
-    pageCount: content === "original" ? 4 : 1,
-    freelistCount: content === "original" ? 3 : 0,
+    pageCount: original ? 4 : compacted ? 1 : 2,
+    freelistCount: original ? 3 : 0,
     journalMode: "wal",
-    autoVacuum: content === "original" ? 0 : 2,
-    migrationVersion: 39,
-    migrationDigest: "e".repeat(64),
+    autoVacuum: original ? 0 : 2,
+    migrationVersion: contract.migrationVersion,
+    migrationDigest: contract.migrationDigest,
     tables: ["_sqlx_migrations", "threads"],
-    schemaDigest: "a".repeat(64),
-    fingerprint: (content === "original" ? "b" : "c").repeat(64),
+    schemaDigest: contract.schemaDigest,
+    fingerprint: (original ? "b" : compacted ? "c" : "d").repeat(64),
   };
 }
 
@@ -74,7 +80,7 @@ function dependencies() {
       identities: new Map(
         await Promise.all(
           paths.map(async (path) => {
-            const content = (await readFile(path, "utf8")) as "original" | "compacted";
+            const content = (await readFile(path, "utf8")) as "original" | "compacted" | "used";
             return [path, { ...identity(path, content) }] as const;
           }),
         ),
@@ -82,7 +88,7 @@ function dependencies() {
       release: async () => undefined,
     }),
     inspectDatabase: async (path: string) => {
-      const content = (await readFile(path, "utf8")) as "original" | "compacted";
+      const content = (await readFile(path, "utf8")) as "original" | "compacted" | "used";
       const sidecars = await Promise.all(
         (["wal", "shm"] as const).map(async (suffix) => {
           const sidecarPath = `${path}-${suffix}`;
@@ -601,6 +607,46 @@ describe("database vacuum execution and recovery", () => {
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("finishes an original-only rollback after an interrupted sidecar restore", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-original-only-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await writeFile(`${originalPath}-shm`, "synthetic shm");
+    const baseDependencies = dependencies();
+    const selectedAction = {
+      ...action(originalPath),
+      target: (await baseDependencies.inspectDatabase(originalPath)).identity,
+    };
+    await executeDatabaseVacuum(selectedAction, {
+      runId: "run-original-only",
+      entryId: "entry-original-only",
+      backupDirectory,
+      dependencies: baseDependencies,
+    });
+    const manifestPath = join(backupDirectory, "entry-original-only.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await exchangePaths(originalPath, manifest.backupPath);
+    await rm(manifest.backupPath);
+
+    const restored = await undoDatabaseVacuum(
+      {
+        ...manifest,
+        status: "installing",
+      },
+      {
+        manifestPath,
+        backupDirectory,
+        dependencies: baseDependencies,
+      },
+    );
+
+    expect(restored.status).toBe("restored");
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    expect(await readFile(`${originalPath}-shm`, "utf8")).toBe("synthetic shm");
+    await expect(lstat(manifest.backupShmPath!)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("refuses interrupted-install recovery after the compacted database changes", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-installing-drift-"));
     const originalPath = join(root, "state_5.sqlite");
@@ -763,6 +809,33 @@ describe("database vacuum execution and recovery", () => {
     expect(purged.reclaimedBytes).toBe("original".length);
     expect(processChecks).toBe(2);
     expect(releasedAfterDeletion).toBe(true);
+    await expect(lstat(result.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("purges a healthy rollback copy after normal Codex database writes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-purge-used-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const result = await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-purge-used",
+      entryId: "entry-purge-used",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-purge-used.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await writeFile(originalPath, "used");
+
+    const purged = await purgeDatabaseBackup(manifest, {
+      manifestPath,
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+
+    expect(purged.entry.status).toBe("purged");
+    expect(purged.entry.installedIdentity).toEqual(identity(originalPath, "used"));
+    expect(purged.reclaimedBytes).toBe("original".length);
     await expect(lstat(result.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

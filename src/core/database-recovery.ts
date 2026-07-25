@@ -2,6 +2,7 @@ import { lstat, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
+  codexDatabaseContractMatches,
   inspectCodexDatabase,
   inspectCodexProcesses,
   inspectDatabaseOpenHandles,
@@ -389,6 +390,30 @@ export async function undoDatabaseVacuum(
     if (originalExists && backupExists && !temporaryExists) {
       entry = await persist(options, { ...entry, status: "installed" });
     }
+    if (originalExists && !backupExists && !temporaryExists) {
+      const original = await inspect(entry.originalPath, dependencies);
+      if (!databaseMainIdentityMatches(original.identity, entry.target, true)) {
+        throw new Error("interrupted database rollback no longer contains the planned original");
+      }
+      const exclusion = await acquireExclusion(
+        [entry.originalPath],
+        process.platform,
+        new Map([[entry.originalPath, entry.target.mode]]),
+      );
+      try {
+        assertLockedIdentity(exclusion, entry.originalPath, {
+          ...original.identity,
+          mode: entry.target.mode,
+        });
+        await assertOffline(entry, dependencies, new Set([process.pid]));
+        await assertRecoverableSidecars(entry);
+        await restoreSidecars(entry, rename);
+        await removeTemporaryWorkspace(entry);
+        return markRestored(options, entry, clock);
+      } finally {
+        await exclusion.release();
+      }
+    }
     if (originalExists && !backupExists && temporaryExists) {
       const original = await inspect(entry.originalPath, dependencies);
       if (databaseMainIdentityMatches(original.identity, entry.target, true)) {
@@ -653,17 +678,21 @@ export async function purgeDatabaseBackup(
   if (current.sidecarsPresent) {
     throw new Error("database WAL or SHM companion exists; purge is refused");
   }
-  if (
-    entry.installedIdentity === undefined ||
-    (entry.status === "purging"
-      ? !databaseMainIdentityMatches(current.identity, entry.installedIdentity, true)
-      : current.identity.fingerprint !== entry.installedIdentity.fingerprint)
-  ) {
-    throw new Error("canonical database no longer matches the purge manifest");
+  if (!codexDatabaseContractMatches(current.identity)) {
+    throw new Error("canonical database no longer matches the supported Codex contract");
   }
+  if (
+    entry.status === "purging" &&
+    (entry.installedIdentity === undefined ||
+      !databaseMainIdentityMatches(current.identity, entry.installedIdentity, true))
+  ) {
+    throw new Error("interrupted database purge no longer matches its locked boundary");
+  }
+  const restoreMode =
+    entry.status === "purging" ? entry.installedIdentity!.mode : current.identity.mode;
   const canonicalIdentity = {
     ...current.identity,
-    mode: entry.installedIdentity.mode,
+    mode: restoreMode,
   };
   await (dependencies.verifyIntegrity ?? verifyCodexDatabaseIntegrity)(
     entry.originalPath,
@@ -700,7 +729,11 @@ export async function purgeDatabaseBackup(
     }
     await assertOffline(entry, dependencies, new Set([process.pid]));
     await assertPurgeSidecars(entry);
-    entry = await persist(options, { ...entry, status: "purging" });
+    entry = await persist(options, {
+      ...entry,
+      status: "purging",
+      installedIdentity: canonicalIdentity,
+    });
     for (const sidecar of backupSidecars(entry)) {
       if (await pathExists(sidecar.backup)) {
         const stats = await lstat(sidecar.backup);
