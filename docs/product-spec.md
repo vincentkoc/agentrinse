@@ -1268,7 +1268,9 @@ Avoid a large product-specific environment-variable surface.
 
 `$CODEX_HOME` falls back to `$HOME/.codex`.
 
-`$CLAUDE_CONFIG_DIR` falls back to `$HOME/.claude`.
+Claude root precedence is the explicit adapter root, an absolute
+`$CLAUDE_CONFIG_DIR`, then `$HOME/.claude`. A relative
+`$CLAUDE_CONFIG_DIR` is invalid and degrades only the Claude adapter.
 
 `$COPILOT_HOME` falls back to `$HOME/.copilot`.
 

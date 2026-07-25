@@ -24,6 +24,11 @@ The project follows semantic versioning after its first supported release.
 - provider liveness detection for native, helper, interpreted, and wrapped
   command lines, with fail-closed incomplete process evidence
 
+### Fixed
+
+- Claude discovery now honors an absolute `CLAUDE_CONFIG_DIR` when no explicit
+  adapter root is configured and fails closed on relative values
+
 ### Safety
 
 - no provider adapter emits the new action until a provider-specific owner
