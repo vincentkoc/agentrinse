@@ -43,7 +43,10 @@ export function createCleanupPlan(
     expectedReclaimBytes: actions.reduce((total, action) => total + action.expectedReclaimBytes, 0),
     pendingQuarantineBytes: actions.reduce(
       (total, action) =>
-        total + (action.type === "worktree.quarantine" ? action.pendingQuarantineBytes : 0),
+        total +
+        (action.type === "worktree.quarantine" || action.type === "provider.file-quarantine"
+          ? action.pendingQuarantineBytes
+          : 0),
       0,
     ),
   };

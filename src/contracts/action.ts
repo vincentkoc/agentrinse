@@ -117,10 +117,66 @@ export const databaseVacuumActionSchema = z.object({
   target: databaseIdentitySchema,
 });
 
-export const plannedActionSchema = z.discriminatedUnion("type", [
+export const providerMutationIdSchema = z.enum([
+  "claude",
+  "cursor",
+  "copilot",
+  "zed",
+  "opencode",
+  "grok",
+]);
+
+export const providerFileIdentitySchema = z.object({
+  path: z.string().min(1),
+  ownerRoot: z.string().min(1),
+  relativePath: z.string().min(1),
+  provider: providerMutationIdSchema,
+  device: z.number().int().nonnegative(),
+  inode: z.number().int().nonnegative(),
+  linkCount: z.literal(1),
+  mode: z.number().int().nonnegative(),
+  mtimeMs: z.number().finite(),
+  measuredBytes: z.number().int().nonnegative(),
+  contentSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+
+const providerFileQuarantineActionBaseShape = {
+  actionId: z.string().min(1),
+  type: z.literal("provider.file-quarantine"),
+  resourceId: z.string().min(1),
+  policyId: z.string().regex(/^[a-z0-9][a-z0-9.-]*$/u),
+  risk: z.literal("recoverable"),
+  description: z.string().min(1),
+  expectedReclaimBytes: z.literal(0),
+  pendingQuarantineBytes: z.number().int().nonnegative(),
+  quarantineTtlMinutes: z.number().int().positive(),
+};
+
+function providerFileQuarantineActionFor<T extends ProviderMutationId>(provider: T) {
+  return z.object({
+    ...providerFileQuarantineActionBaseShape,
+    adapter: z.literal(provider),
+    target: providerFileIdentitySchema.extend({
+      provider: z.literal(provider),
+    }),
+  });
+}
+
+export const providerFileQuarantineActionSchema = z.discriminatedUnion("adapter", [
+  providerFileQuarantineActionFor("claude"),
+  providerFileQuarantineActionFor("cursor"),
+  providerFileQuarantineActionFor("copilot"),
+  providerFileQuarantineActionFor("zed"),
+  providerFileQuarantineActionFor("opencode"),
+  providerFileQuarantineActionFor("grok"),
+]);
+
+export const plannedActionSchema = z.union([
   artifactRemoveActionSchema,
   worktreeQuarantineActionSchema,
   databaseVacuumActionSchema,
+  providerFileQuarantineActionSchema,
 ]);
 
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
@@ -134,4 +190,7 @@ export type CodexDatabaseFilename = z.infer<typeof codexDatabaseFilenameSchema>;
 export type DatabaseIdentity = z.infer<typeof databaseIdentitySchema>;
 export type DatabaseSidecarIdentity = z.infer<typeof databaseSidecarIdentitySchema>;
 export type DatabaseVacuumAction = z.infer<typeof databaseVacuumActionSchema>;
+export type ProviderMutationId = z.infer<typeof providerMutationIdSchema>;
+export type ProviderFileIdentity = z.infer<typeof providerFileIdentitySchema>;
+export type ProviderFileQuarantineAction = z.infer<typeof providerFileQuarantineActionSchema>;
 export type PlannedAction = z.infer<typeof plannedActionSchema>;

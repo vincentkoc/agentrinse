@@ -116,15 +116,20 @@ async function inspectLinux(
 async function inspectWithLsof(
   target: string,
   options: ProcessOwnershipOptions,
+  exact = false,
 ): Promise<ProcessOwnershipResult> {
   try {
     const result =
       options.runLsof === undefined
-        ? await execFileAsync("lsof", ["-nP", "+D", target, "-Fpcfn"], {
-            encoding: "utf8",
-            maxBuffer: 4 * 1024 * 1024,
-            timeout: 10_000,
-          })
+        ? await execFileAsync(
+            "lsof",
+            exact ? ["-nP", "-Fpcfn", "--", target] : ["-nP", "+D", target, "-Fpcfn"],
+            {
+              encoding: "utf8",
+              maxBuffer: 4 * 1024 * 1024,
+              timeout: 10_000,
+            },
+          )
         : await options.runLsof(target);
     if (result.stderr !== "") {
       return {
@@ -142,7 +147,7 @@ async function inspectWithLsof(
         pid = Number.parseInt(line.slice(1), 10);
       } else if (line.startsWith("n") && pid !== undefined) {
         const path = line.slice(1);
-        if (isInside(target, path)) {
+        if (exact ? resolve(target) === resolve(path) : isInside(target, path)) {
           matches.push({ pid, source: "fd", path });
         }
       }
@@ -180,6 +185,24 @@ export async function findProcessesUsingPath(
   }
   if (platform === "darwin") {
     return inspectWithLsof(resolve(target), options);
+  }
+  return {
+    status: "unknown",
+    matches: [],
+    reason: `process ownership is unsupported on ${platform}`,
+  };
+}
+
+export async function findProcessesUsingFile(
+  target: string,
+  options: ProcessOwnershipOptions = {},
+): Promise<ProcessOwnershipResult> {
+  const platform = options.platform ?? process.platform;
+  if (platform === "linux") {
+    return inspectLinux(resolve(target), options);
+  }
+  if (platform === "darwin") {
+    return inspectWithLsof(resolve(target), options, true);
   }
   return {
     status: "unknown",

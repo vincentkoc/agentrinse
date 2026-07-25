@@ -20,7 +20,58 @@ Only `artifacts.remove` mutates:
 - the action risk is `safe`
 
 Provider state and Docker resources remain report-only except for the explicit
-offline Codex database boundary below.
+offline Codex database and exact provider-file boundaries below.
+
+## Recoverable Provider File Boundary
+
+`provider.file-quarantine` is a reusable `recoverable` executor for one exact
+provider-owned regular file. No provider adapter emits it until a separate
+owner-specific policy proves that the selected log or cache file is
+disposable.
+
+The action records and revalidates:
+
+- an immutable provider-owned `policyId`
+- the provider and canonical owner root
+- the canonical path and exact relative path beneath that root
+- regular-file and non-symlink type
+- a single-link inode with no hard-link alias
+- device, inode, full mode, mtime, and byte size
+- a descriptor-bound streamed SHA-256 content digest and complete identity
+  fingerprint
+- stopped provider processes and no open file descriptor
+- same-filesystem AgentRinse recovery storage
+- unexpired plan authorization immediately before the atomic move
+
+Apply refuses unless the policy registry binds that `policyId` to the
+configured provider root and exact relative-path contract. It then opens the
+physical provider root and every relative directory component with pinned
+`openat` descriptors and `O_NOFOLLOW`, ties permission sealing to the validated
+inode, temporarily removes write bits while repeating identity and liveness
+checks, atomically moves the same inode with fd-relative no-replace rename,
+restores the recorded mode, fsyncs both pinned directories, and persists the
+moved identity.
+Provider liveness matches provider-specific native executables, application
+helpers, package markers, and interpreted or wrapped command lines. Incomplete
+or unparseable process evidence fails closed, and process listing requests
+untruncated command lines. The descriptor scan excludes only AgentRinse's own
+validated file handle. If the final name changes inside the pinned parent at
+rename time, AgentRinse atomically moves that unexpected inode back and records
+a rolled-back action. Replacing an intermediate directory with a symlink cannot
+redirect mutation outside the approved provider root.
+Undo and purge use only the durable manifest and refuse ambiguous paths,
+changed content, active providers, open descriptors, or cross-owned paths.
+Undo keeps the restored inode write-sealed through directory sync and complete
+content verification, then restores its recorded mode through the same
+descriptor as the final mutation. Purge atomically renames the payload to a
+deterministic owner-only claim path, verifies the claimed descriptor and inode,
+then truncates the contents through a validated writable descriptor. The empty,
+write-sealed inode remains as a durable purge proof, preventing pathname
+rebinding from deleting unrelated content. Interrupted permission repair and
+purge claims remain durable recovery states.
+Directories, sessions, transcripts, databases, credentials, configuration,
+plugins, and caches without an explicit file-level owner contract are not
+accepted.
 
 ## Recoverable Codex Database Boundary
 
@@ -186,8 +237,9 @@ the next safe checkpoint.
 
 The state directory is rejected if it is inside a planned cleanup target.
 Quarantine manifests are schema-validated by doctor and retain the exact
-original path, quarantine path, recovery ref, pre-move identity, post-repair
-identity, TTL, and last recovery state.
+original path, quarantine path, pre-move identity, post-move identity, TTL,
+and last recovery state. Worktree entries also retain their recovery ref and
+Git repair state.
 
 ## Hard Invariants
 

@@ -205,7 +205,7 @@
             "default": [],
             "type": "array",
             "items": {
-              "oneOf": [
+              "anyOf": [
                 {
                   "type": "object",
                   "properties": {
@@ -667,6 +667,790 @@
                     "expectedReclaimBytes",
                     "backupTtlMinutes",
                     "target"
+                  ]
+                },
+                {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "actionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "provider.file-quarantine"
+                        },
+                        "resourceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "policyId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "const": "recoverable"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "expectedReclaimBytes": {
+                          "type": "number",
+                          "const": 0
+                        },
+                        "pendingQuarantineBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "quarantineTtlMinutes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "adapter": {
+                          "type": "string",
+                          "const": "claude"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "ownerRoot": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "relativePath": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "provider": {
+                              "type": "string",
+                              "const": "claude"
+                            },
+                            "device": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "linkCount": {
+                              "type": "number",
+                              "const": 1
+                            },
+                            "mode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "mtimeMs": {
+                              "type": "number"
+                            },
+                            "measuredBytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "contentSha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "fingerprint": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "ownerRoot",
+                            "relativePath",
+                            "provider",
+                            "device",
+                            "inode",
+                            "linkCount",
+                            "mode",
+                            "mtimeMs",
+                            "measuredBytes",
+                            "contentSha256",
+                            "fingerprint"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "actionId",
+                        "type",
+                        "resourceId",
+                        "policyId",
+                        "risk",
+                        "description",
+                        "expectedReclaimBytes",
+                        "pendingQuarantineBytes",
+                        "quarantineTtlMinutes",
+                        "adapter",
+                        "target"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "actionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "provider.file-quarantine"
+                        },
+                        "resourceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "policyId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "const": "recoverable"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "expectedReclaimBytes": {
+                          "type": "number",
+                          "const": 0
+                        },
+                        "pendingQuarantineBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "quarantineTtlMinutes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "adapter": {
+                          "type": "string",
+                          "const": "cursor"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "ownerRoot": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "relativePath": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "provider": {
+                              "type": "string",
+                              "const": "cursor"
+                            },
+                            "device": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "linkCount": {
+                              "type": "number",
+                              "const": 1
+                            },
+                            "mode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "mtimeMs": {
+                              "type": "number"
+                            },
+                            "measuredBytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "contentSha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "fingerprint": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "ownerRoot",
+                            "relativePath",
+                            "provider",
+                            "device",
+                            "inode",
+                            "linkCount",
+                            "mode",
+                            "mtimeMs",
+                            "measuredBytes",
+                            "contentSha256",
+                            "fingerprint"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "actionId",
+                        "type",
+                        "resourceId",
+                        "policyId",
+                        "risk",
+                        "description",
+                        "expectedReclaimBytes",
+                        "pendingQuarantineBytes",
+                        "quarantineTtlMinutes",
+                        "adapter",
+                        "target"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "actionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "provider.file-quarantine"
+                        },
+                        "resourceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "policyId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "const": "recoverable"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "expectedReclaimBytes": {
+                          "type": "number",
+                          "const": 0
+                        },
+                        "pendingQuarantineBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "quarantineTtlMinutes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "adapter": {
+                          "type": "string",
+                          "const": "copilot"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "ownerRoot": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "relativePath": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "provider": {
+                              "type": "string",
+                              "const": "copilot"
+                            },
+                            "device": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "linkCount": {
+                              "type": "number",
+                              "const": 1
+                            },
+                            "mode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "mtimeMs": {
+                              "type": "number"
+                            },
+                            "measuredBytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "contentSha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "fingerprint": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "ownerRoot",
+                            "relativePath",
+                            "provider",
+                            "device",
+                            "inode",
+                            "linkCount",
+                            "mode",
+                            "mtimeMs",
+                            "measuredBytes",
+                            "contentSha256",
+                            "fingerprint"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "actionId",
+                        "type",
+                        "resourceId",
+                        "policyId",
+                        "risk",
+                        "description",
+                        "expectedReclaimBytes",
+                        "pendingQuarantineBytes",
+                        "quarantineTtlMinutes",
+                        "adapter",
+                        "target"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "actionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "provider.file-quarantine"
+                        },
+                        "resourceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "policyId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "const": "recoverable"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "expectedReclaimBytes": {
+                          "type": "number",
+                          "const": 0
+                        },
+                        "pendingQuarantineBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "quarantineTtlMinutes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "adapter": {
+                          "type": "string",
+                          "const": "zed"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "ownerRoot": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "relativePath": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "provider": {
+                              "type": "string",
+                              "const": "zed"
+                            },
+                            "device": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "linkCount": {
+                              "type": "number",
+                              "const": 1
+                            },
+                            "mode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "mtimeMs": {
+                              "type": "number"
+                            },
+                            "measuredBytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "contentSha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "fingerprint": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "ownerRoot",
+                            "relativePath",
+                            "provider",
+                            "device",
+                            "inode",
+                            "linkCount",
+                            "mode",
+                            "mtimeMs",
+                            "measuredBytes",
+                            "contentSha256",
+                            "fingerprint"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "actionId",
+                        "type",
+                        "resourceId",
+                        "policyId",
+                        "risk",
+                        "description",
+                        "expectedReclaimBytes",
+                        "pendingQuarantineBytes",
+                        "quarantineTtlMinutes",
+                        "adapter",
+                        "target"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "actionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "provider.file-quarantine"
+                        },
+                        "resourceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "policyId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "const": "recoverable"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "expectedReclaimBytes": {
+                          "type": "number",
+                          "const": 0
+                        },
+                        "pendingQuarantineBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "quarantineTtlMinutes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "adapter": {
+                          "type": "string",
+                          "const": "opencode"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "ownerRoot": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "relativePath": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "provider": {
+                              "type": "string",
+                              "const": "opencode"
+                            },
+                            "device": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "linkCount": {
+                              "type": "number",
+                              "const": 1
+                            },
+                            "mode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "mtimeMs": {
+                              "type": "number"
+                            },
+                            "measuredBytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "contentSha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "fingerprint": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "ownerRoot",
+                            "relativePath",
+                            "provider",
+                            "device",
+                            "inode",
+                            "linkCount",
+                            "mode",
+                            "mtimeMs",
+                            "measuredBytes",
+                            "contentSha256",
+                            "fingerprint"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "actionId",
+                        "type",
+                        "resourceId",
+                        "policyId",
+                        "risk",
+                        "description",
+                        "expectedReclaimBytes",
+                        "pendingQuarantineBytes",
+                        "quarantineTtlMinutes",
+                        "adapter",
+                        "target"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "actionId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "provider.file-quarantine"
+                        },
+                        "resourceId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "policyId": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+                        },
+                        "risk": {
+                          "type": "string",
+                          "const": "recoverable"
+                        },
+                        "description": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "expectedReclaimBytes": {
+                          "type": "number",
+                          "const": 0
+                        },
+                        "pendingQuarantineBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "quarantineTtlMinutes": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "adapter": {
+                          "type": "string",
+                          "const": "grok"
+                        },
+                        "target": {
+                          "type": "object",
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "ownerRoot": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "relativePath": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "provider": {
+                              "type": "string",
+                              "const": "grok"
+                            },
+                            "device": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "inode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "linkCount": {
+                              "type": "number",
+                              "const": 1
+                            },
+                            "mode": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "mtimeMs": {
+                              "type": "number"
+                            },
+                            "measuredBytes": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "contentSha256": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            },
+                            "fingerprint": {
+                              "type": "string",
+                              "pattern": "^[a-f0-9]{64}$"
+                            }
+                          },
+                          "required": [
+                            "path",
+                            "ownerRoot",
+                            "relativePath",
+                            "provider",
+                            "device",
+                            "inode",
+                            "linkCount",
+                            "mode",
+                            "mtimeMs",
+                            "measuredBytes",
+                            "contentSha256",
+                            "fingerprint"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "actionId",
+                        "type",
+                        "resourceId",
+                        "policyId",
+                        "risk",
+                        "description",
+                        "expectedReclaimBytes",
+                        "pendingQuarantineBytes",
+                        "quarantineTtlMinutes",
+                        "adapter",
+                        "target"
+                      ]
+                    }
                   ]
                 }
               ]

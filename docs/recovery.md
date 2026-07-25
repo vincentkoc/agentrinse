@@ -37,6 +37,19 @@ $XDG_STATE_HOME/agentrinse/database-backups/<entry-id>.json
 
 The retained original database file lives in the same owner-only directory.
 
+Provider-file quarantine manifests and payloads live under:
+
+```text
+$XDG_STATE_HOME/agentrinse/provider-quarantine/<entry-id>.json
+$XDG_STATE_HOME/agentrinse/provider-quarantine/<entry-id>.payload
+$XDG_STATE_HOME/agentrinse/provider-quarantine/<entry-id>.payload.purging
+```
+
+They record the exact owner root, relative path, provider, policy ID, inode,
+single-link count, mode, size, mtime, and streamed content digest. Provider
+adapters must opt into this primitive with their own registered disposal
+policy; the recovery layer never discovers or widens provider targets.
+
 ## Restore a Quarantined Worktree
 
 Inspect the run first:
@@ -148,6 +161,36 @@ in-progress claim is restored before later validation after interruption.
 
 Atomic quarantine itself does not free disk. Only purge reports those bytes as
 reclaimed.
+
+## Restore a Provider File
+
+`agentrinse undo <run-id>` also selects live `provider.file-quarantine`
+entries. Undo requires the provider to be stopped, proves that no process has
+the payload open, refuses an occupied original path, atomically restores the
+same inode, keeps it write-sealed through directory sync and full content
+verification, then restores the recorded mode through the same `O_NOFOLLOW`
+descriptor as the final mutation. Source and destination parents stay pinned
+through `openat` descriptors, and both rename and directory sync are
+fd-relative.
+
+Interrupted entries are reconciled from the exact original, quarantine, and
+deterministic purge-claim paths. If the original matches and both payload paths
+are absent, recovery records `restored`. If the original is absent and the
+payload matches, recovery resumes from `quarantined`. A matching private claim
+with `purging` status resumes purge. Multiple occupied paths and missing
+non-purge state fail closed; a persisted `purging` entry with all paths absent
+can finalize as `purged`.
+
+Explicit-run purge may remove an unexpired payload; expiry purge waits for the
+manifest TTL. Both routes repeat provider-process, descriptor, path, and
+content checks. Purge write-seals the validated descriptor, atomically claims
+the payload as the deterministic `.payload.purging` file, verifies the claimed
+inode, opens and validates a writable descriptor, and truncates that descriptor
+to reclaim the content. It retains the empty write-sealed inode as a purge
+proof; purge never unlinks a pathname that another process could rebind. A
+replacement raced into either move or truncation remains untouched and recovery
+fails closed. Permission-repair failures keep the manifest in `preparing` so
+undo can retry the exact descriptor-bound repair.
 
 ## Restore an Offline Codex Vacuum
 

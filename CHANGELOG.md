@@ -6,6 +6,32 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- recoverable `provider.file-quarantine` execution, undo, purge, run-journal,
+  manifest, and JSON Schema contracts for exact provider-owned regular files
+- streamed content identity, provider-process and descriptor refusal,
+  single-link inode enforcement, same-filesystem atomic moves, unexpected-inode
+  rollback, crash reconciliation, and permission preservation for
+  provider-file recovery
+- descriptor-bound hashing, write-sealed restore verification, durable
+  permission-repair recovery, nonblocking and size-bounded inspection, and
+  deterministic purge claims that reclaim content through the validated
+  descriptor while retaining an empty proof inode
+- `openat`-pinned provider roots and parent directories, fd-relative atomic
+  rename and sync, untruncated provider command-line inspection, and published
+  JSON Schema branches that bind every action adapter to its target provider
+- provider liveness detection for native, helper, interpreted, and wrapped
+  command lines, with fail-closed incomplete process evidence
+
+### Safety
+
+- no provider adapter emits the new action until a provider-specific owner
+  contract registers a policy ID, configured owner root, and exact relative
+  path contract for disposable log or cache files
+- directories, symlinks, sessions, transcripts, databases, credentials,
+  configuration, and ambiguous recovery state remain outside this boundary
+
 ## [0.4.0] - 2026-07-25
 
 ### Added

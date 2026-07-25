@@ -876,6 +876,7 @@ Action type names are public machine contracts. Examples:
 
 - `artifacts.remove`
 - `worktree.quarantine`
+- `provider.file-quarantine`
 - `worktree.prune-registration`
 - `docker.image.remove`
 - `docker.container.remove`
@@ -3301,6 +3302,29 @@ reachability without expanding mutation. Release `0.3.0` adds recoverable
 worktree quarantine and undo. Release `0.4.0` adds recoverable offline Codex
 database compaction.
 
+### 2026-07-25: provider cleanup uses exact recoverable files
+
+Provider-specific cleanup is built on `provider.file-quarantine`, not generic
+artifact deletion. The action accepts one canonical regular file with a full
+descriptor-bound content digest, immutable provider policy ID, configured owner
+root, provider identity, same-filesystem recovery storage, provider-process
+refusal, descriptor refusal, durable manifest, undo, and purge. Undo keeps the
+restored inode write-sealed until content verification completes. Inspection,
+apply, undo, and purge traverse beneath the physical owner root with pinned
+`openat` directory descriptors and use fd-relative atomic rename, so
+intermediate symlink replacement cannot widen ownership. Purge first claims
+the exact inode at a deterministic owner-only path, then reclaims its contents
+through a validated writable descriptor and retains the empty sealed inode as
+proof. It never unlinks a re-bindable purge pathname. Interrupted permission
+repair and purge claims remain recoverable manifest states. The action cannot
+target directories, sessions, transcripts, databases, credentials,
+configuration, or neighboring files.
+
+The shared executor does not decide retention. Each provider adapter needs a
+separate evidence-backed policy for its known log or cache files before it may
+emit the action. Claude transcript retention and OpenCode snapshot compaction
+therefore remain separate provider-owned designs.
+
 ### 2026-07-24: operational UX precedes mutation growth
 
 Configuration generation, doctor diagnostics, run inspection, stale-lock
@@ -3521,6 +3545,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] worktree quarantine
 - [x] worktree undo
 - [x] offline Codex database compaction
+- [x] exact provider-file quarantine, undo, purge, and recovery foundation
 
 ### Documentation and release
 

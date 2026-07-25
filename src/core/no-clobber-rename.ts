@@ -7,8 +7,20 @@ type NativeRename = (
   errnoNames: Record<string, number>;
 };
 
+type NativeRenameAt = (
+  sourceDirectoryFd: number,
+  source: string,
+  destinationDirectoryFd: number,
+  destination: string,
+) => {
+  result: number;
+  errno: number;
+  errnoNames: Record<string, number>;
+};
+
 const nativeRenamePromises = new Map<NodeJS.Platform, Promise<NativeRename>>();
 const nativeExchangePromises = new Map<NodeJS.Platform, Promise<NativeRename>>();
+const nativeRenameAtPromises = new Map<NodeJS.Platform, Promise<NativeRenameAt>>();
 
 function errnoName(errnoNames: Record<string, number>, value: number): string {
   return Object.entries(errnoNames).find(([, errno]) => errno === value)?.[0] ?? "EIO";
@@ -116,6 +128,60 @@ async function loadNativeExchange(platform: NodeJS.Platform): Promise<NativeRena
   });
 }
 
+async function loadNativeRenameAt(platform: NodeJS.Platform): Promise<NativeRenameAt> {
+  if (!["darwin", "linux"].includes(platform)) {
+    const error = new Error(
+      `atomic fd-relative no-replace rename is unsupported on ${platform}`,
+    ) as NodeJS.ErrnoException;
+    error.code = "ENOTSUP";
+    throw error;
+  }
+
+  const { default: koffi } = await import("koffi");
+  const libc = koffi.load(null);
+  if (platform === "darwin") {
+    const renameExclusive = libc.func(
+      "int renameatx_np(int sourceDirectoryFd, const char *source, int destinationDirectoryFd, const char *destination, unsigned int flags)",
+    );
+    return (sourceDirectoryFd, source, destinationDirectoryFd, destination) => ({
+      result: renameExclusive(
+        sourceDirectoryFd,
+        source,
+        destinationDirectoryFd,
+        destination,
+        0x0000_0004,
+      ) as number,
+      errno: koffi.errno(),
+      errnoNames: koffi.os.errno,
+    });
+  }
+
+  let renameNoReplace: ReturnType<typeof libc.func>;
+  try {
+    renameNoReplace = libc.func(
+      "int renameat2(int sourceDirectoryFd, const char *source, int destinationDirectoryFd, const char *destination, unsigned int flags)",
+    );
+  } catch (error) {
+    const unsupported = new Error(
+      "the Linux C library does not expose renameat2 for fd-relative no-replace moves",
+      { cause: error },
+    ) as NodeJS.ErrnoException;
+    unsupported.code = "ENOTSUP";
+    throw unsupported;
+  }
+  return (sourceDirectoryFd, source, destinationDirectoryFd, destination) => ({
+    result: renameNoReplace(
+      sourceDirectoryFd,
+      source,
+      destinationDirectoryFd,
+      destination,
+      0x0000_0001,
+    ) as number,
+    errno: koffi.errno(),
+    errnoNames: koffi.os.errno,
+  });
+}
+
 export async function renameNoReplace(
   source: string,
   destination: string,
@@ -128,6 +194,25 @@ export async function renameNoReplace(
   }
   const nativeRename = await nativeRenamePromise;
   const result = nativeRename(source, destination);
+  if (result.result !== 0) {
+    throw renameError(source, destination, result.errnoNames, result.errno);
+  }
+}
+
+export async function renameAtNoReplace(
+  sourceDirectoryFd: number,
+  source: string,
+  destinationDirectoryFd: number,
+  destination: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  let nativeRenameAtPromise = nativeRenameAtPromises.get(platform);
+  if (nativeRenameAtPromise === undefined) {
+    nativeRenameAtPromise = loadNativeRenameAt(platform);
+    nativeRenameAtPromises.set(platform, nativeRenameAtPromise);
+  }
+  const nativeRenameAt = await nativeRenameAtPromise;
+  const result = nativeRenameAt(sourceDirectoryFd, source, destinationDirectoryFd, destination);
   if (result.result !== 0) {
     throw renameError(source, destination, result.errnoNames, result.errno);
   }

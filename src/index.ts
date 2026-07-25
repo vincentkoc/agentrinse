@@ -14,6 +14,9 @@ export {
   databaseVacuumActionSchema,
   pathIdentitySchema,
   plannedActionSchema,
+  providerFileIdentitySchema,
+  providerFileQuarantineActionSchema,
+  providerMutationIdSchema,
   worktreeIdentitySchema,
   worktreeQuarantineActionSchema,
   type ArtifactName,
@@ -25,6 +28,9 @@ export {
   type DatabaseVacuumAction,
   type PathIdentity,
   type PlannedAction,
+  type ProviderFileIdentity,
+  type ProviderFileQuarantineAction,
+  type ProviderMutationId,
   type WorktreeIdentity,
   type WorktreeQuarantineAction,
 } from "./contracts/action.js";
@@ -34,6 +40,12 @@ export {
   type DatabaseBackupEntry,
   type DatabaseBackupStatus,
 } from "./contracts/database-backup.js";
+export {
+  providerFileQuarantineEntrySchema,
+  providerFileQuarantineStatusSchema,
+  type ProviderFileQuarantineEntry,
+  type ProviderFileQuarantineStatus,
+} from "./contracts/provider-file-quarantine.js";
 export {
   doctorCheckSchema,
   doctorReportSchema,
@@ -61,6 +73,7 @@ export {
   artifactActionExecutionSchema,
   cleanupRunSchema,
   databaseActionExecutionSchema,
+  providerFileActionExecutionSchema,
   worktreeActionExecutionSchema,
   type ActionExecution,
   type CleanupRun,

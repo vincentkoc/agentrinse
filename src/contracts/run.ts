@@ -44,10 +44,18 @@ export const databaseActionExecutionSchema = actionExecutionBaseSchema.extend({
   retainedBackupBytes: z.number().int().nonnegative().optional(),
 });
 
+export const providerFileActionExecutionSchema = actionExecutionBaseSchema.extend({
+  type: z.literal("provider.file-quarantine"),
+  quarantineEntryId: z.string().min(1).optional(),
+  quarantinePath: z.string().min(1).optional(),
+  quarantinedBytes: z.number().int().nonnegative().optional(),
+});
+
 export const actionExecutionSchema = z.discriminatedUnion("type", [
   artifactActionExecutionSchema,
   worktreeActionExecutionSchema,
   databaseActionExecutionSchema,
+  providerFileActionExecutionSchema,
 ]);
 
 export const runStatusSchema = z.enum(["running", "completed", "partial", "failed", "interrupted"]);

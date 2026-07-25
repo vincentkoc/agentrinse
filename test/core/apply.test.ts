@@ -19,6 +19,7 @@ import type { AgentRinseConfig } from "../../src/config/schema.js";
 import type {
   ArtifactRemoveAction,
   DatabaseVacuumAction,
+  ProviderFileQuarantineAction,
   WorktreeQuarantineAction,
 } from "../../src/contracts/action.js";
 import type { CleanupPlan } from "../../src/contracts/plan.js";
@@ -28,10 +29,17 @@ import { sha256Json } from "../../src/core/digest.js";
 import { CommandInterruptedError } from "../../src/core/interruption.js";
 import { measurePath } from "../../src/core/measure.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
+import { ProviderFileExecutionError } from "../../src/core/provider-file-executor.js";
+import { inspectProviderFile } from "../../src/core/provider-file-identity.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { WorktreeExecutionError } from "../../src/core/worktree-executor.js";
 import { readJsonFile } from "../../src/state/json-file.js";
 import { createRunJournal } from "../../src/state/run-journal.js";
+
+type ClaudeProviderFileQuarantineAction = Extract<
+  ProviderFileQuarantineAction,
+  { adapter: "claude" }
+>;
 
 async function fixture(): Promise<{
   action: ArtifactRemoveAction;
@@ -247,6 +255,66 @@ async function databaseFixture(): Promise<{
   };
 }
 
+async function providerFileFixture(): Promise<{
+  action: ClaudeProviderFileQuarantineAction;
+  config: AgentRinseConfig;
+  plan: CleanupPlan;
+  stateRoot: string;
+}> {
+  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-provider-apply-")));
+  await assertDestructiveFixtureRoot(home);
+  const ownerRoot = join(home, ".claude");
+  const path = join(ownerRoot, "debug", "session.txt");
+  const stateRoot = join(home, "state");
+  await mkdir(join(ownerRoot, "debug"), { recursive: true });
+  await writeFile(path, "synthetic debug output\n");
+  const target = await inspectProviderFile(path, ownerRoot, "claude");
+  const config: AgentRinseConfig = {
+    ...structuredClone(DEFAULT_CONFIG),
+    adapters: {
+      ...structuredClone(DEFAULT_CONFIG.adapters),
+      claude: { enabled: true, root: ownerRoot },
+    },
+    plan: {
+      ...structuredClone(DEFAULT_CONFIG.plan),
+      maxRisk: "recoverable",
+    },
+  };
+  const action: ClaudeProviderFileQuarantineAction = {
+    actionId: "provider.file-quarantine:fixture",
+    type: "provider.file-quarantine",
+    adapter: "claude",
+    resourceId: "claude:agent-log:fixture",
+    policyId: "claude.debug-log",
+    risk: "recoverable",
+    description: "archive fixture provider log",
+    expectedReclaimBytes: 0,
+    pendingQuarantineBytes: target.measuredBytes,
+    quarantineTtlMinutes: 60,
+    target,
+  };
+  const content: Omit<CleanupPlan, "planId"> = {
+    schemaVersion: 1,
+    auditId: "audit-provider-file",
+    home,
+    createdAt: "2026-07-23T00:00:00.000Z",
+    expiresAt: "2026-07-23T00:30:00.000Z",
+    policyVersion: 1,
+    riskCeiling: "recoverable",
+    configDigest: sha256Json(config),
+    auditDigest: "audit",
+    actions: [action],
+    expectedReclaimBytes: 0,
+    pendingQuarantineBytes: target.measuredBytes,
+  };
+  return {
+    action,
+    config,
+    plan: { ...content, planId: cleanupPlanId(content) },
+    stateRoot,
+  };
+}
+
 const CLOCK = () => new Date("2026-07-23T00:15:00.000Z");
 
 async function exists(path: string): Promise<boolean> {
@@ -342,6 +410,66 @@ describe("applyCleanupPlan", () => {
       status: "applied",
       reclaimedBytes: 0,
       quarantinedBytes: value.action.target.measuredBytes,
+    });
+  });
+
+  it("dispatches and journals recoverable provider-file quarantine", async () => {
+    const value = await providerFileFixture();
+    const executeProviderFile = vi.fn(async (action: ProviderFileQuarantineAction, options) => ({
+      quarantineEntryId: options.entryId,
+      quarantinePath: join(options.quarantineDirectory, `${options.entryId}.payload`),
+      quarantinedBytes: action.target.measuredBytes,
+      manifestPath: join(options.quarantineDirectory, `${options.entryId}.json`),
+    }));
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidateProviderFile: async () => ({ status: "ready" }),
+        executeProviderFile,
+      },
+    });
+
+    expect(executeProviderFile).toHaveBeenCalledOnce();
+    expect(result.run.status).toBe("completed");
+    expect(result.run.reclaimedBytes).toBe(0);
+    expect(result.run.quarantinedBytes).toBe(value.action.target.measuredBytes);
+    expect(result.run.actions[0]).toMatchObject({
+      type: "provider.file-quarantine",
+      status: "applied",
+      reclaimedBytes: 0,
+      quarantinedBytes: value.action.target.measuredBytes,
+    });
+  });
+
+  it("does not report quarantine bytes for a pre-move provider-file failure", async () => {
+    const value = await providerFileFixture();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidateProviderFile: async () => ({ status: "ready" }),
+        executeProviderFile: async () => {
+          throw new ProviderFileExecutionError(
+            "synthetic permission repair failure",
+            "partially-applied",
+            "PROVIDER_FILE_PERMISSION_RESTORE_FAILED",
+          );
+        },
+      },
+    });
+
+    expect(result.run.status).toBe("failed");
+    expect(result.run.quarantinedBytes).toBe(0);
+    expect(result.run.actions[0]).toMatchObject({
+      status: "partially-applied",
+      quarantinedBytes: 0,
     });
   });
 

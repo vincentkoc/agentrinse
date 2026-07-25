@@ -27,6 +27,7 @@ describe("state layout", () => {
       locks: "/fixture/state/locks",
       runs: "/fixture/state/runs",
       quarantine: "/fixture/state/quarantine",
+      providerQuarantine: "/fixture/state/provider-quarantine",
       databaseBackups: "/fixture/state/database-backups",
       tombstones: "/fixture/state/tombstones",
     });

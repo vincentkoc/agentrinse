@@ -4,6 +4,7 @@ import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.
 import type {
   ArtifactRemoveAction,
   DatabaseVacuumAction,
+  ProviderFileQuarantineAction,
   WorktreeQuarantineAction,
 } from "../contracts/action.js";
 import type { CleanupPlan } from "../contracts/plan.js";
@@ -35,6 +36,18 @@ import {
 } from "./database-revalidation.js";
 import { CommandInterruptedError } from "./interruption.js";
 import { verifyCleanupPlan } from "./plan-verification.js";
+import {
+  executeProviderFileQuarantine,
+  ProviderFileExecutionError,
+  providerFileQuarantinePath,
+  type ExecuteProviderFileQuarantineOptions,
+  type ProviderFileExecutionResult,
+} from "./provider-file-executor.js";
+import {
+  revalidateProviderFileQuarantine,
+  type ProviderFileRevalidationResult,
+} from "./provider-file-revalidation.js";
+import { authorizeProviderFileAction } from "./provider-file-policy.js";
 import { isPathInside, resolvePhysicalPath } from "./safety.js";
 import {
   executeWorktreeQuarantine,
@@ -89,6 +102,13 @@ export type ApplyDependencies = {
     action: DatabaseVacuumAction,
     options: ExecuteDatabaseVacuumOptions,
   ) => Promise<DatabaseExecutionResult>;
+  revalidateProviderFile?: (
+    action: ProviderFileQuarantineAction,
+  ) => Promise<ProviderFileRevalidationResult>;
+  executeProviderFile?: (
+    action: ProviderFileQuarantineAction,
+    options: ExecuteProviderFileQuarantineOptions,
+  ) => Promise<ProviderFileExecutionResult>;
   worktreeProtectionRoots?: (
     action: WorktreeQuarantineAction,
     home: string,
@@ -137,6 +157,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
   await ensurePrivateDirectory(layout.locks);
   await ensurePrivateDirectory(layout.runs);
   await ensurePrivateDirectory(layout.quarantine);
+  await ensurePrivateDirectory(layout.providerQuarantine);
   await ensurePrivateDirectory(layout.databaseBackups);
   const lock = await acquireApplyLock(layout.locks, {
     planId: plan.planId,
@@ -172,9 +193,13 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             ? options.dependencies?.revalidateWorktree === undefined
               ? await revalidateWorktreeQuarantine(action, plan.home, config, { now: clock })
               : await options.dependencies.revalidateWorktree(action, plan.home, config)
-            : options.dependencies?.revalidateDatabase === undefined
-              ? await revalidateDatabaseVacuum(action, plan.home, config)
-              : await options.dependencies.revalidateDatabase(action, plan.home, config);
+            : action.type === "provider.file-quarantine"
+              ? options.dependencies?.revalidateProviderFile === undefined
+                ? await revalidateProviderFileQuarantine(action, plan.home, config)
+                : await options.dependencies.revalidateProviderFile(action)
+              : options.dependencies?.revalidateDatabase === undefined
+                ? await revalidateDatabaseVacuum(action, plan.home, config)
+                : await options.dependencies.revalidateDatabase(action, plan.home, config);
       if (revalidation.status === "stale") {
         await journal.updateAction(action.actionId, {
           status: "skipped-stale",
@@ -358,6 +383,74 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           quarantineEntryId: result.quarantineEntryId,
           quarantinePath: result.quarantinePath,
           recoveryRef: result.recoveryRef,
+        });
+      } else if (action.type === "provider.file-quarantine") {
+        const quarantinePath = providerFileQuarantinePath(layout.providerQuarantine, isolationId);
+        await journal.updateAction(action.actionId, {
+          status: "applying",
+          quarantineEntryId: isolationId,
+          quarantinePath,
+        });
+        throwIfInterrupted(options.signal);
+
+        let result: ProviderFileExecutionResult;
+        try {
+          result = await (
+            options.dependencies?.executeProviderFile ??
+            ((selectedAction, selectedOptions) =>
+              executeProviderFileQuarantine(selectedAction, selectedOptions))
+          )(action, {
+            runId,
+            entryId: isolationId,
+            quarantineDirectory: layout.providerQuarantine,
+            dependencies: {
+              clock,
+              authorizeTarget: (selectedAction) =>
+                authorizeProviderFileAction(selectedAction, plan.home, config),
+              authorization: {
+                expiresAtMs: Date.parse(plan.expiresAt),
+                now: clock,
+              },
+            },
+          });
+        } catch (error) {
+          const executionError = error instanceof ProviderFileExecutionError ? error : undefined;
+          await journal.updateAction(action.actionId, {
+            status: executionError?.outcome ?? "failed",
+            completedAt: clock().toISOString(),
+            quarantineEntryId: executionError?.entry?.entryId ?? isolationId,
+            quarantinePath: executionError?.entry?.quarantinePath ?? quarantinePath,
+            quarantinedBytes: executionError?.quarantinedBytes ?? 0,
+            diagnostic: {
+              severity: executionError?.outcome === "skipped-stale" ? "warning" : "error",
+              code:
+                executionError?.diagnosticCode ??
+                (executionError?.outcome === "partially-applied"
+                  ? "PROVIDER_FILE_QUARANTINE_PARTIAL"
+                  : executionError?.outcome === "rolled-back"
+                    ? "PROVIDER_FILE_QUARANTINE_ROLLED_BACK"
+                    : executionError?.outcome === "skipped-stale"
+                      ? "PROVIDER_FILE_IDENTITY_CHANGED"
+                      : "PROVIDER_FILE_QUARANTINE_FAILED"),
+              message: error instanceof Error ? error.message : String(error),
+              adapter: action.adapter,
+              resourceId: action.resourceId,
+            },
+          });
+          if (executionError?.outcome === "skipped-stale") {
+            throwIfInterrupted(options.signal);
+            continue;
+          }
+          break;
+        }
+
+        await journal.updateAction(action.actionId, {
+          status: "applied",
+          completedAt: clock().toISOString(),
+          reclaimedBytes: 0,
+          quarantinedBytes: result.quarantinedBytes,
+          quarantineEntryId: result.quarantineEntryId,
+          quarantinePath: result.quarantinePath,
         });
       } else {
         await journal.updateAction(action.actionId, {
