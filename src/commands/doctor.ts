@@ -14,6 +14,7 @@ import { auditReportSchema } from "../contracts/report.js";
 import { cleanupRunSchema } from "../contracts/run.js";
 import { quarantineEntrySchema } from "../contracts/quarantine.js";
 import { databaseBackupEntrySchema } from "../contracts/database-backup.js";
+import { providerFileQuarantineEntrySchema } from "../contracts/provider-file-quarantine.js";
 import { doctorReportSchema, type DoctorCheck, type DoctorReport } from "../contracts/doctor.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
@@ -684,6 +685,11 @@ export async function executeDoctorCommand(
     await schemaDirectoryCheck("schema:plans", layout.plans, cleanupPlanSchema),
     await schemaDirectoryCheck("schema:runs", layout.runs, cleanupRunSchema),
     await schemaDirectoryCheck("schema:quarantine", layout.quarantine, quarantineEntrySchema),
+    await schemaDirectoryCheck(
+      "schema:provider-quarantine",
+      layout.providerQuarantine,
+      providerFileQuarantineEntrySchema,
+    ),
     await schemaDirectoryCheck(
       "schema:database-backups",
       layout.databaseBackups,
