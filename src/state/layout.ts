@@ -11,6 +11,7 @@ export type StateLayout = {
   locks: string;
   runs: string;
   quarantine: string;
+  databaseBackups: string;
   tombstones: string;
 };
 
@@ -37,6 +38,7 @@ export function stateLayout(root: string): StateLayout {
     locks: join(resolved, "locks"),
     runs: join(resolved, "runs"),
     quarantine: join(resolved, "quarantine"),
+    databaseBackups: join(resolved, "database-backups"),
     tombstones: join(resolved, "tombstones"),
   };
 }

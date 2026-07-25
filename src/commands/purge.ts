@@ -11,8 +11,13 @@ import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditContext } from "../contracts/adapter.js";
 import type { RootEvidence } from "../contracts/finding.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
+import {
+  databaseBackupEntrySchema,
+  type DatabaseBackupEntry,
+} from "../contracts/database-backup.js";
 import type { ResourceRef } from "../contracts/resource.js";
 import { ReachabilityIndex } from "../core/reachability.js";
+import { purgeDatabaseBackup, type DatabaseRecoveryOptions } from "../core/database-recovery.js";
 import {
   purgeWorktreeQuarantine,
   worktreePurgeIsolationPath,
@@ -50,12 +55,16 @@ export type PurgeCommandOptions = {
       entry: QuarantineEntry,
       options: PurgeWorktreeOptions,
     ) => Promise<{ entry: QuarantineEntry; reclaimedBytes: number }>;
+    purgeDatabase?: (
+      entry: DatabaseBackupEntry,
+      options: DatabaseRecoveryOptions,
+    ) => Promise<{ entry: DatabaseBackupEntry; reclaimedBytes: number }>;
     runGit?: (args: string[]) => Promise<string>;
   };
 };
 
 export type PurgeCommandResult = {
-  entries: QuarantineEntry[];
+  entries: Array<QuarantineEntry | DatabaseBackupEntry>;
   applied: boolean;
   reclaimedBytes: number;
   output: string;
@@ -119,7 +128,7 @@ async function currentProtectionRoots(
   return [...unique.values()];
 }
 
-function renderPreview(entries: QuarantineEntry[], now: Date): string {
+function renderPreview(entries: Array<QuarantineEntry | DatabaseBackupEntry>, now: Date): string {
   if (entries.length === 0) {
     return "No matching quarantine entries.\n";
   }
@@ -162,31 +171,45 @@ export async function executePurgeCommand(
       ? entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()
       : options.runId === undefined || entry.runId === options.runId,
   );
+  const databaseRecords = await listJsonRecordFiles(
+    layout.databaseBackups,
+    databaseBackupEntrySchema,
+  );
+  for (const record of databaseRecords) {
+    if (record.name !== `${record.value.entryId}.json`) {
+      throw new Error(`database backup manifest entry ID does not match filename: ${record.name}`);
+    }
+  }
+  const liveDatabaseRecords = databaseRecords.filter(({ value }) =>
+    ["installed", "purging"].includes(value.status),
+  );
+  const databaseEntries = liveDatabaseRecords.filter(({ value: entry }) =>
+    options.expired
+      ? entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()
+      : options.runId === undefined || entry.runId === options.runId,
+  );
+  const selected = [
+    ...entries.map((record) => record.value),
+    ...databaseEntries.map((record) => record.value),
+  ];
 
   if (!options.apply) {
     return {
-      entries: entries.map((record) => record.value),
+      entries: selected,
       applied: false,
       reclaimedBytes: 0,
       output: options.json
-        ? `${JSON.stringify(
-            { applied: false, entries: entries.map((record) => record.value) },
-            null,
-            2,
-          )}\n`
-        : renderPreview(
-            entries.map((record) => record.value),
-            now,
-          ),
+        ? `${JSON.stringify({ applied: false, entries: selected }, null, 2)}\n`
+        : renderPreview(selected, now),
     };
   }
-  if (entries.length === 0) {
+  if (selected.length === 0) {
     throw new Error("no matching live quarantine entries to purge");
   }
   if (
     !options.yes &&
     !(await confirmMutation(
-      `Permanently purge ${entries.length} quarantined worktree(s)? [y/N] `,
+      `Permanently purge ${selected.length} expired recovery backup(s)? [y/N] `,
       options.dependencies,
     ))
   ) {
@@ -200,7 +223,7 @@ export async function executePurgeCommand(
     runId: operationId,
     command: "agentrinse purge",
   });
-  const purged: QuarantineEntry[] = [];
+  const purged: Array<QuarantineEntry | DatabaseBackupEntry> = [];
   let reclaimedBytes = 0;
   const runGit = options.dependencies?.runGit ?? defaultGitRunner;
   try {
@@ -228,6 +251,17 @@ export async function executePurgeCommand(
       purged.push(result.entry);
       reclaimedBytes += result.reclaimedBytes;
     }
+    for (const record of databaseEntries) {
+      const result = await (options.dependencies?.purgeDatabase ?? purgeDatabaseBackup)(
+        record.value,
+        {
+          manifestPath: record.path,
+          backupDirectory: layout.databaseBackups,
+        },
+      );
+      purged.push(result.entry);
+      reclaimedBytes += result.reclaimedBytes;
+    }
   } finally {
     await lock.release();
   }
@@ -238,6 +272,6 @@ export async function executePurgeCommand(
     reclaimedBytes,
     output: options.json
       ? `${JSON.stringify({ applied: true, reclaimedBytes, entries: purged }, null, 2)}\n`
-      : `purged ${purged.length} quarantined worktree(s); reclaimed ${reclaimedBytes} bytes\n`,
+      : `purged ${purged.length} recovery backup(s); reclaimed ${reclaimedBytes} bytes\n`,
   };
 }

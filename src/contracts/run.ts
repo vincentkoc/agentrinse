@@ -35,9 +35,18 @@ export const worktreeActionExecutionSchema = actionExecutionBaseSchema.extend({
   quarantinedBytes: z.number().int().nonnegative().optional(),
 });
 
+export const databaseActionExecutionSchema = actionExecutionBaseSchema.extend({
+  type: z.literal("database.vacuum"),
+  backupEntryId: z.string().min(1).optional(),
+  backupPath: z.string().min(1).optional(),
+  originalBytes: z.number().int().nonnegative().optional(),
+  compactedBytes: z.number().int().nonnegative().optional(),
+});
+
 export const actionExecutionSchema = z.discriminatedUnion("type", [
   artifactActionExecutionSchema,
   worktreeActionExecutionSchema,
+  databaseActionExecutionSchema,
 ]);
 
 export const runStatusSchema = z.enum(["running", "completed", "partial", "failed", "interrupted"]);

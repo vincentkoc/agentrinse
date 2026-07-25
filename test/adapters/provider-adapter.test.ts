@@ -7,6 +7,28 @@ import { describe, expect, it } from "vitest";
 import { ProviderAuditAdapter } from "../../src/adapters/provider-adapter.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
+import type { DatabaseIdentity } from "../../src/contracts/action.js";
+
+function databaseIdentity(path: string): DatabaseIdentity {
+  return {
+    path,
+    database: "state",
+    filename: "state_5.sqlite",
+    device: 1,
+    inode: 2,
+    mode: 0o100600,
+    mtimeMs: 3,
+    measuredBytes: 1024 * 1024 * 1024,
+    pageSize: 4096,
+    pageCount: 262_144,
+    freelistCount: 196_608,
+    autoVacuum: 0,
+    migrationVersion: 39,
+    tables: ["_sqlx_migrations", "threads"],
+    schemaDigest: "a".repeat(64),
+    fingerprint: "b".repeat(64),
+  };
+}
 
 async function fixtureContext(): Promise<AuditContext> {
   return {
@@ -65,6 +87,75 @@ describe("ProviderAuditAdapter", () => {
 
     expect(probe.status).toBe("degraded");
     expect(probe.diagnostics[0]?.code).toBe("PROVIDER_ROOT_SYMLINK");
+  });
+
+  it("proposes an experimental offline vacuum only with explicit authorization", async () => {
+    const context = await fixtureContext();
+    const path = join(context.home, ".codex", "state_5.sqlite");
+    await mkdir(join(context.home, ".codex"), { recursive: true });
+    await writeFile(path, "synthetic");
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.codex, {
+      measureBytes: true,
+      maxEntries: 100,
+      allowOfflineVacuum: true,
+      inspectDatabase: async () => ({
+        identity: databaseIdentity(path),
+        estimatedReclaimBytes: 768 * 1024 * 1024,
+        freePageRatio: 0.75,
+        quickCheck: "ok",
+        walBytes: 0,
+        shmBytes: 0,
+        sidecarsPresent: false,
+      }),
+      databaseDependencies: {
+        runLsof: async () => ({ stdout: "", stderr: "" }),
+        runPs: async () => ({ stdout: "", stderr: "" }),
+      },
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("eligible");
+    expect(finding.candidateActions[0]).toMatchObject({
+      type: "database.vacuum",
+      adapter: "codex",
+      risk: "experimental",
+      expectedReclaimBytes: 768 * 1024 * 1024,
+    });
+  });
+
+  it("keeps the same database protected without the offline vacuum flag", async () => {
+    const context = await fixtureContext();
+    const path = join(context.home, ".codex", "state_5.sqlite");
+    await mkdir(join(context.home, ".codex"), { recursive: true });
+    await writeFile(path, "synthetic");
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.codex, {
+      measureBytes: true,
+      maxEntries: 100,
+      inspectDatabase: async () => ({
+        identity: databaseIdentity(path),
+        estimatedReclaimBytes: 768 * 1024 * 1024,
+        freePageRatio: 0.75,
+        quickCheck: "ok",
+        walBytes: 0,
+        shmBytes: 0,
+        sidecarsPresent: false,
+      }),
+      databaseDependencies: {
+        runLsof: async () => ({ stdout: "", stderr: "" }),
+        runPs: async () => ({ stdout: "", stderr: "" }),
+      },
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("protected");
+    expect(finding.candidateActions).toEqual([]);
+    expect(finding.roots.map((root) => root.code)).toContain("offline-vacuum-not-authorized");
   });
 
   it.each(["codex", "claude", "cursor", "copilot", "zed", "opencode", "grok"] as const)(

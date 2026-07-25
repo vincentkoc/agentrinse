@@ -425,6 +425,159 @@
                     "quarantineTtlMinutes",
                     "target"
                   ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "actionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "type": "string",
+                      "const": "database.vacuum"
+                    },
+                    "adapter": {
+                      "type": "string",
+                      "const": "codex"
+                    },
+                    "resourceId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "risk": {
+                      "type": "string",
+                      "const": "experimental"
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expectedReclaimBytes": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "backupTtlMinutes": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "target": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "database": {
+                          "type": "string",
+                          "enum": ["state", "logs", "goals", "memories"]
+                        },
+                        "filename": {
+                          "type": "string",
+                          "enum": [
+                            "state_5.sqlite",
+                            "logs_2.sqlite",
+                            "goals_1.sqlite",
+                            "memories_1.sqlite"
+                          ]
+                        },
+                        "device": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "inode": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mode": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "mtimeMs": {
+                          "type": "number"
+                        },
+                        "measuredBytes": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "pageSize": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "pageCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "freelistCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "autoVacuum": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2
+                        },
+                        "migrationVersion": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "tables": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "schemaDigest": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        },
+                        "fingerprint": {
+                          "type": "string",
+                          "pattern": "^[a-f0-9]{64}$"
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "database",
+                        "filename",
+                        "device",
+                        "inode",
+                        "mode",
+                        "mtimeMs",
+                        "measuredBytes",
+                        "pageSize",
+                        "pageCount",
+                        "freelistCount",
+                        "autoVacuum",
+                        "migrationVersion",
+                        "tables",
+                        "schemaDigest",
+                        "fingerprint"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "actionId",
+                    "type",
+                    "adapter",
+                    "resourceId",
+                    "risk",
+                    "description",
+                    "expectedReclaimBytes",
+                    "backupTtlMinutes",
+                    "target"
+                  ]
                 }
               ]
             }

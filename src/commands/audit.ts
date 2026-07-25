@@ -24,6 +24,7 @@ export type AuditCommandOptions = {
   redact?: boolean;
   output?: string;
   stateDir?: string;
+  allowOfflineVacuum?: boolean;
   now?: () => Date;
   emit?: (output: string) => void;
 };
@@ -76,7 +77,9 @@ export async function executeAuditCommand(
     const report = await runAudit({
       home,
       config,
-      adapters: createAuditAdapters(config),
+      adapters: createAuditAdapters(config, process.platform, {
+        allowOfflineVacuum: options.allowOfflineVacuum ?? false,
+      }),
       now: clock,
       ...(options.ndjson === true
         ? {

@@ -42,6 +42,11 @@ export function buildProgram(): Command {
     .option("--redact", "redact paths and identifiers in machine output", false)
     .option("--output <path>", "write the JSON report atomically")
     .option("--state-dir <path>", "override the AgentRinse state directory")
+    .option(
+      "--allow-offline-vacuum",
+      "propose experimental offline Codex database compaction",
+      false,
+    )
     .action(
       async (options: {
         home?: string;
@@ -51,6 +56,7 @@ export function buildProgram(): Command {
         redact: boolean;
         output?: string;
         stateDir?: string;
+        allowOfflineVacuum: boolean;
       }) => {
         const result = await executeAuditCommand({
           ...options,

@@ -16,6 +16,7 @@ export type AuditAdapterRegistryOptions = {
   roots?: ReachabilityRoot[];
   environment?: NodeJS.ProcessEnv;
   reachability?: ReachabilityIndex;
+  allowOfflineVacuum?: boolean;
 };
 
 export function createAuditAdapters(
@@ -60,6 +61,7 @@ export function createAuditAdapters(
         maxEntries: config.audit.maxEntries,
         reachability,
         inventoryResources: options.providerInventory ?? true,
+        allowOfflineVacuum: options.allowOfflineVacuum ?? false,
       }),
   );
 

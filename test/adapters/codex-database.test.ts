@@ -1,0 +1,72 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it } from "vitest";
+
+import {
+  codexDatabaseContractMatches,
+  inspectCodexDatabase,
+  inspectCodexProcesses,
+  inspectDatabaseOpenHandles,
+} from "../../src/adapters/codex-database.js";
+
+describe("Codex database inspection", () => {
+  it("reads a supported state database contract without opening provider content", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-db-"));
+    const path = join(root, "state_5.sqlite");
+    await writeFile(path, "synthetic sqlite fixture");
+    const queries: string[] = [];
+
+    const inspection = await inspectCodexDatabase(path, {
+      async runSqlite(args) {
+        const sql = args.at(-1) ?? "";
+        queries.push(sql);
+        if (sql.includes("pragma_page_size")) {
+          return { stdout: "4096\n200000\n150000\n0\nok\n", stderr: "" };
+        }
+        if (sql.includes("type = 'table'")) {
+          return { stdout: "_sqlx_migrations\nthreads\n", stderr: "" };
+        }
+        if (sql.includes("max(version)")) {
+          return { stdout: "39\n", stderr: "" };
+        }
+        return {
+          stdout:
+            "index\u001fidx_threads\u001fthreads\u001fCREATE INDEX idx_threads ON threads(id)\n" +
+            "table\u001f_sqlx_migrations\u001f_sqlx_migrations\u001fCREATE TABLE _sqlx_migrations(version INTEGER)\n" +
+            "table\u001fthreads\u001fthreads\u001fCREATE TABLE threads(id TEXT)\n",
+          stderr: "",
+        };
+      },
+    });
+
+    expect(inspection.identity.database).toBe("state");
+    expect(inspection.identity.migrationVersion).toBe(39);
+    expect(inspection.estimatedReclaimBytes).toBe(614_400_000);
+    expect(inspection.freePageRatio).toBe(0.75);
+    expect(codexDatabaseContractMatches(inspection.identity)).toBe(true);
+    expect(queries.join("\n")).not.toContain("SELECT *");
+  });
+
+  it("parses exact database descriptors and Codex owner processes", async () => {
+    const handles = await inspectDatabaseOpenHandles("/tmp/state_5.sqlite", {
+      async runLsof() {
+        return { stdout: "p42\nccodex\nn/tmp/state_5.sqlite\n", stderr: "" };
+      },
+    });
+    const processes = await inspectCodexProcesses({
+      async runPs() {
+        return {
+          stdout:
+            "   42 Codex /Applications/Codex.app/Contents/MacOS/Codex\n" +
+            "   43 node node ./worker.js\n",
+          stderr: "",
+        };
+      },
+    });
+
+    expect(handles).toEqual({ status: "busy", pids: [42] });
+    expect(processes).toEqual({ status: "busy", pids: [42] });
+  });
+});
