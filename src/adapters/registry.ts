@@ -62,6 +62,7 @@ export function createAuditAdapters(
         reachability,
         inventoryResources: options.providerInventory ?? true,
         allowOfflineVacuum: options.allowOfflineVacuum ?? false,
+        environment: options.environment ?? process.env,
       }),
   );
 
