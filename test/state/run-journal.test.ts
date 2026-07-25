@@ -175,4 +175,52 @@ describe("run journal", () => {
     expect(completed.reclaimedBytes).toBe(0);
     expect(completed.quarantinedBytes).toBe(20);
   });
+
+  it("tracks provider-file quarantine bytes without claiming reclaim", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const plan: CleanupPlan = {
+      ...PLAN,
+      riskCeiling: "recoverable",
+      actions: [
+        {
+          actionId: "action-provider-file",
+          type: "provider.file-quarantine",
+          adapter: "claude",
+          resourceId: "claude:agent-log:fixture",
+          risk: "recoverable",
+          description: "archive fixture provider log",
+          expectedReclaimBytes: 0,
+          pendingQuarantineBytes: 20,
+          quarantineTtlMinutes: 60,
+          target: {
+            path: "/tmp/fixture/.claude/debug/session.txt",
+            ownerRoot: "/tmp/fixture/.claude",
+            relativePath: "debug/session.txt",
+            provider: "claude",
+            device: 1,
+            inode: 2,
+            mode: 0o100600,
+            mtimeMs: 3,
+            measuredBytes: 20,
+            contentSha256: "a".repeat(64),
+            fingerprint: "b".repeat(64),
+          },
+        },
+      ],
+      expectedReclaimBytes: 0,
+      pendingQuarantineBytes: 20,
+    };
+    const journal = await createRunJournal(root, plan);
+
+    await journal.updateAction("action-provider-file", {
+      status: "applied",
+      quarantinedBytes: 20,
+      quarantineEntryId: "entry-provider",
+      quarantinePath: "/tmp/state/provider-quarantine/entry-provider.payload",
+    });
+    const completed = await journal.complete();
+
+    expect(completed.reclaimedBytes).toBe(0);
+    expect(completed.quarantinedBytes).toBe(20);
+  });
 });

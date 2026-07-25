@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { executePurgeCommand } from "../../src/commands/purge.js";
 import { executeUndoCommand } from "../../src/commands/undo.js";
 import type { DatabaseBackupEntry } from "../../src/contracts/database-backup.js";
+import type { ProviderFileQuarantineEntry } from "../../src/contracts/provider-file-quarantine.js";
 import { quarantineRecoveryRef, type QuarantineEntry } from "../../src/contracts/quarantine.js";
 import {
   worktreePurgeIsolationPath,
@@ -107,6 +108,52 @@ function databaseEntry(root: string, expiresAt: string): DatabaseBackupEntry {
       autoVacuum: 2,
       fingerprint: "d".repeat(64),
     },
+  };
+}
+
+function providerFileEntry(
+  root: string,
+  expiresAt: string,
+  status: ProviderFileQuarantineEntry["status"] = "quarantined",
+): ProviderFileQuarantineEntry {
+  const originalPath = join(root, "claude", "debug", "session.txt");
+  const quarantinePath = join(root, "provider-entry.payload");
+  const target = {
+    path: originalPath,
+    ownerRoot: join(root, "claude"),
+    relativePath: join("debug", "session.txt"),
+    provider: "claude" as const,
+    device: 1,
+    inode: 2,
+    mode: 0o100600,
+    mtimeMs: 3,
+    measuredBytes: 64,
+    contentSha256: "a".repeat(64),
+    fingerprint: "b".repeat(64),
+  };
+  return {
+    schemaVersion: 1,
+    entryId: "provider-entry",
+    runId: "run-provider",
+    actionId: "provider.file-quarantine:fixture",
+    resourceId: "claude:agent-log:fixture",
+    status,
+    originalPath,
+    quarantinePath,
+    createdAt: "2026-07-25T00:00:00.000Z",
+    expiresAt,
+    target,
+    ...(status === "preparing"
+      ? {}
+      : {
+          quarantineIdentity: {
+            ...target,
+            path: quarantinePath,
+            ownerRoot: root,
+            relativePath: "provider-entry.payload",
+            fingerprint: "c".repeat(64),
+          },
+        }),
   };
 }
 
@@ -277,6 +324,32 @@ describe("undo command", () => {
       }),
     ).rejects.toThrow("entry ID does not match filename");
   });
+
+  it("routes provider-file entries through their recovery owner", async () => {
+    const fixture = await stateFixture([]);
+    const layout = stateLayout(fixture.stateRoot);
+    const value = providerFileEntry(layout.providerQuarantine, "2026-08-01T00:00:00.000Z");
+    await writeJsonAtomic(join(layout.providerQuarantine, `${value.entryId}.json`), value, {
+      privateDirectories: [layout.providerQuarantine],
+    });
+    const undoProviderFile = vi.fn(async (candidate: ProviderFileQuarantineEntry) => ({
+      ...candidate,
+      status: "restored" as const,
+      restoredAt: "2026-07-25T01:00:00.000Z",
+    }));
+
+    const result = await executeUndoCommand({
+      runId: value.runId,
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      yes: true,
+      json: false,
+      dependencies: { undoProviderFile },
+    });
+
+    expect(undoProviderFile).toHaveBeenCalledWith(value, expect.any(Object));
+    expect(result.entries[0]?.status).toBe("restored");
+  });
 });
 
 describe("purge command", () => {
@@ -326,6 +399,40 @@ describe("purge command", () => {
     expect(purge).toHaveBeenCalledWith(live, expect.objectContaining({ allowUnexpired: true }));
     expect(result.applied).toBe(true);
     expect(result.reclaimedBytes).toBe(1024);
+  });
+
+  it("allows explicit provider-file purge before expiry", async () => {
+    const fixture = await stateFixture([]);
+    const layout = stateLayout(fixture.stateRoot);
+    const value = providerFileEntry(layout.providerQuarantine, "2026-08-01T00:00:00.000Z");
+    await writeJsonAtomic(join(layout.providerQuarantine, `${value.entryId}.json`), value, {
+      privateDirectories: [layout.providerQuarantine],
+    });
+    const purgeProviderFile = vi.fn(async (candidate: ProviderFileQuarantineEntry) => ({
+      entry: {
+        ...candidate,
+        status: "purged" as const,
+        purgedAt: "2026-07-25T01:00:00.000Z",
+      },
+      reclaimedBytes: candidate.target.measuredBytes,
+    }));
+
+    const result = await executePurgeCommand({
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      expired: false,
+      runId: value.runId,
+      apply: true,
+      yes: true,
+      json: false,
+      dependencies: { purgeProviderFile },
+    });
+
+    expect(purgeProviderFile).toHaveBeenCalledWith(
+      value,
+      expect.objectContaining({ allowUnexpired: true }),
+    );
+    expect(result.reclaimedBytes).toBe(64);
   });
 
   it("retains fresh database rollback copies even for an explicit run purge", async () => {
