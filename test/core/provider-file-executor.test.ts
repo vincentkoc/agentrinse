@@ -26,6 +26,7 @@ import {
 import { inspectProviderFile } from "../../src/core/provider-file-identity.js";
 import {
   purgeProviderFileQuarantine,
+  providerFilePurgeIsolationPath,
   undoProviderFileQuarantine,
 } from "../../src/core/provider-file-recovery.js";
 import { writeJsonAtomic, readJsonFile } from "../../src/state/json-file.js";
@@ -173,6 +174,46 @@ describe("provider-file quarantine execution and recovery", () => {
     ).resolves.toMatchObject({ status: "restored" });
   });
 
+  it("keeps a preparing manifest when source permission repair fails", async () => {
+    const selected = await fixture();
+    let chmodCalls = 0;
+
+    await expect(
+      executeProviderFileQuarantine(selected.action, {
+        runId: "run-mode-repair",
+        entryId: "entry-mode-repair",
+        quarantineDirectory: selected.quarantineDirectory,
+        dependencies: {
+          ...idleDependencies(),
+          inspectProcesses: async () => ({ status: "busy" as const, pids: [123] }),
+          chmodHandle: async (handle, mode) => {
+            chmodCalls += 1;
+            if (chmodCalls === 2) {
+              throw new Error("synthetic chmod failure");
+            }
+            await handle.chmod(mode);
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "partially-applied",
+      diagnosticCode: "PROVIDER_FILE_PERMISSION_RESTORE_FAILED",
+    });
+
+    const manifestPath = join(selected.quarantineDirectory, "entry-mode-repair.json");
+    const manifest = providerFileQuarantineEntrySchema.parse(await readJsonFile(manifestPath));
+    expect(manifest.status).toBe("preparing");
+    expect((await lstat(selected.file)).mode).toBe(selected.action.target.mode & ~0o222);
+
+    const recovered = await undoProviderFileQuarantine(manifest, {
+      manifestPath,
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: idleDependencies(),
+    });
+    expect(recovered.status).toBe("restored");
+    expect((await lstat(selected.file)).mode).toBe(selected.action.target.mode);
+  });
+
   it("refuses direct execution without an approved provider policy", async () => {
     const selected = await fixture();
     const { authorizeTarget: _authorizeTarget, ...dependencies } = idleDependencies();
@@ -317,6 +358,36 @@ describe("provider-file quarantine execution and recovery", () => {
     await expect(readFile(selected.file, "utf8")).resolves.toBe("synthetic debug output\n");
   });
 
+  it("keeps restored content sealed until its identity is verified", async () => {
+    const selected = await fixture();
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-sealed-restore",
+      entryId: "entry-sealed-restore",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: idleDependencies(),
+    });
+    const manifest = providerFileQuarantineEntrySchema.parse(
+      await readJsonFile(result.manifestPath),
+    );
+    let observedMode: number | undefined;
+
+    const restored = await undoProviderFileQuarantine(manifest, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: {
+        ...idleDependencies(),
+        move: async (source, destination) => {
+          await rename(source, destination);
+          observedMode = (await lstat(destination)).mode;
+        },
+      },
+    });
+
+    expect(observedMode).toBe(selected.action.target.mode & ~0o222);
+    expect(restored.status).toBe("restored");
+    expect((await lstat(selected.file)).mode).toBe(selected.action.target.mode);
+  });
+
   it("never follows a symlink presented as a provider file", async () => {
     const selected = await fixture();
     const external = join(await mkdtemp(join(tmpdir(), "agentrinse-provider-external-")), "log");
@@ -380,6 +451,86 @@ describe("provider-file quarantine execution and recovery", () => {
       }),
     ).rejects.toThrow("open");
     await expect(readFile(result.quarantinePath, "utf8")).resolves.toBe("synthetic debug output\n");
+  });
+
+  it("resumes purge from its deterministic private claim path", async () => {
+    const selected = await fixture();
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-resume-purge",
+      entryId: "entry-resume-purge",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: idleDependencies(),
+    });
+    const manifest = providerFileQuarantineEntrySchema.parse(
+      await readJsonFile(result.manifestPath),
+    );
+    const isolationPath = providerFilePurgeIsolationPath(
+      selected.quarantineDirectory,
+      manifest.entryId,
+    );
+    await chmod(result.quarantinePath, selected.action.target.mode & ~0o222);
+    await rename(result.quarantinePath, isolationPath);
+    if (manifest.quarantineIdentity === undefined) {
+      throw new Error("expected quarantined provider-file identity");
+    }
+    const purgingEntry = providerFileQuarantineEntrySchema.parse({
+      ...manifest,
+      status: "purging",
+      quarantineIdentity: manifest.quarantineIdentity,
+    });
+    await writeJsonAtomic(result.manifestPath, purgingEntry, {
+      privateDirectories: [selected.quarantineDirectory],
+    });
+
+    const purged = await purgeProviderFileQuarantine(purgingEntry, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory: selected.quarantineDirectory,
+      allowUnexpired: true,
+      dependencies: idleDependencies(),
+    });
+
+    expect(purged.entry.status).toBe("purged");
+    await expect(lstat(isolationPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rolls back an unexpected inode raced into the purge claim", async () => {
+    const selected = await fixture();
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-purge-race",
+      entryId: "entry-purge-race",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: idleDependencies(),
+    });
+    const manifest = providerFileQuarantineEntrySchema.parse(
+      await readJsonFile(result.manifestPath),
+    );
+    const heldPayload = join(selected.quarantineDirectory, "held-payload");
+    const replacement = join(selected.quarantineDirectory, "replacement-payload");
+    await writeFile(replacement, "replacement payload\n");
+    let firstMove = true;
+    const move = async (source: string, destination: string) => {
+      if (firstMove) {
+        firstMove = false;
+        await rename(source, heldPayload);
+        await rename(replacement, source);
+      }
+      await rename(source, destination);
+    };
+
+    await expect(
+      purgeProviderFileQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory: selected.quarantineDirectory,
+        allowUnexpired: true,
+        dependencies: { ...idleDependencies(), move },
+      }),
+    ).rejects.toThrow("unexpected inode was restored");
+
+    await expect(readFile(result.quarantinePath, "utf8")).resolves.toBe("replacement payload\n");
+    await expect(readFile(heldPayload, "utf8")).resolves.toBe("synthetic debug output\n");
+    await expect(
+      lstat(providerFilePurgeIsolationPath(selected.quarantineDirectory, manifest.entryId)),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("preserves non-write permission bits across quarantine and undo", async () => {

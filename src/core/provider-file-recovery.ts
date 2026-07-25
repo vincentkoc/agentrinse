@@ -34,6 +34,13 @@ export type ProviderFileRecoveryOptions = {
   dependencies?: ProviderFileRecoveryDependencies;
 };
 
+export function providerFilePurgeIsolationPath(
+  quarantineDirectory: string,
+  entryId: string,
+): string {
+  return join(quarantineDirectory, `${entryId}.payload.purging`);
+}
+
 function isMissing(error: unknown): boolean {
   return (
     error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
@@ -77,6 +84,9 @@ async function restoreValidatedMode(
   try {
     await handle.chmod(identity.mode & 0o7777);
     await handle.sync();
+    if (!providerFileStatsMatch(await handle.stat(), identity)) {
+      throw new Error(`provider-file mode repair changed descriptor identity: ${path}`);
+    }
   } finally {
     await handle.close();
   }
@@ -139,14 +149,29 @@ async function inspectQuarantine(
   entry: ProviderFileQuarantineEntry,
   options: ProviderFileRecoveryOptions,
 ): Promise<ProviderFileQuarantineEntry["target"] | undefined> {
-  if (!(await pathExists(entry.quarantinePath))) {
+  return inspectPayload(entry.quarantinePath, entry, options);
+}
+
+async function inspectPurgeIsolation(
+  entry: ProviderFileQuarantineEntry,
+  options: ProviderFileRecoveryOptions,
+): Promise<ProviderFileQuarantineEntry["target"] | undefined> {
+  return inspectPayload(
+    providerFilePurgeIsolationPath(options.quarantineDirectory, entry.entryId),
+    entry,
+    options,
+  );
+}
+
+async function inspectPayload(
+  path: string,
+  entry: ProviderFileQuarantineEntry,
+  options: ProviderFileRecoveryOptions,
+): Promise<ProviderFileQuarantineEntry["target"] | undefined> {
+  if (!(await pathExists(path))) {
     return undefined;
   }
-  return inspectProviderFile(
-    entry.quarantinePath,
-    options.quarantineDirectory,
-    entry.target.provider,
-  );
+  return inspectProviderFile(path, options.quarantineDirectory, entry.target.provider);
 }
 
 async function reconcile(
@@ -154,14 +179,18 @@ async function reconcile(
   options: ProviderFileRecoveryOptions,
 ): Promise<ProviderFileQuarantineEntry> {
   assertOwnedPaths(entry, options);
-  const [original, quarantine] = await Promise.all([
+  const [original, quarantine, purgeIsolation] = await Promise.all([
     inspectOriginal(entry),
     inspectQuarantine(entry, options),
+    inspectPurgeIsolation(entry, options),
   ]);
-  if (original !== undefined && quarantine !== undefined) {
-    throw new Error("provider-file recovery state is ambiguous: both paths are occupied");
+  const occupiedPathCount = [original, quarantine, purgeIsolation].filter(
+    (identity) => identity !== undefined,
+  ).length;
+  if (occupiedPathCount > 1) {
+    throw new Error("provider-file recovery state is ambiguous: multiple paths are occupied");
   }
-  if (original === undefined && quarantine === undefined) {
+  if (occupiedPathCount === 0) {
     if (entry.status === "purging" || entry.status === "purged") {
       return persist(
         {
@@ -195,14 +224,27 @@ async function reconcile(
     }
     throw new Error("provider-file recovery found unexpected content at the original path");
   }
-  if (quarantine === undefined || !movedIdentityMatches(quarantine, entry)) {
-    throw new Error("provider-file quarantine payload no longer matches the recovery manifest");
-  }
-  if (["preparing", "quarantined", "restoring", "partial"].includes(entry.status)) {
+  if (purgeIsolation !== undefined) {
+    if (entry.status !== "purging" || !movedIdentityMatches(purgeIsolation, entry)) {
+      throw new Error("provider-file purge isolation payload does not match its manifest");
+    }
     return persist(
       {
         ...entry,
-        status: entry.status === "restoring" ? "restoring" : "quarantined",
+        status: "purging",
+        quarantineIdentity: purgeIsolation,
+      },
+      options,
+    );
+  }
+  if (quarantine === undefined || !movedIdentityMatches(quarantine, entry)) {
+    throw new Error("provider-file quarantine payload no longer matches the recovery manifest");
+  }
+  if (["preparing", "quarantined", "restoring", "purging", "partial"].includes(entry.status)) {
+    return persist(
+      {
+        ...entry,
+        status: ["restoring", "purging"].includes(entry.status) ? entry.status : "quarantined",
         quarantineIdentity: quarantine,
       },
       options,
@@ -263,32 +305,43 @@ export async function undoProviderFileQuarantine(
     entry.quarantineIdentity,
     true,
   );
-  entry = await persist(
-    { ...entry, status: "restoring", quarantineIdentity: entry.quarantineIdentity },
-    options,
-  );
   try {
+    await sourceHandle.chmod(entry.target.mode & ~0o222);
+    await sourceHandle.sync();
+    if (!providerFileStatsMatch(await sourceHandle.stat(), entry.target, true)) {
+      throw new Error("provider-file payload changed while it was sealed for restore");
+    }
+    entry = await persist(
+      { ...entry, status: "restoring", quarantineIdentity: entry.quarantineIdentity },
+      options,
+    );
     await move(entry.quarantinePath, entry.originalPath);
     if (!providerFileStatsMatch(await lstat(entry.originalPath), entry.target, true)) {
       await move(entry.originalPath, entry.quarantinePath);
       throw new Error("provider-file restore pathname changed before the atomic move");
     }
+    await Promise.all([
+      syncDirectory(dirname(entry.originalPath)),
+      syncDirectory(options.quarantineDirectory),
+    ]);
+    const sealedRestored = await inspectProviderFile(
+      entry.originalPath,
+      entry.target.ownerRoot,
+      entry.target.provider,
+    );
+    if (!providerFileIdentityMatches(sealedRestored, entry.target, true)) {
+      throw new Error("restored provider file no longer matches the recovery manifest");
+    }
     await sourceHandle.chmod(entry.target.mode & 0o7777);
     await sourceHandle.sync();
+    if (
+      !providerFileStatsMatch(await sourceHandle.stat(), entry.target) ||
+      !providerFileStatsMatch(await lstat(entry.originalPath), entry.target)
+    ) {
+      throw new Error("restored provider file mode changed before recovery completed");
+    }
   } finally {
     await sourceHandle.close();
-  }
-  await Promise.all([
-    syncDirectory(dirname(entry.originalPath)),
-    syncDirectory(options.quarantineDirectory),
-  ]);
-  const restored = await inspectProviderFile(
-    entry.originalPath,
-    entry.target.ownerRoot,
-    entry.target.provider,
-  );
-  if (!providerFileIdentityMatches(restored, entry.target)) {
-    throw new Error("restored provider file no longer matches the recovery manifest");
   }
   return persist(
     {
@@ -307,6 +360,10 @@ export async function purgeProviderFileQuarantine(
 ): Promise<{ entry: ProviderFileQuarantineEntry; reclaimedBytes: number }> {
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
+  const move =
+    dependencies.move ??
+    ((source: string, destination: string) =>
+      renameNoReplace(source, destination, dependencies.platform ?? process.platform));
   let entry = await reconcile(providerFileQuarantineEntrySchema.parse(input), options);
   if (entry.status === "purged") {
     return { entry, reclaimedBytes: 0 };
@@ -317,13 +374,57 @@ export async function purgeProviderFileQuarantine(
   if (!options.allowUnexpired && Date.parse(entry.expiresAt) > clock().getTime()) {
     throw new Error(`provider-file quarantine entry has not expired: ${entry.entryId}`);
   }
-  await assertOffline(entry, entry.quarantinePath, dependencies);
-  entry = await persist(
-    { ...entry, status: "purging", quarantineIdentity: entry.quarantineIdentity },
-    options,
+  const purgeIsolationPath = providerFilePurgeIsolationPath(
+    options.quarantineDirectory,
+    entry.entryId,
   );
-  await rm(entry.quarantinePath);
-  await syncDirectory(options.quarantineDirectory);
+  const alreadyIsolated = await pathExists(purgeIsolationPath);
+  const payloadPath = alreadyIsolated ? purgeIsolationPath : entry.quarantinePath;
+  await assertOffline(entry, payloadPath, dependencies);
+  const payloadHandle = await openValidatedFile(payloadPath, entry.quarantineIdentity, true);
+  try {
+    await payloadHandle.chmod(entry.target.mode & ~0o222);
+    await payloadHandle.sync();
+    if (!providerFileStatsMatch(await payloadHandle.stat(), entry.target, true)) {
+      throw new Error("provider-file payload changed while it was sealed for purge");
+    }
+    entry = await persist(
+      { ...entry, status: "purging", quarantineIdentity: entry.quarantineIdentity },
+      options,
+    );
+    if (!alreadyIsolated) {
+      await move(entry.quarantinePath, purgeIsolationPath);
+      if (
+        !providerFileStatsMatch(await lstat(purgeIsolationPath), entry.target, true) ||
+        !providerFileStatsMatch(await payloadHandle.stat(), entry.target, true)
+      ) {
+        let rollbackError: unknown;
+        try {
+          await move(purgeIsolationPath, entry.quarantinePath);
+          await syncDirectory(options.quarantineDirectory);
+        } catch (error) {
+          rollbackError = error;
+        }
+        if (rollbackError !== undefined) {
+          throw new AggregateError(
+            [new Error("provider-file purge claimed an unexpected inode"), rollbackError],
+            "provider-file purge claim rollback failed",
+          );
+        }
+        throw new Error(
+          "provider-file purge pathname changed before the atomic claim; the unexpected inode was restored",
+        );
+      }
+      await syncDirectory(options.quarantineDirectory);
+    }
+    await rm(purgeIsolationPath);
+    if ((await payloadHandle.stat()).nlink !== 0) {
+      throw new Error("provider-file purge removed a path other than the claimed inode");
+    }
+    await syncDirectory(options.quarantineDirectory);
+  } finally {
+    await payloadHandle.close();
+  }
   entry = await persist(
     {
       ...entry,
