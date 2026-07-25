@@ -12,6 +12,7 @@ import {
   cleanupRunSchema,
   databaseBackupEntrySchema,
   doctorReportSchema,
+  providerFileQuarantineEntrySchema,
   quarantineEntrySchema,
 } from "../dist/index.js";
 
@@ -24,6 +25,11 @@ const schemas = [
   ["doctor.schema.json", "doctor", doctorReportSchema],
   ["database-backup.schema.json", "database-backup", databaseBackupEntrySchema],
   ["plan.schema.json", "plan", cleanupPlanSchema],
+  [
+    "provider-file-quarantine.schema.json",
+    "provider-file-quarantine",
+    providerFileQuarantineEntrySchema,
+  ],
   ["quarantine.schema.json", "quarantine", quarantineEntrySchema],
   ["run.schema.json", "run", cleanupRunSchema],
 ];

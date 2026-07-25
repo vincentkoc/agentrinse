@@ -65,7 +65,10 @@ export async function createRunJournal(
       );
       run.quarantinedBytes = run.actions.reduce(
         (total, action) =>
-          total + (action.type === "worktree.quarantine" ? (action.quarantinedBytes ?? 0) : 0),
+          total +
+          (action.type === "worktree.quarantine" || action.type === "provider.file-quarantine"
+            ? (action.quarantinedBytes ?? 0)
+            : 0),
         0,
       );
       return persist();
@@ -96,7 +99,10 @@ export async function createRunJournal(
         ),
         quarantinedBytes: run.actions.reduce(
           (total, action) =>
-            total + (action.type === "worktree.quarantine" ? (action.quarantinedBytes ?? 0) : 0),
+            total +
+            (action.type === "worktree.quarantine" || action.type === "provider.file-quarantine"
+              ? (action.quarantinedBytes ?? 0)
+              : 0),
           0,
         ),
         diagnostics: [...run.diagnostics, diagnostic],
