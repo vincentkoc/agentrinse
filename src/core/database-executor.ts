@@ -224,7 +224,12 @@ export async function executeDatabaseVacuum(
       temporaryPath,
       dependencies,
     );
-    const compacted = await inspect(temporaryPath, dependencies, action.target.path);
+    const compacted = await inspect(
+      temporaryPath,
+      dependencies,
+      action.target.path,
+      action.target.path,
+    );
     if (
       compacted.identity.schemaDigest !== action.target.schemaDigest ||
       compacted.identity.migrationVersion !== action.target.migrationVersion ||
@@ -256,6 +261,7 @@ export async function executeDatabaseVacuum(
         entry,
       );
     }
+    assertAuthorized(dependencies);
 
     const movedSidecars: Array<{ source: string; destination: string }> = [];
     try {
@@ -295,6 +301,7 @@ export async function executeDatabaseVacuum(
       {
         ...entry,
         status: "installing",
+        installedIdentity: compacted.identity,
       },
       options.backupDirectory,
     );
@@ -306,6 +313,9 @@ export async function executeDatabaseVacuum(
         dependencies,
       );
       const installed = await inspect(action.target.path, dependencies);
+      if (installed.identity.fingerprint !== entry.installedIdentity?.fingerprint) {
+        throw new Error("installed database identity changed during the atomic swap");
+      }
       entry = await persist(
         manifestPath,
         {

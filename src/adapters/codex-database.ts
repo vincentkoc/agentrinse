@@ -189,6 +189,7 @@ export async function inspectCodexDatabase(
   path: string,
   dependencies: CodexDatabaseDependencies = {},
   contractPath: string = path,
+  identityPath: string = path,
 ): Promise<CodexDatabaseInspection> {
   const contract = codexDatabaseContract(contractPath);
   if (contract === undefined) {
@@ -221,16 +222,31 @@ export async function inspectCodexDatabase(
     dependencies,
   );
   const migrationVersion = tables.includes("_sqlx_migrations")
-    ? parseInteger(
-        (
-          await querySqlite(
-            path,
-            "SELECT coalesce(max(version), 0) FROM _sqlx_migrations WHERE success = 1;",
-            dependencies,
-          )
-        )[0],
-        "migration version",
-      )
+    ? await (async () => {
+        const failedMigrations = parseInteger(
+          (
+            await querySqlite(
+              path,
+              "SELECT count(*) FROM _sqlx_migrations WHERE success != 1;",
+              dependencies,
+            )
+          )[0],
+          "failed migration count",
+        );
+        if (failedMigrations !== 0) {
+          throw new Error(`Codex database contains ${failedMigrations} failed SQLx migration(s)`);
+        }
+        return parseInteger(
+          (
+            await querySqlite(
+              path,
+              "SELECT coalesce(max(version), 0) FROM _sqlx_migrations;",
+              dependencies,
+            )
+          )[0],
+          "migration version",
+        );
+      })()
     : 0;
   const schemaRows = await querySqlite(
     path,
@@ -245,7 +261,7 @@ export async function inspectCodexDatabase(
   const wal = await optionalFile(`${path}-wal`);
   const shm = await optionalFile(`${path}-shm`);
   const identity = databaseIdentitySchema.parse({
-    path,
+    path: identityPath,
     database: contract.database,
     filename: contract.filename,
     device: stats.dev,
@@ -264,7 +280,7 @@ export async function inspectCodexDatabase(
     ...(shm === undefined ? {} : { shm }),
     schemaDigest: sha256(schemaRows.join("\n")),
     fingerprint: sha256Json({
-      path,
+      path: identityPath,
       database: contract.database,
       filename: contract.filename,
       device: stats.dev,

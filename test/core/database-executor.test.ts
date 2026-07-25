@@ -483,7 +483,6 @@ describe("database vacuum execution and recovery", () => {
       {
         ...manifest,
         status: "installing",
-        installedIdentity: undefined,
       },
       {
         manifestPath,
@@ -494,6 +493,68 @@ describe("database vacuum execution and recovery", () => {
 
     expect(restored.status).toBe("restored");
     expect(await readFile(originalPath, "utf8")).toBe("original");
+    await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses interrupted-install recovery after the compacted database changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-installing-drift-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-installing-drift",
+      entryId: "entry-installing-drift",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-installing-drift.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await writeFile(originalPath, "original");
+
+    await expect(
+      undoDatabaseVacuum(
+        {
+          ...manifest,
+          status: "installing",
+        },
+        {
+          manifestPath,
+          backupDirectory,
+          dependencies: dependencies(),
+        },
+      ),
+    ).rejects.toThrow("changed after interrupted installation");
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+  });
+
+  it("rechecks authorization immediately before the first database rename", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-expiry-boundary-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    let authorizationChecks = 0;
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-expiry",
+        entryId: "entry-expiry",
+        backupDirectory,
+        dependencies: {
+          ...dependencies(),
+          authorization: {
+            expiresAtMs: 1,
+            now: () => new Date(authorizationChecks++ < 2 ? 0 : 1),
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "PLAN_EXPIRED_DURING_DATABASE_VACUUM",
+    });
+    const manifest = databaseBackupEntrySchema.parse(
+      await readJsonFile(join(backupDirectory, "entry-expiry.json")),
+    );
+    expect(manifest.status).toBe("restored");
     await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 

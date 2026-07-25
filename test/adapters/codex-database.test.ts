@@ -32,6 +32,9 @@ describe("Codex database inspection", () => {
         if (sql.includes("type = 'table'")) {
           return { stdout: "_sqlx_migrations\nthreads\n", stderr: "" };
         }
+        if (sql.includes("success != 1")) {
+          return { stdout: "0\n", stderr: "" };
+        }
         if (sql.includes("max(version)")) {
           return { stdout: "39\n", stderr: "" };
         }
@@ -51,6 +54,34 @@ describe("Codex database inspection", () => {
     expect(inspection.freePageRatio).toBe(0.75);
     expect(codexDatabaseContractMatches(inspection.identity)).toBe(true);
     expect(queries.join("\n")).not.toContain("SELECT *");
+  });
+
+  it("rejects a database with a failed SQLx migration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-db-failed-migration-"));
+    const path = join(root, "state_5.sqlite");
+    const header = Buffer.alloc(100);
+    header.write("SQLite format 3\0", "binary");
+    header[18] = 2;
+    header[19] = 2;
+    await writeFile(path, header);
+
+    await expect(
+      inspectCodexDatabase(path, {
+        async runSqlite(args) {
+          const sql = args.at(-1) ?? "";
+          if (sql.includes("pragma_page_size")) {
+            return { stdout: "4096\n200000\n150000\n0\nok\n", stderr: "" };
+          }
+          if (sql.includes("type = 'table'")) {
+            return { stdout: "_sqlx_migrations\nthreads\n", stderr: "" };
+          }
+          if (sql.includes("success != 1")) {
+            return { stdout: "1\n", stderr: "" };
+          }
+          return { stdout: "", stderr: "" };
+        },
+      }),
+    ).rejects.toThrow("failed SQLx migration");
   });
 
   it("parses exact database descriptors and Codex owner processes", async () => {

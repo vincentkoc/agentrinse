@@ -310,6 +310,16 @@ export async function undoDatabaseVacuum(
       return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
     }
     if (originalExists && backupExists && !temporaryExists) {
+      const installed = await inspect(entry.originalPath, dependencies);
+      if (
+        entry.installedIdentity === undefined ||
+        installed.identity.fingerprint !== entry.installedIdentity.fingerprint ||
+        installed.sidecarsPresent
+      ) {
+        throw new Error(
+          "the compacted database changed after interrupted installation; automatic undo is no longer safe",
+        );
+      }
       entry = await persist(options, { ...entry, status: "restoring" });
       await rename(entry.originalPath, entry.temporaryPath);
       await syncDirectory(dirname(entry.originalPath));

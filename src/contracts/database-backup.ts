@@ -67,7 +67,7 @@ export const databaseBackupEntrySchema = z
       });
     }
     if (
-      ["installed", "purging", "purged"].includes(entry.status) &&
+      ["installing", "installed", "purging", "purged"].includes(entry.status) &&
       entry.installedIdentity === undefined
     ) {
       context.addIssue({
