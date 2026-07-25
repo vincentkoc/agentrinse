@@ -75,10 +75,13 @@ sidecar archival, manifest persistence, and directory fsync. Undo uses the same
 locked exchange; purge shares the durable database manifest.
 
 The provider-file executor accepts one fully identified regular file from an
-owner-specific adapter policy. It streams a content digest, seals write bits,
-rechecks provider processes and open descriptors, atomically moves the same
-inode into owner-only state, then records enough identity for deterministic
-undo and purge. It never accepts directories or discovers neighboring files.
+owner-specific adapter policy. It hashes through an `O_NOFOLLOW` descriptor,
+seals write bits, rechecks provider processes and open descriptors, atomically
+moves the same inode into owner-only state, then records enough identity for
+deterministic undo and purge. Undo verifies restored content while the inode
+remains sealed. Purge first claims the payload at a deterministic private path
+and verifies that claimed inode before unlinking it. The executor never accepts
+directories or discovers neighboring files.
 
 ## State
 
@@ -93,6 +96,7 @@ $XDG_STATE_HOME/agentrinse/
   quarantine/<entry-id>.json
   provider-quarantine/<entry-id>.json
   provider-quarantine/<entry-id>.payload
+  provider-quarantine/<entry-id>.payload.purging
   database-backups/<entry-id>.json
   database-backups/<entry-id>-<filename>.original
 ```

@@ -37,7 +37,8 @@ The action records and revalidates:
 - regular-file and non-symlink type
 - a single-link inode with no hard-link alias
 - device, inode, full mode, mtime, and byte size
-- a streamed SHA-256 content digest and complete identity fingerprint
+- a descriptor-bound streamed SHA-256 content digest and complete identity
+  fingerprint
 - stopped provider processes and no open file descriptor
 - same-filesystem AgentRinse recovery storage
 - unexpired plan authorization immediately before the atomic move
@@ -56,6 +57,12 @@ inode at rename time, AgentRinse atomically moves that unexpected inode back
 and records a rolled-back action.
 Undo and purge use only the durable manifest and refuse ambiguous paths,
 changed content, active providers, open descriptors, or cross-owned paths.
+Undo keeps the restored inode write-sealed through directory sync and complete
+content verification, then restores its recorded mode through the same
+descriptor as the final mutation. Purge atomically renames the payload to a
+deterministic owner-only claim path, verifies the claimed descriptor and inode,
+then unlinks only that path. Interrupted permission repair and purge claims
+remain durable recovery states.
 Directories, sessions, transcripts, databases, credentials, configuration,
 plugins, and caches without an explicit file-level owner contract are not
 accepted.
