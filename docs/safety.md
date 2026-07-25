@@ -47,17 +47,21 @@ verifies the full integrity check, schema digest, complete SQLx
 migration/checksum ledger, tables, migration version, and incremental
 auto-vacuum mode and fsyncs the file. Immediately before mutation, AgentRinse
 holds nonblocking whole-file POSIX record locks on the source and compacted
-inodes, repeats owner and descriptor checks, verifies the locked identities,
-then atomically exchanges the paths. Both locks remain held until the original
-and its tracked sidecars are retained, directories are synced, and the
-installed manifest is durable.
+inodes and temporarily removes their write bits. It then repeats owner and
+descriptor checks, verifies the locked main and sidecar identities, and
+atomically exchanges the paths. Both inodes remain read-only and locked until
+the original and its tracked sidecars are retained, directories are synced,
+and the installed manifest is durable. Locks are released before the recorded
+write modes are restored, preventing a waiting writer from following the old
+inode through the exchange.
 
 Undo is available only while the installed compacted identity is unchanged.
 It verifies both copies, locks both inodes, repeats owner and descriptor checks,
 and atomically exchanges them before removing the displaced compacted copy.
 Once Codex reopens and writes the database, automatic rollback is refused.
-Expired original files are purged only while Codex is offline and both the
-canonical database and rollback copy pass full integrity checks.
+Expired original files are purged only after both copies pass full integrity
+checks and the same sealed exclusion boundary revalidates the canonical
+database, sidecars, and offline owner state.
 
 ## Recoverable Worktree Boundary
 

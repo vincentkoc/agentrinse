@@ -18,8 +18,8 @@ The project follows semantic versioning after its first supported release.
   and exact descriptor refusal, non-empty WAL refusal, and tracked zero-WAL/SHM
   rollback
 - `VACUUM INTO` compaction with full integrity proof, fsync, SQLite-compatible
-  POSIX exclusion locks, atomic path exchange, seven-day retained originals,
-  strict locked undo, and expiry purge
+  POSIX exclusion locks, temporary write-permission sealing, atomic path
+  exchange, seven-day retained originals, strict locked undo, and expiry purge
 - peak-space preflight, operation-specific long SQLite timeouts, and honest
   retained-backup versus reclaimed-byte accounting
 - database backup manifests and generated JSON Schema

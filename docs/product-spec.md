@@ -1829,11 +1829,13 @@ Preferred implementation:
 3. verify compacted database integrity and expected tables
 4. fsync destination
 5. acquire exclusive POSIX record locks on both source and destination inodes
-6. verify locked identities and repeat owner/descriptor checks
-7. atomically exchange source and destination without an absent-path window
-8. retain the original and tracked sidecars before releasing either lock
-9. preserve rollback copy until quarantine TTL
-10. use the same locked atomic exchange for undo
+6. temporarily remove write permissions from both locked inodes
+7. verify locked main/sidecar identities and repeat owner/descriptor checks
+8. atomically exchange source and destination without an absent-path window
+9. retain the original and tracked sidecars before releasing either lock
+10. release locks while both inodes remain read-only, then restore exact modes
+11. preserve rollback copy until quarantine TTL
+12. use the same sealed atomic exchange for undo and purge boundaries
 
 Running `VACUUM` directly against the canonical file is not sufficient for the
 product-grade implementation.
@@ -1845,9 +1847,10 @@ same-filesystem sibling output, sets incremental auto-vacuum on the compacted
 copy inside an owner-only temporary directory, fsyncs it, retains the exact
 original set under owner-only AgentRinse state, and installs with an atomic
 path exchange while whole-file POSIX record locks remain held on both inodes.
-The post-lock process and descriptor check allows only AgentRinse's own lock
-descriptors. This prevents an owner process from reopening either database
-during apply or undo.
+Both inodes are temporarily write-sealed before the post-lock process,
+descriptor, and WAL/SHM rechecks. The check allows only AgentRinse's own lock
+descriptors. Locks are released before exact modes are restored, so a new
+writer cannot wait on the old inode and resume after the exchange.
 
 Undo is supported only while the installed compacted identity remains
 unchanged. Once Codex writes the compacted database, automatic rollback is
