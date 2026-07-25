@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
+import { inspectCodexDatabase } from "../../src/adapters/codex-database.js";
 import { acquireDatabaseExclusion } from "../../src/core/database-exclusion.js";
 
 const execFileAsync = promisify(execFile);
@@ -31,6 +32,7 @@ describe("database exclusion", () => {
 
     const exclusion = await acquireDatabaseExclusion([path]);
     expect((await lstat(path)).mode & 0o222).toBe(0);
+    await inspectCodexDatabase(path, {}, path, path, exclusion.handles?.get(path));
     await expect(
       execFileAsync("sqlite3", [
         "-batch",

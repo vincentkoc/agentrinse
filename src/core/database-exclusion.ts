@@ -11,6 +11,7 @@ export type LockedFileIdentity = {
 
 export type DatabaseExclusion = {
   identities: Map<string, LockedFileIdentity>;
+  handles?: ReadonlyMap<string, FileHandle>;
   release: () => Promise<void>;
 };
 
@@ -134,6 +135,7 @@ export async function acquireDatabaseExclusion(
   const nativeLock = await nativeLockPromise;
   const files: HeldFile[] = [];
   const identities = new Map<string, LockedFileIdentity>();
+  const handles = new Map<string, FileHandle>();
 
   try {
     for (const path of [...new Set(paths)].sort()) {
@@ -154,6 +156,7 @@ export async function acquireDatabaseExclusion(
       await inspectionHandle.close();
       const file = { handle, initialMode: initialStats.mode, restoreMode };
       files.push(file);
+      handles.set(path, handle);
       const locked = nativeLock.lock(handle.fd);
       if (locked.result !== 0) {
         throw lockError(path, nativeLock.errnoNames, locked.errno);
@@ -177,6 +180,7 @@ export async function acquireDatabaseExclusion(
   let released = false;
   return {
     identities,
+    handles,
     async release() {
       if (released) {
         return;

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, open } from "node:fs/promises";
+import { lstat, open, type FileHandle } from "node:fs/promises";
 import { basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -193,8 +193,8 @@ async function optionalFile(path: string): Promise<DatabaseSidecarIdentity | und
   }
 }
 
-async function readSqliteJournalMode(path: string): Promise<"wal"> {
-  const handle = await open(path, "r");
+async function readSqliteJournalMode(path: string, lockedHandle?: FileHandle): Promise<"wal"> {
+  const handle = lockedHandle ?? (await open(path, "r"));
   try {
     const header = Buffer.alloc(100);
     const { bytesRead } = await handle.read(header, 0, header.length, 0);
@@ -206,12 +206,32 @@ async function readSqliteJournalMode(path: string): Promise<"wal"> {
     }
     return "wal";
   } finally {
-    await handle.close();
+    if (lockedHandle === undefined) {
+      await handle.close();
+    }
   }
 }
 
-async function sha256File(path: string, signal?: AbortSignal): Promise<string> {
+async function sha256File(
+  path: string,
+  signal?: AbortSignal,
+  lockedHandle?: FileHandle,
+): Promise<string> {
   const hash = createHash("sha256");
+  if (lockedHandle !== undefined) {
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    let position = 0;
+    for (;;) {
+      signal?.throwIfAborted();
+      const { bytesRead } = await lockedHandle.read(buffer, 0, buffer.length, position);
+      if (bytesRead === 0) {
+        break;
+      }
+      hash.update(buffer.subarray(0, bytesRead));
+      position += bytesRead;
+    }
+    return hash.digest("hex");
+  }
   const stream = createReadStream(path, signal === undefined ? {} : { signal });
   for await (const chunk of stream) {
     hash.update(chunk);
@@ -237,14 +257,19 @@ export async function inspectCodexDatabase(
   dependencies: CodexDatabaseDependencies = {},
   contractPath: string = path,
   identityPath: string = path,
+  lockedHandle?: FileHandle,
 ): Promise<CodexDatabaseInspection> {
   const contract = codexDatabaseContract(contractPath);
   if (contract === undefined) {
     throw new Error(`unsupported Codex database filename: ${basename(path)}`);
   }
-  const stats = await lstat(path);
-  if (stats.isSymbolicLink() || !stats.isFile()) {
+  const pathStats = await lstat(path);
+  if (pathStats.isSymbolicLink() || !pathStats.isFile()) {
     throw new Error(`Codex database is not a regular file: ${path}`);
+  }
+  const stats = lockedHandle === undefined ? pathStats : await lockedHandle.stat();
+  if (stats.dev !== pathStats.dev || stats.ino !== pathStats.ino) {
+    throw new Error(`Codex database path changed after exclusive access: ${path}`);
   }
 
   const values = await querySqlite(
@@ -304,11 +329,11 @@ export async function inspectCodexDatabase(
   const pageCount = parseInteger(values[1], "page count");
   const freelistCount = parseInteger(values[2], "freelist count");
   const autoVacuum = parseInteger(values[3], "auto-vacuum mode");
-  const journalMode = await readSqliteJournalMode(path);
+  const journalMode = await readSqliteJournalMode(path, lockedHandle);
   const wal = await optionalFile(`${path}-wal`);
   const shm = await optionalFile(`${path}-shm`);
-  const fingerprint = await sha256File(path, dependencies.signal);
-  const finalStats = await lstat(path);
+  const fingerprint = await sha256File(path, dependencies.signal, lockedHandle);
+  const finalStats = lockedHandle === undefined ? await lstat(path) : await lockedHandle.stat();
   if (
     finalStats.dev !== stats.dev ||
     finalStats.ino !== stats.ino ||

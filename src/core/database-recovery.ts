@@ -693,12 +693,19 @@ export async function undoDatabaseVacuum(
     assertLockedIdentity(exclusion, entry.backupPath, backupIdentity);
     await assertOffline(entry, dependencies, new Set([process.pid]));
     await assertRecoverableSidecars(entry);
-    const lockedInstalled = await inspect(entry.originalPath, dependencies);
+    const lockedInstalled = await inspect(
+      entry.originalPath,
+      dependencies,
+      entry.originalPath,
+      entry.originalPath,
+      exclusion.handles?.get(entry.originalPath),
+    );
     const lockedBackup = await inspect(
       entry.backupPath,
       dependencies,
       entry.originalPath,
       entry.originalPath,
+      exclusion.handles?.get(entry.backupPath),
     );
     if (
       !databaseMainIdentityMatches(lockedInstalled.identity, installedIdentity, true) ||

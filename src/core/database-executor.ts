@@ -422,12 +422,19 @@ export async function executeDatabaseVacuum(
         assertLockedIdentity(exclusion, temporaryPath, compacted.identity);
         await assertOffline(action.target.path, dependencies, new Set([process.pid]));
         await assertSidecarsStable(action);
-        const lockedCurrent = await inspect(action.target.path, dependencies);
+        const lockedCurrent = await inspect(
+          action.target.path,
+          dependencies,
+          action.target.path,
+          action.target.path,
+          exclusion.handles?.get(action.target.path),
+        );
         const lockedCompacted = await inspect(
           temporaryPath,
           dependencies,
           action.target.path,
           action.target.path,
+          exclusion.handles?.get(temporaryPath),
         );
         if (
           lockedCurrent.identity.fingerprint !== current.identity.fingerprint ||
