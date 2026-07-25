@@ -45,7 +45,8 @@ provenance and avoids a long-lived publish secret.
 4. push the exact validated commit
 5. publish a GitHub release tagged `v<package-version>`
 6. verify the Release workflow, npm version, package contents, and CLI smoke
-7. update `vincentkoc/tap` to the exact GitHub release tarball and SHA-256
+7. update repository `vincentkoc/homebrew-tap` to the exact GitHub release
+   tarball and SHA-256
 8. verify a clean Homebrew install, formula test, and upgrade path
 
 The workflow refuses tags that do not exactly match `package.json`.
@@ -73,9 +74,10 @@ against real developer state.
 
 ## Homebrew
 
-The formula lives in `vincentkoc/tap` as `Formula/agentrinse.rb`. It installs
-the released npm tarball with its production dependencies and links the
-`agentrinse` executable.
+The formula lives in repository `vincentkoc/homebrew-tap` as
+`Formula/agentrinse.rb`. Homebrew exposes that repository as tap
+`vincentkoc/tap`. The formula installs the released npm tarball with its
+production dependencies and links the `agentrinse` executable.
 
 For each release:
 
