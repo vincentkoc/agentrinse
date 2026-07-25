@@ -406,6 +406,29 @@ export async function executeDatabaseVacuum(
     }
   } catch (error) {
     if (error instanceof DatabaseExecutionError) {
+      const sourceExists = await pathExists(action.target.path).catch(() => false);
+      const backupExists = await pathExists(backupPath).catch(() => false);
+      if (error.outcome === "skipped-stale" && sourceExists && !backupExists) {
+        await rm(temporaryPath, { force: true });
+        await syncDirectory(originalDirectory);
+        entry = await persist(
+          manifestPath,
+          {
+            ...entry,
+            status: "restored",
+            restoredAt: clock().toISOString(),
+            diagnostic: {
+              severity: "warning",
+              code: error.diagnosticCode,
+              message: error.message,
+              adapter: action.adapter,
+              resourceId: action.resourceId,
+            },
+          },
+          options.backupDirectory,
+        );
+        throw new DatabaseExecutionError(error.message, error.outcome, error.diagnosticCode, entry);
+      }
       throw error;
     }
     const sourceExists = await pathExists(action.target.path).catch(() => false);

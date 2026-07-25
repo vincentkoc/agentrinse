@@ -342,6 +342,95 @@ describe("database vacuum execution and recovery", () => {
     expect(manifest.status).toBe("restored");
   });
 
+  it("finishes an executor-produced partial rollback through undo", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-partial-rollback-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await writeFile(`${originalPath}-wal`, "");
+    await writeFile(`${originalPath}-shm`, "synthetic shm");
+    const baseDependencies = dependencies();
+    const selectedAction = {
+      ...action(originalPath),
+      target: (await baseDependencies.inspectDatabase(originalPath)).identity,
+    };
+
+    await expect(
+      executeDatabaseVacuum(selectedAction, {
+        runId: "run-partial",
+        entryId: "entry-partial",
+        backupDirectory,
+        dependencies: {
+          ...baseDependencies,
+          async verifyIntegrity(path) {
+            if (path === originalPath && (await readFile(path, "utf8")) === "compacted") {
+              throw new Error("injected installed integrity failure");
+            }
+          },
+          async rename(source, destination) {
+            if (source.includes(".original-shm")) {
+              throw new Error("injected rollback sidecar failure");
+            }
+            await rename(source, destination);
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "partially-applied",
+      diagnosticCode: "DATABASE_INSTALL_ROLLBACK_PARTIAL",
+    });
+    const manifestPath = join(backupDirectory, "entry-partial.json");
+    const partial = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    expect(partial.status).toBe("partial");
+
+    const restored = await undoDatabaseVacuum(partial, {
+      manifestPath,
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    expect(restored.status).toBe("restored");
+    expect(await readFile(originalPath, "utf8")).toBe("original");
+    expect(await readFile(`${originalPath}-shm`, "utf8")).toBe("synthetic shm");
+  });
+
+  it("removes the compacted temporary file when the pre-swap identity becomes stale", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-stale-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    const baseDependencies = dependencies();
+
+    await expect(
+      executeDatabaseVacuum(action(originalPath), {
+        runId: "run-stale",
+        entryId: "entry-stale",
+        backupDirectory,
+        dependencies: {
+          ...baseDependencies,
+          async inspectDatabase(path) {
+            const inspection = await baseDependencies.inspectDatabase(path);
+            return path === originalPath
+              ? {
+                  ...inspection,
+                  identity: {
+                    ...inspection.identity,
+                    fingerprint: "d".repeat(64),
+                  },
+                }
+              : inspection;
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "DATABASE_IDENTITY_CHANGED",
+    });
+    const manifestPath = join(backupDirectory, "entry-stale.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    expect(manifest.status).toBe("restored");
+    await expect(lstat(manifest.temporaryPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("restores a moved original after a crash in the vacuumed state", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-db-vacuumed-crash-"));
     const originalPath = join(root, "state_5.sqlite");

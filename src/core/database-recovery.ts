@@ -292,6 +292,10 @@ export async function undoDatabaseVacuum(
     throw new Error("interrupted database vacuum has ambiguous file state");
   }
 
+  if (entry.status === "partial" && originalExists && !backupExists) {
+    return completeRestoredOriginal(entry, options, dependencies, inspect, rename, clock);
+  }
+
   if (entry.status === "original-backed-up" || entry.status === "partial") {
     if (!originalExists && backupExists) {
       return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);

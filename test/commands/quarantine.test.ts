@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { executePurgeCommand } from "../../src/commands/purge.js";
 import { executeUndoCommand } from "../../src/commands/undo.js";
+import type { DatabaseBackupEntry } from "../../src/contracts/database-backup.js";
 import { quarantineRecoveryRef, type QuarantineEntry } from "../../src/contracts/quarantine.js";
 import {
   worktreePurgeIsolationPath,
@@ -57,6 +58,53 @@ function entry(
       measuredBytes: 1024,
       newestMtimeMs: 6,
       fingerprint: "c".repeat(64),
+    },
+  };
+}
+
+function databaseEntry(root: string, expiresAt: string): DatabaseBackupEntry {
+  const originalPath = join(root, "state_5.sqlite");
+  const target = {
+    path: originalPath,
+    database: "state" as const,
+    filename: "state_5.sqlite" as const,
+    device: 1,
+    inode: 2,
+    mode: 0o100600,
+    mtimeMs: 3,
+    measuredBytes: 4096,
+    pageSize: 4096,
+    pageCount: 1,
+    freelistCount: 0,
+    journalMode: "wal" as const,
+    autoVacuum: 0,
+    migrationVersion: 39,
+    tables: ["_sqlx_migrations", "threads"],
+    schemaDigest: "a".repeat(64),
+    fingerprint: "b".repeat(64),
+  };
+  return {
+    schemaVersion: 1,
+    entryId: "database-fresh",
+    runId: "run-database",
+    actionId: "database.vacuum:fresh",
+    resourceId: "codex:agent-database:fresh",
+    status: "installed",
+    originalPath,
+    backupPath: join(root, "database-fresh-state_5.sqlite.original"),
+    temporaryPath: join(root, ".state_5.sqlite.database-fresh.vacuum"),
+    createdAt: "2026-07-25T00:00:00.000Z",
+    expiresAt,
+    target,
+    backupIdentity: {
+      ...target,
+      path: join(root, "database-fresh-state_5.sqlite.original"),
+      fingerprint: "c".repeat(64),
+    },
+    installedIdentity: {
+      ...target,
+      autoVacuum: 2,
+      fingerprint: "d".repeat(64),
     },
   };
 }
@@ -277,6 +325,31 @@ describe("purge command", () => {
     expect(purge).toHaveBeenCalledWith(live, expect.objectContaining({ allowUnexpired: true }));
     expect(result.applied).toBe(true);
     expect(result.reclaimedBytes).toBe(1024);
+  });
+
+  it("retains fresh database rollback copies even for an explicit run purge", async () => {
+    const fixture = await stateFixture([]);
+    const layout = stateLayout(fixture.stateRoot);
+    const database = databaseEntry(layout.databaseBackups, "2026-08-01T00:00:00.000Z");
+    await writeJsonAtomic(join(layout.databaseBackups, `${database.entryId}.json`), database, {
+      privateDirectories: [layout.databaseBackups],
+    });
+    const purgeDatabase = vi.fn();
+
+    await expect(
+      executePurgeCommand({
+        home: fixture.home,
+        stateDir: fixture.stateRoot,
+        expired: false,
+        runId: database.runId,
+        apply: true,
+        yes: true,
+        json: false,
+        now: new Date("2026-07-25T12:00:00.000Z"),
+        dependencies: { purgeDatabase },
+      }),
+    ).rejects.toThrow("no matching live quarantine entries to purge");
+    expect(purgeDatabase).not.toHaveBeenCalled();
   });
 
   it("resumes a persisted purging entry", async () => {

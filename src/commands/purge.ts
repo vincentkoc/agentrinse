@@ -183,10 +183,10 @@ export async function executePurgeCommand(
   const liveDatabaseRecords = databaseRecords.filter(({ value }) =>
     ["installed", "purging"].includes(value.status),
   );
-  const databaseEntries = liveDatabaseRecords.filter(({ value: entry }) =>
-    options.expired
-      ? entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()
-      : options.runId === undefined || entry.runId === options.runId,
+  const databaseEntries = liveDatabaseRecords.filter(
+    ({ value: entry }) =>
+      (entry.status === "purging" || Date.parse(entry.expiresAt) <= now.getTime()) &&
+      (options.runId === undefined || entry.runId === options.runId),
   );
   const selected = [
     ...entries.map((record) => record.value),
@@ -209,7 +209,7 @@ export async function executePurgeCommand(
   if (
     !options.yes &&
     !(await confirmMutation(
-      `Permanently purge ${selected.length} expired recovery backup(s)? [y/N] `,
+      `Permanently purge ${selected.length} selected recovery backup(s)? [y/N] `,
       options.dependencies,
     ))
   ) {
