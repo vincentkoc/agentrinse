@@ -6,9 +6,20 @@ import type { Diagnostic } from "../contracts/diagnostic.js";
 import type { Finding } from "../contracts/finding.js";
 import type { AdapterProbe } from "../contracts/report.js";
 import type { ResourceSnapshot } from "../contracts/resource.js";
-import { databaseIdentitySchema, type DatabaseVacuumAction } from "../contracts/action.js";
+import {
+  databaseIdentitySchema,
+  providerFileIdentitySchema,
+  type DatabaseVacuumAction,
+  type ProviderFileQuarantineAction,
+} from "../contracts/action.js";
 import { sha256 } from "../core/digest.js";
 import { measurePath } from "../core/measure.js";
+import {
+  CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
+  CLAUDE_DEBUG_LOG_POLICY_ID,
+  CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
+  isClaudeDebugLogRelativePath,
+} from "../core/provider-file-policy.js";
 import type { ReachabilityIndex } from "../core/reachability.js";
 import {
   codexDatabaseContractMatches,
@@ -18,9 +29,15 @@ import {
   type CodexDatabaseDependencies,
   type CodexDatabaseInspection,
 } from "./codex-database.js";
+import { collectClaudeDebugLogs } from "./claude-debug.js";
 import { collectProviderReachability } from "./provider-reachability.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
+
+type ClaudeProviderFileQuarantineAction = Extract<
+  ProviderFileQuarantineAction,
+  { adapter: "claude" }
+>;
 
 export type ProviderAdapterOptions = {
   root?: string;
@@ -283,11 +300,86 @@ export class ProviderAuditAdapter implements AuditAdapter {
       }
     }
 
+    if (this.spec.id === "claude") {
+      const debugLogs = await collectClaudeDebugLogs(context, probe.root, this.options.maxEntries);
+      resources.push(...debugLogs.resources);
+      diagnostics.push(...debugLogs.diagnostics);
+    }
+
     return { resources, diagnostics };
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const observedAt = context.now.toISOString();
+    const providerFileIdentity = providerFileIdentitySchema.safeParse(
+      resource.facts.providerFileIdentity,
+    );
+    if (
+      this.spec.id === "claude" &&
+      providerFileIdentity.success &&
+      providerFileIdentity.data.provider === "claude" &&
+      resource.facts.policyId === CLAUDE_DEBUG_LOG_POLICY_ID &&
+      isClaudeDebugLogRelativePath(providerFileIdentity.data.relativePath)
+    ) {
+      const claudeIdentity = {
+        ...providerFileIdentity.data,
+        provider: "claude" as const,
+      };
+      const oldEnough =
+        context.now.getTime() - claudeIdentity.mtimeMs >= CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES * 60_000;
+      const candidateActions: ClaudeProviderFileQuarantineAction[] = oldEnough
+        ? [
+            {
+              actionId: `provider.file-quarantine:${sha256(
+                `${CLAUDE_DEBUG_LOG_POLICY_ID}:${claudeIdentity.fingerprint}`,
+              )}`,
+              type: "provider.file-quarantine",
+              adapter: "claude",
+              resourceId: resource.resource.id,
+              policyId: CLAUDE_DEBUG_LOG_POLICY_ID,
+              risk: "recoverable",
+              description: "Quarantine a Claude debug log older than 30 days",
+              expectedReclaimBytes: 0,
+              pendingQuarantineBytes: claudeIdentity.measuredBytes,
+              quarantineTtlMinutes: CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
+              target: claudeIdentity,
+            },
+          ]
+        : [];
+      return {
+        schemaVersion: 1,
+        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
+        auditId: context.auditId,
+        observedAt,
+        resource: resource.resource,
+        state: oldEnough ? "eligible" : "protected",
+        confidence: "certain",
+        roots: [
+          {
+            code: "claude-debug-log-owner-contract",
+            source: this.id,
+            observedAt,
+            detail:
+              "Claude documents direct debug logs as disposable application data with no user-facing loss.",
+          },
+          ...(oldEnough
+            ? []
+            : [
+                {
+                  code: "provider-file-too-recent",
+                  source: this.id,
+                  observedAt,
+                  detail: "The debug log is newer than the 30-day cleanup threshold.",
+                },
+              ]),
+        ],
+        facts: resource.facts,
+        candidateActions,
+        measuredBytes: claudeIdentity.measuredBytes,
+        estimatedReclaimBytes: 0,
+        warnings: [],
+      };
+    }
     const databaseIdentity = databaseIdentitySchema.safeParse(resource.facts.databaseIdentity);
     if (this.spec.id === "codex" && databaseIdentity.success) {
       const estimatedReclaimBytes =

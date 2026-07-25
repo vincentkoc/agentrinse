@@ -12,9 +12,27 @@ export type ProviderFilePolicy = {
   matchesRelativePath(relativePath: string): boolean;
 };
 
-// Provider PRs add narrowly documented file contracts here. An empty registry
-// deliberately makes the shared executor unusable on its own.
-export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [];
+export const CLAUDE_DEBUG_LOG_POLICY_ID = "claude.debug-log";
+export const CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES = 30 * 24 * 60;
+export const CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
+
+export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
+  const components = relativePath.split(/[\\/]/u);
+  return (
+    components.length === 2 &&
+    components[0] === "debug" &&
+    components[1] !== undefined &&
+    components[1].endsWith(".txt")
+  );
+}
+
+export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [
+  {
+    id: CLAUDE_DEBUG_LOG_POLICY_ID,
+    provider: "claude",
+    matchesRelativePath: isClaudeDebugLogRelativePath,
+  },
+];
 
 export async function authorizeProviderFileAction(
   action: ProviderFileQuarantineAction,
