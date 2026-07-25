@@ -45,16 +45,20 @@ The action records and revalidates:
 
 Apply refuses unless the policy registry binds that `policyId` to the
 configured provider root and exact relative-path contract. It then opens the
-file with `O_NOFOLLOW`, ties permission sealing to the validated inode,
-temporarily removes write bits while repeating identity and liveness checks,
-atomically moves the same inode into owner-only state, restores the recorded
-mode, fsyncs both directories, and persists the moved identity.
+physical provider root and every relative directory component with pinned
+`openat` descriptors and `O_NOFOLLOW`, ties permission sealing to the validated
+inode, temporarily removes write bits while repeating identity and liveness
+checks, atomically moves the same inode with fd-relative no-replace rename,
+restores the recorded mode, fsyncs both pinned directories, and persists the
+moved identity.
 Provider liveness matches provider-specific native executables, application
 helpers, package markers, and interpreted or wrapped command lines. Incomplete
-or unparseable process evidence fails closed. The descriptor scan excludes
-only AgentRinse's own validated file handle. If the pathname names a different
-inode at rename time, AgentRinse atomically moves that unexpected inode back
-and records a rolled-back action.
+or unparseable process evidence fails closed, and process listing requests
+untruncated command lines. The descriptor scan excludes only AgentRinse's own
+validated file handle. If the final name changes inside the pinned parent at
+rename time, AgentRinse atomically moves that unexpected inode back and records
+a rolled-back action. Replacing an intermediate directory with a symlink cannot
+redirect mutation outside the approved provider root.
 Undo and purge use only the durable manifest and refuse ambiguous paths,
 changed content, active providers, open descriptors, or cross-owned paths.
 Undo keeps the restored inode write-sealed through directory sync and complete

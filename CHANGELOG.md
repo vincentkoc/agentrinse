@@ -18,6 +18,9 @@ The project follows semantic versioning after its first supported release.
   permission-repair recovery, nonblocking and size-bounded inspection, and
   deterministic purge claims that reclaim content through the validated
   descriptor while retaining an empty proof inode
+- `openat`-pinned provider roots and parent directories, fd-relative atomic
+  rename and sync, untruncated provider command-line inspection, and published
+  JSON Schema branches that bind every action adapter to its target provider
 - provider liveness detection for native, helper, interpreted, and wrapped
   command lines, with fail-closed incomplete process evidence
 

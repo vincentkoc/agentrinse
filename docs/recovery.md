@@ -169,7 +169,9 @@ entries. Undo requires the provider to be stopped, proves that no process has
 the payload open, refuses an occupied original path, atomically restores the
 same inode, keeps it write-sealed through directory sync and full content
 verification, then restores the recorded mode through the same `O_NOFOLLOW`
-descriptor as the final mutation.
+descriptor as the final mutation. Source and destination parents stay pinned
+through `openat` descriptors, and both rename and directory sync are
+fd-relative.
 
 Interrupted entries are reconciled from the exact original, quarantine, and
 deterministic purge-claim paths. If the original matches and both payload paths

@@ -76,14 +76,15 @@ locked exchange; purge shares the durable database manifest.
 
 The provider-file executor accepts one fully identified regular file from an
 owner-specific adapter policy. It hashes through an `O_NOFOLLOW` descriptor,
-seals write bits, rechecks provider processes and open descriptors, atomically
-moves the same inode into owner-only state, then records enough identity for
-deterministic undo and purge. Undo verifies restored content while the inode
-remains sealed. Purge first claims the payload at a deterministic private path
-and verifies that claimed inode before truncating its contents through a
-validated writable descriptor. It retains the empty inode as a durable purge
-proof, so permanent reclamation never unlinks a re-bindable pathname. The
-executor never accepts directories or discovers neighboring files.
+opened through `openat`-pinned parent directories, seals write bits, rechecks
+provider processes and open descriptors, atomically moves the same inode with
+fd-relative no-replace rename, then records enough identity for deterministic
+undo and purge. Undo verifies restored content while the inode remains sealed.
+Purge first claims the payload at a deterministic private path and verifies
+that claimed inode before truncating its contents through a validated writable
+descriptor. It retains the empty inode as a durable purge proof, so permanent
+reclamation never unlinks a re-bindable pathname. The executor never accepts
+directories or discovers neighboring files.
 
 ## State
 
