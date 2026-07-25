@@ -169,6 +169,10 @@ This prevents a rollback from discarding new state. Keep the rollback copy for
 manual recovery or purge it after expiry once the canonical database is
 healthy.
 
+Database apply records the original as `retainedBackupBytes` and reports zero
+reclaimed bytes. The storage is counted as reclaimed only when purge actually
+deletes the rollback set.
+
 ## Interrupted Runs
 
 The first SIGINT requests cooperative cancellation. AgentRinse finishes any

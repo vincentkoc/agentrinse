@@ -422,6 +422,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           backupPath: result.backupPath,
           originalBytes: result.originalBytes,
           compactedBytes: result.compactedBytes,
+          retainedBackupBytes: result.retainedBackupBytes,
         });
       }
       throwIfInterrupted(options.signal);

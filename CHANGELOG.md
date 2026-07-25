@@ -19,6 +19,8 @@ The project follows semantic versioning after its first supported release.
   rollback
 - `VACUUM INTO` compaction with full integrity proof, fsync, atomic install,
   seven-day retained originals, strict undo, and expiry purge
+- peak-space preflight, operation-specific long SQLite timeouts, and honest
+  retained-backup versus reclaimed-byte accounting
 - database backup manifests and generated JSON Schema
 
 ### Changed

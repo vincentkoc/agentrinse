@@ -62,6 +62,7 @@ export type DatabaseExecutionResult = {
   backupPath: string;
   originalBytes: number;
   compactedBytes: number;
+  retainedBackupBytes: number;
   reclaimedBytes: number;
 };
 
@@ -330,7 +331,11 @@ export async function executeDatabaseVacuum(
         backupPath: entry.backupPath,
         originalBytes: action.target.measuredBytes,
         compactedBytes: installed.identity.measuredBytes,
-        reclaimedBytes: Math.max(0, action.target.measuredBytes - installed.identity.measuredBytes),
+        retainedBackupBytes:
+          action.target.measuredBytes +
+          (action.target.wal?.measuredBytes ?? 0) +
+          (action.target.shm?.measuredBytes ?? 0),
+        reclaimedBytes: 0,
       };
     } catch (installError) {
       try {

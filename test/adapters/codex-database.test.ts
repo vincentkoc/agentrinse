@@ -9,6 +9,8 @@ import {
   inspectCodexDatabase,
   inspectCodexProcesses,
   inspectDatabaseOpenHandles,
+  vacuumCodexDatabaseInto,
+  verifyCodexDatabaseIntegrity,
 } from "../../src/adapters/codex-database.js";
 
 describe("Codex database inspection", () => {
@@ -82,6 +84,27 @@ describe("Codex database inspection", () => {
         },
       }),
     ).rejects.toThrow("failed SQLx migration");
+  });
+
+  it("uses long operation-specific timeouts for compaction and integrity checks", async () => {
+    const timeouts: number[] = [];
+    const runSqlite = async (
+      args: string[],
+      options?: { timeoutMs: number },
+    ): Promise<{ stdout: string; stderr: string }> => {
+      timeouts.push(options?.timeoutMs ?? 0);
+      return {
+        stdout: (args.at(-1) ?? "").includes("integrity_check") ? "ok\n" : "",
+        stderr: "",
+      };
+    };
+
+    await vacuumCodexDatabaseInto("/fixture/state_5.sqlite", "/fixture/output.sqlite", {
+      runSqlite,
+    });
+    await verifyCodexDatabaseIntegrity("/fixture/output.sqlite", { runSqlite });
+
+    expect(timeouts).toEqual([2 * 60 * 60_000, 2 * 60 * 60_000, 30 * 60_000]);
   });
 
   it("parses exact database descriptors and Codex owner processes", async () => {

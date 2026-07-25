@@ -124,11 +124,12 @@ export async function revalidateDatabaseVacuum(
     const availableBytes = await (dependencies.availableBytes ?? defaultAvailableBytes)(
       dirname(expectedPath),
     );
-    if (availableBytes < action.target.measuredBytes + 64 * 1024 * 1024) {
+    const requiredBytes = action.target.measuredBytes * 2 + 64 * 1024 * 1024;
+    if (availableBytes < requiredBytes) {
       return stale(
         action,
         "DATABASE_SPACE_INSUFFICIENT",
-        "The database filesystem lacks space for a compacted copy and safety margin.",
+        "The database filesystem lacks peak space for compaction, normalization, and a safety margin.",
       );
     }
     return { status: "eligible" };

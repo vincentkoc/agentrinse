@@ -163,6 +163,10 @@ agentrinse purge --expired
 agentrinse purge --expired --apply --yes
 ```
 
+apply reports zero reclaimed bytes while the original remains retained. run
+journals record `retainedBackupBytes`; purge reports bytes only when that
+rollback set is actually deleted.
+
 ## commands
 
 | Command                                   | Purpose                                                   | Mutation              |

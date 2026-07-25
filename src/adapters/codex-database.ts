@@ -16,6 +16,9 @@ import { sha256, sha256Json } from "../core/digest.js";
 
 const execFileAsync = promisify(execFile);
 const SQLITE_SEPARATOR = "\u001f";
+const SQLITE_INSPECTION_TIMEOUT_MS = 30_000;
+const SQLITE_INTEGRITY_TIMEOUT_MS = 30 * 60_000;
+const SQLITE_MAINTENANCE_TIMEOUT_MS = 2 * 60 * 60_000;
 
 export type CodexDatabaseContract = {
   database: CodexDatabaseName;
@@ -56,8 +59,12 @@ export type CommandResult = {
   stderr: string;
 };
 
+export type SqliteRunOptions = {
+  timeoutMs: number;
+};
+
 export type CodexDatabaseDependencies = {
-  runSqlite?: (args: string[]) => Promise<CommandResult>;
+  runSqlite?: (args: string[], options?: SqliteRunOptions) => Promise<CommandResult>;
   runLsof?: (paths: string[]) => Promise<CommandResult>;
   runPs?: () => Promise<CommandResult>;
 };
@@ -95,11 +102,14 @@ function commandError(error: unknown): CommandResult & { code?: string | number 
   };
 }
 
-async function defaultSqliteRunner(args: string[]): Promise<CommandResult> {
+async function defaultSqliteRunner(
+  args: string[],
+  options: SqliteRunOptions = { timeoutMs: SQLITE_INSPECTION_TIMEOUT_MS },
+): Promise<CommandResult> {
   const result = await execFileAsync("sqlite3", args, {
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
-    timeout: 30_000,
+    timeout: options.timeoutMs,
   });
   return { stdout: result.stdout, stderr: result.stderr };
 }
@@ -108,18 +118,22 @@ async function querySqlite(
   path: string,
   sql: string,
   dependencies: CodexDatabaseDependencies,
+  timeoutMs = SQLITE_INSPECTION_TIMEOUT_MS,
 ): Promise<string[]> {
-  const result = await (dependencies.runSqlite ?? defaultSqliteRunner)([
-    "-batch",
-    "-readonly",
-    "-noheader",
-    "-separator",
-    SQLITE_SEPARATOR,
-    "-cmd",
-    ".timeout 1000",
-    `${pathToFileURL(path).href}?immutable=1`,
-    sql,
-  ]);
+  const result = await (dependencies.runSqlite ?? defaultSqliteRunner)(
+    [
+      "-batch",
+      "-readonly",
+      "-noheader",
+      "-separator",
+      SQLITE_SEPARATOR,
+      "-cmd",
+      ".timeout 1000",
+      `${pathToFileURL(path).href}?immutable=1`,
+      sql,
+    ],
+    { timeoutMs },
+  );
   if (result.stderr.trim() !== "") {
     throw new Error(`sqlite3 could not inspect ${path}: ${result.stderr.trim()}`);
   }
@@ -320,24 +334,30 @@ export async function vacuumCodexDatabaseInto(
   destinationPath: string,
   dependencies: CodexDatabaseDependencies = {},
 ): Promise<void> {
-  const result = await (dependencies.runSqlite ?? defaultSqliteRunner)([
-    "-batch",
-    "-readonly",
-    "-cmd",
-    ".timeout 1000",
-    `${pathToFileURL(sourcePath).href}?immutable=1`,
-    `VACUUM INTO ${sqliteString(destinationPath)};`,
-  ]);
+  const result = await (dependencies.runSqlite ?? defaultSqliteRunner)(
+    [
+      "-batch",
+      "-readonly",
+      "-cmd",
+      ".timeout 1000",
+      `${pathToFileURL(sourcePath).href}?immutable=1`,
+      `VACUUM INTO ${sqliteString(destinationPath)};`,
+    ],
+    { timeoutMs: SQLITE_MAINTENANCE_TIMEOUT_MS },
+  );
   if (result.stderr.trim() !== "") {
     throw new Error(`sqlite3 VACUUM INTO failed: ${result.stderr.trim()}`);
   }
-  const normalize = await (dependencies.runSqlite ?? defaultSqliteRunner)([
-    "-batch",
-    "-cmd",
-    ".timeout 1000",
-    destinationPath,
-    "PRAGMA synchronous=FULL; PRAGMA auto_vacuum=INCREMENTAL; VACUUM; PRAGMA journal_mode=WAL;",
-  ]);
+  const normalize = await (dependencies.runSqlite ?? defaultSqliteRunner)(
+    [
+      "-batch",
+      "-cmd",
+      ".timeout 1000",
+      destinationPath,
+      "PRAGMA synchronous=FULL; PRAGMA auto_vacuum=INCREMENTAL; VACUUM; PRAGMA journal_mode=WAL;",
+    ],
+    { timeoutMs: SQLITE_MAINTENANCE_TIMEOUT_MS },
+  );
   if (normalize.stderr.trim() !== "") {
     throw new Error(
       `sqlite3 could not enable incremental auto-vacuum on the compacted copy: ${normalize.stderr.trim()}`,
@@ -349,7 +369,12 @@ export async function verifyCodexDatabaseIntegrity(
   path: string,
   dependencies: CodexDatabaseDependencies = {},
 ): Promise<void> {
-  const result = await querySqlite(path, "PRAGMA integrity_check;", dependencies);
+  const result = await querySqlite(
+    path,
+    "PRAGMA integrity_check;",
+    dependencies,
+    SQLITE_INTEGRITY_TIMEOUT_MS,
+  );
   if (result.length !== 1 || result[0] !== "ok") {
     throw new Error(`Codex database integrity check failed: ${result.join("; ")}`);
   }

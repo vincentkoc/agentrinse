@@ -41,6 +41,7 @@ export const databaseActionExecutionSchema = actionExecutionBaseSchema.extend({
   backupPath: z.string().min(1).optional(),
   originalBytes: z.number().int().nonnegative().optional(),
   compactedBytes: z.number().int().nonnegative().optional(),
+  retainedBackupBytes: z.number().int().nonnegative().optional(),
 });
 
 export const actionExecutionSchema = z.discriminatedUnion("type", [

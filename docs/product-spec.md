@@ -1844,6 +1844,13 @@ unchanged. Once Codex writes the compacted database, automatic rollback is
 refused to avoid discarding new state. Expired originals can be purged only
 while Codex is offline and after full integrity checks of both copies.
 
+Revalidation reserves free space for two source-sized temporary copies plus a
+64 MiB margin because incremental auto-vacuum normalization performs a second
+vacuum. Maintenance subprocesses have two-hour operation timeouts; full
+integrity checks have 30-minute timeouts. Apply reports zero reclaimed bytes
+while the original is retained and records the rollback set as
+`retainedBackupBytes`; purge reports bytes when it actually deletes that set.
+
 ## Claude Adapter
 
 ### Ownership boundary

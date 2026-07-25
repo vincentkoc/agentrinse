@@ -167,7 +167,12 @@ describe("database vacuum execution and recovery", () => {
     expect((await inspectCodexDatabase(originalPath)).identity.fingerprint).toBe(
       before.identity.fingerprint,
     );
-    expect(result.reclaimedBytes).toBeGreaterThan(0);
+    expect(result.reclaimedBytes).toBe(0);
+    expect(result.retainedBackupBytes).toBe(
+      before.identity.measuredBytes +
+        (before.identity.wal?.measuredBytes ?? 0) +
+        (before.identity.shm?.measuredBytes ?? 0),
+    );
   });
 
   it("retains the original, installs the compacted copy, and restores through undo", async () => {
@@ -185,7 +190,8 @@ describe("database vacuum execution and recovery", () => {
 
     expect(await readFile(originalPath, "utf8")).toBe("compacted");
     expect(await readFile(result.backupPath, "utf8")).toBe("original");
-    expect(result.reclaimedBytes).toBe(768);
+    expect(result.reclaimedBytes).toBe(0);
+    expect(result.retainedBackupBytes).toBe(action(originalPath).target.measuredBytes);
     const manifestPath = join(backupDirectory, "entry-1.json");
     const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
     expect(manifest.status).toBe("installed");
