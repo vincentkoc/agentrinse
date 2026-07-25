@@ -61,7 +61,9 @@ and atomically exchanges them before removing the displaced compacted copy.
 Once Codex reopens and writes the database, automatic rollback is refused.
 Expired original files are purged only after both copies pass full integrity
 checks and the same sealed exclusion boundary revalidates the canonical
-database, sidecars, and offline owner state.
+database, sidecars, and offline owner state. Normal post-vacuum writes disable
+automatic undo but do not block purge while the canonical database still
+matches the pinned Codex schema contract.
 
 ## Recoverable Worktree Boundary
 

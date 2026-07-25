@@ -3388,7 +3388,9 @@ Any upstream drift returns the database to protected report-only state.
 
 The original file is retained for seven days. Undo requires an unchanged
 compacted identity, while purge requires Codex offline plus full integrity
-checks. Claude, Cursor, OpenCode, Zed, and all other provider databases remain
+checks and the current pinned schema contract. Normal Codex writes disable
+automatic undo without preventing later purge of the retained original.
+Claude, Cursor, OpenCode, Zed, and all other provider databases remain
 report-only.
 
 ## Specification Maintenance
