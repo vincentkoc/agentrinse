@@ -26,8 +26,9 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
-- Claude discovery now honors an absolute `CLAUDE_CONFIG_DIR` when no explicit
-  adapter root is configured and fails closed on relative values
+- Claude discovery and provider-file authorization now share explicit root,
+  absolute `CLAUDE_CONFIG_DIR`, and `$HOME/.claude` precedence and fail closed
+  on relative environment values
 
 ### Safety
 
