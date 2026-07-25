@@ -5,11 +5,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { ProviderAuditAdapter } from "../../src/adapters/provider-adapter.js";
+import { CODEX_DATABASE_CONTRACTS } from "../../src/adapters/codex-database.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 import type { DatabaseIdentity } from "../../src/contracts/action.js";
 
 function databaseIdentity(path: string): DatabaseIdentity {
+  const contract = CODEX_DATABASE_CONTRACTS["state_5.sqlite"];
   return {
     path,
     database: "state",
@@ -25,8 +27,9 @@ function databaseIdentity(path: string): DatabaseIdentity {
     journalMode: "wal",
     autoVacuum: 0,
     migrationVersion: 39,
+    migrationDigest: contract.migrationDigest,
     tables: ["_sqlx_migrations", "threads"],
-    schemaDigest: "a".repeat(64),
+    schemaDigest: contract.schemaDigest,
     fingerprint: "b".repeat(64),
   };
 }
@@ -181,6 +184,42 @@ describe("ProviderAuditAdapter", () => {
     expect(database?.measuredBytes).toBe("synthetic".length);
     expect(database?.facts.reportOnly).toBe(true);
     expect(collection.diagnostics).toEqual([]);
+  });
+
+  it("protects a Codex database when the reviewed schema digest changes", async () => {
+    const context = await fixtureContext();
+    const path = join(context.home, ".codex", "state_5.sqlite");
+    await mkdir(join(context.home, ".codex"), { recursive: true });
+    await writeFile(path, "synthetic");
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.codex, {
+      measureBytes: true,
+      maxEntries: 100,
+      allowOfflineVacuum: true,
+      inspectDatabase: async () => ({
+        identity: {
+          ...databaseIdentity(path),
+          schemaDigest: "f".repeat(64),
+        },
+        estimatedReclaimBytes: 768 * 1024 * 1024,
+        freePageRatio: 0.75,
+        quickCheck: "ok",
+        walBytes: 0,
+        shmBytes: 0,
+        sidecarsPresent: false,
+      }),
+      databaseDependencies: {
+        runLsof: async () => ({ stdout: "", stderr: "" }),
+        runPs: async () => ({ stdout: "", stderr: "" }),
+      },
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("protected");
+    expect(finding.candidateActions).toEqual([]);
+    expect(finding.roots.map((root) => root.code)).toContain("unsupported-database-contract");
   });
 
   it.each(["codex", "claude", "cursor", "copilot", "zed", "opencode", "grok"] as const)(

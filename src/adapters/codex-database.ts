@@ -24,6 +24,8 @@ export type CodexDatabaseContract = {
   database: CodexDatabaseName;
   filename: CodexDatabaseFilename;
   migrationVersion: number;
+  migrationDigest: string;
+  schemaDigest: string;
   requiredTables: string[];
 };
 
@@ -32,24 +34,32 @@ export const CODEX_DATABASE_CONTRACTS: Record<CodexDatabaseFilename, CodexDataba
     database: "state",
     filename: "state_5.sqlite",
     migrationVersion: 39,
+    migrationDigest: "e58f1d744ab8979fe6b48ae235fcc18474f72979523d90e8b8104555a05d9a7c",
+    schemaDigest: "0ccab9d0c01ff5f9d3ea65c477892611176d9c8b707d2245c08646da13fc09a0",
     requiredTables: ["_sqlx_migrations", "threads"],
   },
   "logs_2.sqlite": {
     database: "logs",
     filename: "logs_2.sqlite",
     migrationVersion: 2,
+    migrationDigest: "c05a0bee9a9eb893e6d79f9b173fdd3de36f0233f60410dbce924a4080f7be40",
+    schemaDigest: "7dbaeea373d1b81fe583529e6efaa18345c20e4e4639702bf3c2d54f82883874",
     requiredTables: ["_sqlx_migrations", "logs"],
   },
   "goals_1.sqlite": {
     database: "goals",
     filename: "goals_1.sqlite",
     migrationVersion: 1,
+    migrationDigest: "8ce3d311cf69af8f56b0722d617df5552b8ef863a4f60bfe5ba3bf76e30c8f05",
+    schemaDigest: "1e4b7b279b41ddb11bfd6162ea6c1258f42f07a24e9bb4ca8b0148bfa865e8c0",
     requiredTables: ["_sqlx_migrations", "thread_goals"],
   },
   "memories_1.sqlite": {
     database: "memories",
     filename: "memories_1.sqlite",
     migrationVersion: 1,
+    migrationDigest: "580d14eff9340381a3e5ccd7db0156a91649f7466e8e697a2d5d3098bdef1930",
+    schemaDigest: "90be68fa20a2cce1a3cb9eff8058d752eaca624a07ab0a17c1244f4b0b6eed8b",
     requiredTables: ["_sqlx_migrations", "jobs", "stage1_outputs"],
   },
 };
@@ -235,7 +245,7 @@ export async function inspectCodexDatabase(
     "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name;",
     dependencies,
   );
-  const migrationVersion = tables.includes("_sqlx_migrations")
+  const migrationRows = tables.includes("_sqlx_migrations")
     ? await (async () => {
         const failedMigrations = parseInteger(
           (
@@ -250,18 +260,18 @@ export async function inspectCodexDatabase(
         if (failedMigrations !== 0) {
           throw new Error(`Codex database contains ${failedMigrations} failed SQLx migration(s)`);
         }
-        return parseInteger(
-          (
-            await querySqlite(
-              path,
-              "SELECT coalesce(max(version), 0) FROM _sqlx_migrations;",
-              dependencies,
-            )
-          )[0],
-          "migration version",
+        return querySqlite(
+          path,
+          "SELECT version, description, lower(hex(checksum)) FROM _sqlx_migrations ORDER BY version;",
+          dependencies,
         );
       })()
-    : 0;
+    : [];
+  const migrationVersion =
+    migrationRows.length === 0
+      ? 0
+      : parseInteger(migrationRows.at(-1)?.split(SQLITE_SEPARATOR)[0], "migration version");
+  const migrationDigest = sha256(migrationRows.join("\n"));
   const schemaRows = await querySqlite(
     path,
     "SELECT type, name, tbl_name, coalesce(sql, '') FROM sqlite_schema ORDER BY type, name;",
@@ -289,6 +299,7 @@ export async function inspectCodexDatabase(
     journalMode,
     autoVacuum,
     migrationVersion,
+    migrationDigest,
     tables,
     ...(wal === undefined ? {} : { wal }),
     ...(shm === undefined ? {} : { shm }),
@@ -308,6 +319,7 @@ export async function inspectCodexDatabase(
       journalMode,
       autoVacuum,
       migrationVersion,
+      migrationDigest,
       tables,
       wal,
       shm,
@@ -516,6 +528,8 @@ export function codexDatabaseContractMatches(identity: DatabaseIdentity): boolea
   return (
     identity.database === contract.database &&
     identity.migrationVersion === contract.migrationVersion &&
+    identity.migrationDigest === contract.migrationDigest &&
+    identity.schemaDigest === contract.schemaDigest &&
     contract.requiredTables.every((table) => identity.tables.includes(table))
   );
 }

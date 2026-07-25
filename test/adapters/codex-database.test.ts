@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  CODEX_DATABASE_CONTRACTS,
   codexDatabaseContractMatches,
   inspectCodexDatabase,
   inspectCodexProcesses,
@@ -37,8 +38,11 @@ describe("Codex database inspection", () => {
         if (sql.includes("success != 1")) {
           return { stdout: "0\n", stderr: "" };
         }
-        if (sql.includes("max(version)")) {
-          return { stdout: "39\n", stderr: "" };
+        if (sql.includes("lower(hex(checksum))")) {
+          return {
+            stdout: `39\u001fthreads recency at\u001f${"c".repeat(96)}\n`,
+            stderr: "",
+          };
         }
         return {
           stdout:
@@ -54,7 +58,14 @@ describe("Codex database inspection", () => {
     expect(inspection.identity.migrationVersion).toBe(39);
     expect(inspection.estimatedReclaimBytes).toBe(614_400_000);
     expect(inspection.freePageRatio).toBe(0.75);
-    expect(codexDatabaseContractMatches(inspection.identity)).toBe(true);
+    const contract = CODEX_DATABASE_CONTRACTS["state_5.sqlite"];
+    expect(
+      codexDatabaseContractMatches({
+        ...inspection.identity,
+        migrationDigest: contract.migrationDigest,
+        schemaDigest: contract.schemaDigest,
+      }),
+    ).toBe(true);
     expect(queries.join("\n")).not.toContain("SELECT *");
   });
 

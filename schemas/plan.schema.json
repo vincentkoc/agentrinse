@@ -377,6 +377,10 @@
                     "minimum": 0,
                     "maximum": 9007199254740991
                   },
+                  "migrationDigest": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
                   "tables": {
                     "type": "array",
                     "items": {
@@ -474,6 +478,7 @@
                   "journalMode",
                   "autoVacuum",
                   "migrationVersion",
+                  "migrationDigest",
                   "tables",
                   "schemaDigest",
                   "fingerprint"

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
+import { CODEX_DATABASE_CONTRACTS } from "../../src/adapters/codex-database.js";
 import type { DatabaseVacuumAction } from "../../src/contracts/action.js";
 import { revalidateDatabaseVacuum } from "../../src/core/database-revalidation.js";
 
@@ -15,6 +16,7 @@ describe("database vacuum revalidation", () => {
     const path = join(root, "state_5.sqlite");
     await mkdir(root);
     const measuredBytes = 1024 * 1024 * 1024;
+    const contract = CODEX_DATABASE_CONTRACTS["state_5.sqlite"];
     const action: DatabaseVacuumAction = {
       actionId: "database.vacuum:space",
       type: "database.vacuum",
@@ -39,8 +41,9 @@ describe("database vacuum revalidation", () => {
         journalMode: "wal",
         autoVacuum: 0,
         migrationVersion: 39,
+        migrationDigest: contract.migrationDigest,
         tables: ["_sqlx_migrations", "threads"],
-        schemaDigest: "a".repeat(64),
+        schemaDigest: contract.schemaDigest,
         fingerprint: "b".repeat(64),
       },
     };

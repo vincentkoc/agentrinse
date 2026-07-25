@@ -13,7 +13,7 @@ import {
   type DatabaseBackupEntry,
 } from "../contracts/database-backup.js";
 import type { DatabaseIdentity, DatabaseSidecarIdentity } from "../contracts/action.js";
-import { syncDirectory, writeJsonAtomic } from "../state/json-file.js";
+import { ensurePrivateDirectory, syncDirectory, writeJsonAtomic } from "../state/json-file.js";
 import { renameNoReplace } from "./no-clobber-rename.js";
 
 export type DatabaseRecoveryDependencies = CodexDatabaseDependencies & {
@@ -66,7 +66,8 @@ function assertRecoveryPaths(entry: DatabaseBackupEntry, options: DatabaseRecove
   );
   const expectedTemporaryPath = join(
     dirname(entry.originalPath),
-    `.${entry.target.filename}.${entry.entryId}.vacuum`,
+    `.${entry.target.filename}.${entry.entryId}.vacuum-work`,
+    entry.target.filename,
   );
   const expectedManifestPath = join(backupDirectory, `${entry.entryId}.json`);
   if (
@@ -148,6 +149,11 @@ async function restoreSidecars(
   }
 }
 
+async function removeTemporaryWorkspace(entry: DatabaseBackupEntry): Promise<void> {
+  await rm(dirname(entry.temporaryPath), { recursive: true, force: true });
+  await syncDirectory(dirname(entry.originalPath));
+}
+
 function movedSidecarMatches(
   actual: DatabaseSidecarIdentity | undefined,
   planned: DatabaseSidecarIdentity | undefined,
@@ -179,6 +185,7 @@ function movedOriginalMatches(actual: DatabaseIdentity, planned: DatabaseIdentit
     actual.journalMode === planned.journalMode &&
     actual.autoVacuum === planned.autoVacuum &&
     actual.migrationVersion === planned.migrationVersion &&
+    actual.migrationDigest === planned.migrationDigest &&
     actual.tables.join("\0") === planned.tables.join("\0") &&
     actual.schemaDigest === planned.schemaDigest &&
     movedSidecarMatches(actual.wal, planned.wal) &&
@@ -224,10 +231,7 @@ async function completeRestoredOriginal(
   if (restored.identity.fingerprint !== entry.target.fingerprint) {
     throw new Error("restored database identity does not match the planned original");
   }
-  if (await pathExists(entry.temporaryPath)) {
-    await rm(entry.temporaryPath);
-    await syncDirectory(dirname(entry.originalPath));
-  }
+  await removeTemporaryWorkspace(entry);
   return markRestored(options, entry, clock);
 }
 
@@ -271,8 +275,7 @@ export async function undoDatabaseVacuum(
     }
     await restoreSidecars(entry, rename);
     if (temporaryExists) {
-      await rm(entry.temporaryPath);
-      await syncDirectory(dirname(entry.originalPath));
+      await removeTemporaryWorkspace(entry);
     }
     return markRestored(options, entry, clock);
   }
@@ -281,8 +284,7 @@ export async function undoDatabaseVacuum(
     if (originalExists && !backupExists) {
       await restoreSidecars(entry, rename);
       if (temporaryExists) {
-        await rm(entry.temporaryPath);
-        await syncDirectory(dirname(entry.originalPath));
+        await removeTemporaryWorkspace(entry);
       }
       return markRestored(options, entry, clock);
     }
@@ -321,6 +323,7 @@ export async function undoDatabaseVacuum(
         );
       }
       entry = await persist(options, { ...entry, status: "restoring" });
+      await ensurePrivateDirectory(dirname(entry.temporaryPath));
       await rename(entry.originalPath, entry.temporaryPath);
       await syncDirectory(dirname(entry.originalPath));
       return restoreRetainedOriginal(entry, options, dependencies, inspect, rename, clock);
@@ -368,7 +371,19 @@ export async function undoDatabaseVacuum(
     );
   }
   await verifyRetainedOriginal(entry, dependencies, inspect);
+  await assertOffline(entry, dependencies);
+  const boundaryInstalled = await inspect(entry.originalPath, dependencies);
+  if (
+    entry.installedIdentity === undefined ||
+    boundaryInstalled.identity.fingerprint !== entry.installedIdentity.fingerprint ||
+    boundaryInstalled.sidecarsPresent
+  ) {
+    throw new Error(
+      "the compacted database changed before the restore boundary; automatic undo is no longer safe",
+    );
+  }
   entry = await persist(options, { ...entry, status: "restoring" });
+  await ensurePrivateDirectory(dirname(entry.temporaryPath));
   await rename(entry.originalPath, entry.temporaryPath);
   await syncDirectory(dirname(entry.originalPath));
   try {
@@ -379,7 +394,7 @@ export async function undoDatabaseVacuum(
       entry.originalPath,
       dependencies,
     );
-    await rm(entry.temporaryPath);
+    await removeTemporaryWorkspace(entry);
     return markRestored(options, entry, clock);
   } catch (error) {
     if (!(await pathExists(entry.originalPath)) && (await pathExists(entry.temporaryPath))) {

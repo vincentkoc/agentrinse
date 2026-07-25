@@ -1806,8 +1806,8 @@ Shipped experimentally in `0.4.0` for the current Codex database contracts:
   tables
 
 Every database also requires the SQLx migration table. Any filename,
-migration, or required-table drift blocks the action until the upstream
-contract is reviewed again.
+migration-ledger checksum, final schema digest, or required-table drift blocks
+the action until the upstream contract is reviewed again.
 
 Required preconditions:
 
@@ -1836,8 +1836,9 @@ product-grade implementation.
 compaction. A zero-length WAL and its SHM companion are identity-tracked and
 moved with the retained original rather than deleted. Apply uses a
 same-filesystem sibling output, sets incremental auto-vacuum on the compacted
-copy, fsyncs it, retains the exact original set under owner-only AgentRinse
-state, and installs with atomic no-replace renames.
+copy inside an owner-only temporary directory, fsyncs it, retains the exact
+original set under owner-only AgentRinse state, and installs with atomic
+no-replace renames.
 
 Undo is supported only while the installed compacted identity remains
 unchanged. Once Codex writes the compacted database, automatic rollback is

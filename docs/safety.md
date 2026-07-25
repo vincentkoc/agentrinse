@@ -41,9 +41,11 @@ The audit and apply boundaries require:
 - macOS or Linux with `sqlite3` and `lsof`
 
 Apply builds a sibling file with `VACUUM INTO`; it never runs in-place
-`VACUUM`. It verifies the full integrity check, schema digest, tables,
-migration version, and incremental auto-vacuum mode, fsyncs the file, then
-retains the original in AgentRinse state before installing the compacted copy.
+`VACUUM`. The output is created inside an owner-only temporary directory. It
+verifies the full integrity check, schema digest, complete SQLx
+migration/checksum ledger, tables, migration version, and incremental
+auto-vacuum mode, fsyncs the file, then retains the original in AgentRinse
+state before installing the compacted copy.
 
 Undo is available only while the installed compacted identity is unchanged.
 Once Codex reopens and writes the database, automatic rollback is refused.

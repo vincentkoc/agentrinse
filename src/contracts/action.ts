@@ -97,6 +97,7 @@ export const databaseIdentitySchema = z.object({
   journalMode: z.literal("wal"),
   autoVacuum: z.number().int().min(0).max(2),
   migrationVersion: z.number().int().nonnegative(),
+  migrationDigest: z.string().regex(/^[a-f0-9]{64}$/u),
   tables: z.array(z.string().min(1)),
   wal: databaseSidecarIdentitySchema.optional(),
   shm: databaseSidecarIdentitySchema.optional(),

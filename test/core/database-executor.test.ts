@@ -1,7 +1,7 @@
 import { execFile, execFileSync } from "node:child_process";
-import { lstat, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
@@ -39,6 +39,7 @@ function identity(path: string, content: "original" | "compacted"): DatabaseIden
     journalMode: "wal",
     autoVacuum: content === "original" ? 0 : 2,
     migrationVersion: 39,
+    migrationDigest: "e".repeat(64),
     tables: ["_sqlx_migrations", "threads"],
     schemaDigest: "a".repeat(64),
     fingerprint: (content === "original" ? "b" : "c").repeat(64),
@@ -126,8 +127,8 @@ describe("database vacuum execution and recovery", () => {
       originalPath,
       [
         "PRAGMA journal_mode=WAL;",
-        "CREATE TABLE _sqlx_migrations(version INTEGER NOT NULL, success INTEGER NOT NULL);",
-        "INSERT INTO _sqlx_migrations VALUES(39, 1);",
+        "CREATE TABLE _sqlx_migrations(version BIGINT PRIMARY KEY, description TEXT NOT NULL, installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, success BOOLEAN NOT NULL, checksum BLOB NOT NULL, execution_time BIGINT NOT NULL);",
+        "INSERT INTO _sqlx_migrations(version, description, success, checksum, execution_time) VALUES(39, 'threads recency at', 1, X'00', 0);",
         "CREATE TABLE threads(id INTEGER PRIMARY KEY, payload BLOB);",
         "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<1024)",
         "INSERT INTO threads(payload) SELECT zeroblob(4096) FROM n;",
@@ -205,6 +206,29 @@ describe("database vacuum execution and recovery", () => {
     expect(restored.status).toBe("restored");
     expect(await readFile(originalPath, "utf8")).toBe("original");
     await expect(lstat(result.backupPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("creates the vacuum output inside an owner-only temporary directory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-private-temp-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    let temporaryMode: number | undefined;
+
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-private-temp",
+      entryId: "entry-private-temp",
+      backupDirectory,
+      dependencies: {
+        ...dependencies(),
+        async vacuumInto(_source, destination) {
+          temporaryMode = (await lstat(dirname(destination))).mode & 0o777;
+          await writeFile(destination, "compacted");
+        },
+      },
+    });
+
+    expect(temporaryMode).toBe(0o700);
   });
 
   it("resumes an interrupted sidecar restore without losing either database", async () => {
@@ -450,6 +474,7 @@ describe("database vacuum execution and recovery", () => {
     });
     const manifestPath = join(backupDirectory, "entry-vacuumed.json");
     const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    await mkdir(dirname(manifest.temporaryPath));
     await rename(originalPath, manifest.temporaryPath);
 
     const restored = await undoDatabaseVacuum(
@@ -586,6 +611,38 @@ describe("database vacuum execution and recovery", () => {
         dependencies: dependencies(),
       }),
     ).rejects.toThrow("changed after installation");
+  });
+
+  it("rechecks Codex ownership immediately before the undo rename", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-undo-boundary-"));
+    const originalPath = join(root, "state_5.sqlite");
+    const backupDirectory = join(root, "backups");
+    await writeFile(originalPath, "original");
+    await executeDatabaseVacuum(action(originalPath), {
+      runId: "run-undo-boundary",
+      entryId: "entry-undo-boundary",
+      backupDirectory,
+      dependencies: dependencies(),
+    });
+    const manifestPath = join(backupDirectory, "entry-undo-boundary.json");
+    const manifest = databaseBackupEntrySchema.parse(await readJsonFile(manifestPath));
+    let processChecks = 0;
+
+    await expect(
+      undoDatabaseVacuum(manifest, {
+        manifestPath,
+        backupDirectory,
+        dependencies: {
+          ...dependencies(),
+          inspectProcesses: async () =>
+            processChecks++ === 0
+              ? { status: "idle" as const, pids: [] as [] }
+              : { status: "busy" as const, pids: [42] },
+        },
+      }),
+    ).rejects.toThrow("Codex is running");
+    expect(await readFile(originalPath, "utf8")).toBe("compacted");
+    expect(await readFile(manifest.backupPath, "utf8")).toBe("original");
   });
 
   it("purges an expired rollback copy only while Codex is offline", async () => {

@@ -162,10 +162,11 @@ export async function executeDatabaseVacuum(
   );
   const backupWalPath = action.target.wal === undefined ? undefined : `${backupPath}-wal`;
   const backupShmPath = action.target.shm === undefined ? undefined : `${backupPath}-shm`;
-  const temporaryPath = join(
+  const temporaryDirectory = join(
     originalDirectory,
-    `.${action.target.filename}.${options.entryId}.vacuum`,
+    `.${action.target.filename}.${options.entryId}.vacuum-work`,
   );
+  const temporaryPath = join(temporaryDirectory, action.target.filename);
   const manifestPath = join(options.backupDirectory, `${options.entryId}.json`);
   await ensurePrivateDirectory(options.backupDirectory);
   const backupDirectoryStats = await lstat(options.backupDirectory);
@@ -181,7 +182,7 @@ export async function executeDatabaseVacuum(
     (await pathExists(backupPath)) ||
     (backupWalPath !== undefined && (await pathExists(backupWalPath))) ||
     (backupShmPath !== undefined && (await pathExists(backupShmPath))) ||
-    (await pathExists(temporaryPath)) ||
+    (await pathExists(temporaryDirectory)) ||
     (await pathExists(manifestPath))
   ) {
     throw new DatabaseExecutionError(
@@ -190,27 +191,35 @@ export async function executeDatabaseVacuum(
       "DATABASE_DESTINATION_OCCUPIED",
     );
   }
+  await ensurePrivateDirectory(temporaryDirectory);
 
-  let entry = await persist(
-    manifestPath,
-    {
-      schemaVersion: 1,
-      entryId: options.entryId,
-      runId: options.runId,
-      actionId: action.actionId,
-      resourceId: action.resourceId,
-      status: "preparing",
-      originalPath: action.target.path,
-      backupPath,
-      ...(backupWalPath === undefined ? {} : { backupWalPath }),
-      ...(backupShmPath === undefined ? {} : { backupShmPath }),
-      temporaryPath,
-      createdAt: clock().toISOString(),
-      expiresAt: new Date(clock().getTime() + action.backupTtlMinutes * 60_000).toISOString(),
-      target: action.target,
-    },
-    options.backupDirectory,
-  );
+  let entry: DatabaseBackupEntry;
+  try {
+    entry = await persist(
+      manifestPath,
+      {
+        schemaVersion: 1,
+        entryId: options.entryId,
+        runId: options.runId,
+        actionId: action.actionId,
+        resourceId: action.resourceId,
+        status: "preparing",
+        originalPath: action.target.path,
+        backupPath,
+        ...(backupWalPath === undefined ? {} : { backupWalPath }),
+        ...(backupShmPath === undefined ? {} : { backupShmPath }),
+        temporaryPath,
+        createdAt: clock().toISOString(),
+        expiresAt: new Date(clock().getTime() + action.backupTtlMinutes * 60_000).toISOString(),
+        target: action.target,
+      },
+      options.backupDirectory,
+    );
+  } catch (error) {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+    await syncDirectory(originalDirectory);
+    throw error;
+  }
 
   try {
     await assertOffline(action.target.path, dependencies);
@@ -234,6 +243,7 @@ export async function executeDatabaseVacuum(
     if (
       compacted.identity.schemaDigest !== action.target.schemaDigest ||
       compacted.identity.migrationVersion !== action.target.migrationVersion ||
+      compacted.identity.migrationDigest !== action.target.migrationDigest ||
       compacted.identity.tables.join("\0") !== action.target.tables.join("\0") ||
       compacted.identity.autoVacuum !== 2 ||
       compacted.sidecarsPresent
@@ -317,6 +327,8 @@ export async function executeDatabaseVacuum(
       if (installed.identity.fingerprint !== entry.installedIdentity?.fingerprint) {
         throw new Error("installed database identity changed during the atomic swap");
       }
+      await rm(temporaryDirectory, { recursive: true, force: true });
+      await syncDirectory(originalDirectory);
       entry = await persist(
         manifestPath,
         {
@@ -364,7 +376,7 @@ export async function executeDatabaseVacuum(
         if (restored.identity.fingerprint !== action.target.fingerprint) {
           throw new Error("restored database identity does not match the planned original");
         }
-        await rm(temporaryPath, { force: true });
+        await rm(temporaryDirectory, { recursive: true, force: true });
         await syncDirectory(originalDirectory);
         entry = await persist(
           manifestPath,
@@ -424,7 +436,7 @@ export async function executeDatabaseVacuum(
       const sourceExists = await pathExists(action.target.path).catch(() => false);
       const backupExists = await pathExists(backupPath).catch(() => false);
       if (error.outcome === "skipped-stale" && sourceExists && !backupExists) {
-        await rm(temporaryPath, { force: true });
+        await rm(temporaryDirectory, { recursive: true, force: true });
         await syncDirectory(originalDirectory);
         entry = await persist(
           manifestPath,
