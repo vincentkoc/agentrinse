@@ -435,6 +435,40 @@ describe("purge command", () => {
     expect(result.reclaimedBytes).toBe(64);
   });
 
+  it("routes partial provider-file payloads through purge reconciliation", async () => {
+    const fixture = await stateFixture([]);
+    const layout = stateLayout(fixture.stateRoot);
+    const value = providerFileEntry(
+      layout.providerQuarantine,
+      "2026-08-01T00:00:00.000Z",
+      "partial",
+    );
+    await writeJsonAtomic(join(layout.providerQuarantine, `${value.entryId}.json`), value, {
+      privateDirectories: [layout.providerQuarantine],
+    });
+    const purgeProviderFile = vi.fn(async (candidate: ProviderFileQuarantineEntry) => ({
+      entry: {
+        ...candidate,
+        status: "purged" as const,
+        purgedAt: "2026-07-25T01:00:00.000Z",
+      },
+      reclaimedBytes: candidate.target.measuredBytes,
+    }));
+
+    await executePurgeCommand({
+      home: fixture.home,
+      stateDir: fixture.stateRoot,
+      expired: false,
+      runId: value.runId,
+      apply: true,
+      yes: true,
+      json: false,
+      dependencies: { purgeProviderFile },
+    });
+
+    expect(purgeProviderFile).toHaveBeenCalledWith(value, expect.any(Object));
+  });
+
   it("retains fresh database rollback copies even for an explicit run purge", async () => {
     const fixture = await stateFixture([]);
     const layout = stateLayout(fixture.stateRoot);

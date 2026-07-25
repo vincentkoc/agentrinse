@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 import type { ProviderFileIdentity, ProviderMutationId } from "../contracts/action.js";
 import { sha256Json } from "./digest.js";
@@ -17,6 +17,22 @@ async function hashFile(path: string): Promise<string> {
     hash.update(chunk);
   }
   return hash.digest("hex");
+}
+
+async function assertNoSymlinkBelowRoot(path: string, ownerRoot: string): Promise<void> {
+  const lexicalRoot = resolve(ownerRoot);
+  const lexicalPath = resolve(path);
+  if (!inside(lexicalRoot, lexicalPath)) {
+    throw new Error(`provider file is outside its owner root: ${path}`);
+  }
+  const components = relative(lexicalRoot, lexicalPath).split(/[\\/]/u);
+  let cursor = lexicalRoot;
+  for (const component of components) {
+    cursor = join(cursor, component);
+    if ((await lstat(cursor)).isSymbolicLink()) {
+      throw new Error(`provider cleanup path contains a symlink: ${cursor}`);
+    }
+  }
 }
 
 function stableFileStats(
@@ -37,6 +53,7 @@ export async function inspectProviderFile(
   ownerRoot: string,
   provider: ProviderMutationId,
 ): Promise<ProviderFileIdentity> {
+  await assertNoSymlinkBelowRoot(path, ownerRoot);
   const [physicalRoot, physicalPath] = await Promise.all([
     realpath(resolve(ownerRoot)),
     realpath(resolve(path)),

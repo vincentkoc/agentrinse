@@ -83,7 +83,7 @@ function movedIdentityMatches(
     actual.provider === expected.provider &&
     actual.device === expected.device &&
     actual.inode === expected.inode &&
-    actual.mode === expected.mode &&
+    (actual.mode === expected.mode || actual.mode === (expected.mode & ~0o222)) &&
     actual.mtimeMs === expected.mtimeMs &&
     actual.measuredBytes === expected.measuredBytes &&
     actual.contentSha256 === expected.contentSha256

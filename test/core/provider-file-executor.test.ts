@@ -189,6 +189,7 @@ describe("provider-file quarantine execution and recovery", () => {
     await writeJsonAtomic(manifestPath, entry, {
       privateDirectories: [selected.quarantineDirectory],
     });
+    await chmod(selected.action.target.path, selected.action.target.mode & ~0o222);
     await rename(selected.action.target.path, quarantinePath);
 
     const restored = await undoProviderFileQuarantine(entry, {
@@ -209,8 +210,21 @@ describe("provider-file quarantine execution and recovery", () => {
     await symlink(external, linked);
 
     await expect(inspectProviderFile(linked, selected.ownerRoot, "claude")).rejects.toThrow(
-      "outside its owner root",
+      "contains a symlink",
     );
+  });
+
+  it("never follows an internal symlink to neighboring provider state", async () => {
+    const selected = await fixture();
+    const config = join(selected.ownerRoot, "config.json");
+    await writeFile(config, '{"token":"synthetic"}\n');
+    const linked = join(selected.ownerRoot, "debug", "redirected.txt");
+    await symlink(config, linked);
+
+    await expect(inspectProviderFile(linked, selected.ownerRoot, "claude")).rejects.toThrow(
+      "contains a symlink",
+    );
+    await expect(readFile(config, "utf8")).resolves.toBe('{"token":"synthetic"}\n');
   });
 
   it("refuses purge while the payload has an open descriptor", async () => {
