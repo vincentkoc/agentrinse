@@ -11,8 +11,9 @@ The project follows semantic versioning after its first supported release.
 - recoverable `provider.file-quarantine` execution, undo, purge, run-journal,
   manifest, and JSON Schema contracts for exact provider-owned regular files
 - streamed content identity, provider-process and descriptor refusal,
-  same-filesystem atomic moves, crash reconciliation, and permission
-  preservation for provider-file recovery
+  single-link inode enforcement, same-filesystem atomic moves, unexpected-inode
+  rollback, crash reconciliation, and permission preservation for
+  provider-file recovery
 
 ### Safety
 

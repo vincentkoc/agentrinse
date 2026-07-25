@@ -743,6 +743,10 @@
                           "minimum": 0,
                           "maximum": 9007199254740991
                         },
+                        "linkCount": {
+                          "type": "number",
+                          "const": 1
+                        },
                         "mode": {
                           "type": "integer",
                           "minimum": 0,
@@ -772,6 +776,7 @@
                         "provider",
                         "device",
                         "inode",
+                        "linkCount",
                         "mode",
                         "mtimeMs",
                         "measuredBytes",

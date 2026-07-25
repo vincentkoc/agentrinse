@@ -1,209 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "schemaVersion": {
-      "type": "number",
-      "const": 1
-    },
-    "entryId": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-    },
-    "runId": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
-    },
-    "actionId": {
-      "type": "string",
-      "minLength": 1
-    },
-    "resourceId": {
-      "type": "string",
-      "minLength": 1
-    },
-    "policyId": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9.-]*$"
-    },
-    "status": {
-      "type": "string",
-      "enum": ["preparing", "quarantined", "restoring", "restored", "purging", "purged", "partial"]
-    },
-    "originalPath": {
-      "type": "string",
-      "minLength": 1
-    },
-    "quarantinePath": {
-      "type": "string",
-      "minLength": 1
-    },
-    "createdAt": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-    },
-    "expiresAt": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-    },
-    "target": {
+  "allOf": [
+    {
       "type": "object",
       "properties": {
-        "path": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "entryId": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         },
-        "ownerRoot": {
+        "runId": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
         },
-        "relativePath": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider": {
-          "type": "string",
-          "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
-        },
-        "device": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "inode": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "mode": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "mtimeMs": {
-          "type": "number"
-        },
-        "measuredBytes": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "contentSha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "fingerprint": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        }
-      },
-      "required": [
-        "path",
-        "ownerRoot",
-        "relativePath",
-        "provider",
-        "device",
-        "inode",
-        "mode",
-        "mtimeMs",
-        "measuredBytes",
-        "contentSha256",
-        "fingerprint"
-      ]
-    },
-    "quarantineIdentity": {
-      "type": "object",
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1
-        },
-        "ownerRoot": {
-          "type": "string",
-          "minLength": 1
-        },
-        "relativePath": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider": {
-          "type": "string",
-          "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
-        },
-        "device": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "inode": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "mode": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "mtimeMs": {
-          "type": "number"
-        },
-        "measuredBytes": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        "contentSha256": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "fingerprint": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        }
-      },
-      "required": [
-        "path",
-        "ownerRoot",
-        "relativePath",
-        "provider",
-        "device",
-        "inode",
-        "mode",
-        "mtimeMs",
-        "measuredBytes",
-        "contentSha256",
-        "fingerprint"
-      ]
-    },
-    "restoredAt": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-    },
-    "purgedAt": {
-      "type": "string",
-      "format": "date-time",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-    },
-    "diagnostic": {
-      "type": "object",
-      "properties": {
-        "severity": {
-          "type": "string",
-          "enum": ["info", "warning", "error"]
-        },
-        "code": {
-          "type": "string",
-          "minLength": 1
-        },
-        "message": {
-          "type": "string",
-          "minLength": 1
-        },
-        "adapter": {
+        "actionId": {
           "type": "string",
           "minLength": 1
         },
@@ -211,27 +24,717 @@
           "type": "string",
           "minLength": 1
         },
-        "remediation": {
+        "policyId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*$"
+        },
+        "originalPath": {
           "type": "string",
           "minLength": 1
+        },
+        "quarantinePath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "ownerRoot": {
+              "type": "string",
+              "minLength": 1
+            },
+            "relativePath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "provider": {
+              "type": "string",
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+            },
+            "device": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "inode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "linkCount": {
+              "type": "number",
+              "const": 1
+            },
+            "mode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "mtimeMs": {
+              "type": "number"
+            },
+            "measuredBytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "contentSha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "ownerRoot",
+            "relativePath",
+            "provider",
+            "device",
+            "inode",
+            "linkCount",
+            "mode",
+            "mtimeMs",
+            "measuredBytes",
+            "contentSha256",
+            "fingerprint"
+          ]
+        },
+        "restoredAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "purgedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+        },
+        "diagnostic": {
+          "type": "object",
+          "properties": {
+            "severity": {
+              "type": "string",
+              "enum": ["info", "warning", "error"]
+            },
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "adapter": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "remediation": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": ["severity", "code", "message"]
         }
       },
-      "required": ["severity", "code", "message"]
+      "required": [
+        "schemaVersion",
+        "entryId",
+        "runId",
+        "actionId",
+        "resourceId",
+        "policyId",
+        "originalPath",
+        "quarantinePath",
+        "createdAt",
+        "expiresAt",
+        "target"
+      ]
+    },
+    {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "preparing"
+            },
+            "quarantineIdentity": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownerRoot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "linkCount": {
+                  "type": "number",
+                  "const": 1
+                },
+                "mode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "mtimeMs": {
+                  "type": "number"
+                },
+                "measuredBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "ownerRoot",
+                "relativePath",
+                "provider",
+                "device",
+                "inode",
+                "linkCount",
+                "mode",
+                "mtimeMs",
+                "measuredBytes",
+                "contentSha256",
+                "fingerprint"
+              ]
+            }
+          },
+          "required": ["status"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "quarantined"
+            },
+            "quarantineIdentity": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownerRoot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "linkCount": {
+                  "type": "number",
+                  "const": 1
+                },
+                "mode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "mtimeMs": {
+                  "type": "number"
+                },
+                "measuredBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "ownerRoot",
+                "relativePath",
+                "provider",
+                "device",
+                "inode",
+                "linkCount",
+                "mode",
+                "mtimeMs",
+                "measuredBytes",
+                "contentSha256",
+                "fingerprint"
+              ]
+            }
+          },
+          "required": ["status", "quarantineIdentity"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "restoring"
+            },
+            "quarantineIdentity": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownerRoot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "linkCount": {
+                  "type": "number",
+                  "const": 1
+                },
+                "mode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "mtimeMs": {
+                  "type": "number"
+                },
+                "measuredBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "ownerRoot",
+                "relativePath",
+                "provider",
+                "device",
+                "inode",
+                "linkCount",
+                "mode",
+                "mtimeMs",
+                "measuredBytes",
+                "contentSha256",
+                "fingerprint"
+              ]
+            }
+          },
+          "required": ["status", "quarantineIdentity"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "restored"
+            },
+            "quarantineIdentity": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownerRoot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "linkCount": {
+                  "type": "number",
+                  "const": 1
+                },
+                "mode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "mtimeMs": {
+                  "type": "number"
+                },
+                "measuredBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "ownerRoot",
+                "relativePath",
+                "provider",
+                "device",
+                "inode",
+                "linkCount",
+                "mode",
+                "mtimeMs",
+                "measuredBytes",
+                "contentSha256",
+                "fingerprint"
+              ]
+            }
+          },
+          "required": ["status"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "purging"
+            },
+            "quarantineIdentity": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownerRoot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "linkCount": {
+                  "type": "number",
+                  "const": 1
+                },
+                "mode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "mtimeMs": {
+                  "type": "number"
+                },
+                "measuredBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "ownerRoot",
+                "relativePath",
+                "provider",
+                "device",
+                "inode",
+                "linkCount",
+                "mode",
+                "mtimeMs",
+                "measuredBytes",
+                "contentSha256",
+                "fingerprint"
+              ]
+            }
+          },
+          "required": ["status", "quarantineIdentity"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "purged"
+            },
+            "quarantineIdentity": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownerRoot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "linkCount": {
+                  "type": "number",
+                  "const": 1
+                },
+                "mode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "mtimeMs": {
+                  "type": "number"
+                },
+                "measuredBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "ownerRoot",
+                "relativePath",
+                "provider",
+                "device",
+                "inode",
+                "linkCount",
+                "mode",
+                "mtimeMs",
+                "measuredBytes",
+                "contentSha256",
+                "fingerprint"
+              ]
+            }
+          },
+          "required": ["status"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "const": "partial"
+            },
+            "quarantineIdentity": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "ownerRoot": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "provider": {
+                  "type": "string",
+                  "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+                },
+                "device": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "inode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "linkCount": {
+                  "type": "number",
+                  "const": 1
+                },
+                "mode": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "mtimeMs": {
+                  "type": "number"
+                },
+                "measuredBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "contentSha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                "fingerprint": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "ownerRoot",
+                "relativePath",
+                "provider",
+                "device",
+                "inode",
+                "linkCount",
+                "mode",
+                "mtimeMs",
+                "measuredBytes",
+                "contentSha256",
+                "fingerprint"
+              ]
+            }
+          },
+          "required": ["status", "quarantineIdentity"]
+        }
+      ]
     }
-  },
-  "required": [
-    "schemaVersion",
-    "entryId",
-    "runId",
-    "actionId",
-    "resourceId",
-    "policyId",
-    "status",
-    "originalPath",
-    "quarantinePath",
-    "createdAt",
-    "expiresAt",
-    "target"
   ],
   "$id": "https://agentrinse.com/schemas/provider-file-quarantine.schema.json",
   "title": "AgentRinse provider-file-quarantine schema"
