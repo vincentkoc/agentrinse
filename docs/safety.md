@@ -38,16 +38,23 @@ The audit and apply boundaries require:
 - no non-empty WAL; zero-length WAL and SHM companions are identity-tracked
   and moved into the rollback set
 - enough free space for the second database plus a safety margin
-- macOS or Linux with `sqlite3` and `lsof`
+- macOS or Linux with `sqlite3`, `lsof`, POSIX record locks, and atomic path
+  exchange
 
 Apply builds a sibling file with `VACUUM INTO`; it never runs in-place
 `VACUUM`. The output is created inside an owner-only temporary directory. It
 verifies the full integrity check, schema digest, complete SQLx
 migration/checksum ledger, tables, migration version, and incremental
-auto-vacuum mode, fsyncs the file, then retains the original in AgentRinse
-state before installing the compacted copy.
+auto-vacuum mode and fsyncs the file. Immediately before mutation, AgentRinse
+holds nonblocking whole-file POSIX record locks on the source and compacted
+inodes, repeats owner and descriptor checks, verifies the locked identities,
+then atomically exchanges the paths. Both locks remain held until the original
+and its tracked sidecars are retained, directories are synced, and the
+installed manifest is durable.
 
 Undo is available only while the installed compacted identity is unchanged.
+It verifies both copies, locks both inodes, repeats owner and descriptor checks,
+and atomically exchanges them before removing the displaced compacted copy.
 Once Codex reopens and writes the database, automatic rollback is refused.
 Expired original files are purged only while Codex is offline and both the
 canonical database and rollback copy pass full integrity checks.

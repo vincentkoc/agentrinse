@@ -17,8 +17,9 @@ The project follows semantic versioning after its first supported release.
 - free-page diagnostics, current SQLx migration/table checks, owner-process
   and exact descriptor refusal, non-empty WAL refusal, and tracked zero-WAL/SHM
   rollback
-- `VACUUM INTO` compaction with full integrity proof, fsync, atomic install,
-  seven-day retained originals, strict undo, and expiry purge
+- `VACUUM INTO` compaction with full integrity proof, fsync, SQLite-compatible
+  POSIX exclusion locks, atomic path exchange, seven-day retained originals,
+  strict locked undo, and expiry purge
 - peak-space preflight, operation-specific long SQLite timeouts, and honest
   retained-backup versus reclaimed-byte accounting
 - database backup manifests and generated JSON Schema

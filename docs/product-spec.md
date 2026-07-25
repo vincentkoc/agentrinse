@@ -1814,10 +1814,13 @@ Required preconditions:
 - all Codex CLI, desktop, and app-server processes stopped
 - no open descriptor for database, WAL, or SHM
 - exact filename, migration version, and required tables supported
+- exact SQLx migration/checksum ledger and final schema digest supported
 - sufficient free disk for a second compacted copy
 - quick integrity check succeeds
 - explicit `audit --allow-offline-vacuum`
 - plan risk `experimental`
+- nonblocking SQLite-compatible record locking and atomic path exchange
+  available on the host
 
 Preferred implementation:
 
@@ -1825,9 +1828,12 @@ Preferred implementation:
 2. use `VACUUM INTO` to a sibling temporary destination where supported
 3. verify compacted database integrity and expected tables
 4. fsync destination
-5. atomically exchange or rename with a retained backup
-6. preserve rollback copy until quarantine TTL
-7. never delete WAL/SHM manually unless SQLite ownership rules prove it safe
+5. acquire exclusive POSIX record locks on both source and destination inodes
+6. verify locked identities and repeat owner/descriptor checks
+7. atomically exchange source and destination without an absent-path window
+8. retain the original and tracked sidecars before releasing either lock
+9. preserve rollback copy until quarantine TTL
+10. use the same locked atomic exchange for undo
 
 Running `VACUUM` directly against the canonical file is not sufficient for the
 product-grade implementation.
@@ -1837,13 +1843,18 @@ compaction. A zero-length WAL and its SHM companion are identity-tracked and
 moved with the retained original rather than deleted. Apply uses a
 same-filesystem sibling output, sets incremental auto-vacuum on the compacted
 copy inside an owner-only temporary directory, fsyncs it, retains the exact
-original set under owner-only AgentRinse state, and installs with atomic
-no-replace renames.
+original set under owner-only AgentRinse state, and installs with an atomic
+path exchange while whole-file POSIX record locks remain held on both inodes.
+The post-lock process and descriptor check allows only AgentRinse's own lock
+descriptors. This prevents an owner process from reopening either database
+during apply or undo.
 
 Undo is supported only while the installed compacted identity remains
 unchanged. Once Codex writes the compacted database, automatic rollback is
 refused to avoid discarding new state. Expired originals can be purged only
 while Codex is offline and after full integrity checks of both copies.
+Interrupted exchange states are recovered from exact inode, schema, migration,
+and content identities; filenames alone never authorize a recovery mutation.
 
 Revalidation reserves free space for two source-sized temporary copies plus a
 64 MiB margin because incremental auto-vacuum normalization performs a second

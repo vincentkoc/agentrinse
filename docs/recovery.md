@@ -160,9 +160,16 @@ agentrinse undo <run-id>
 
 Database undo requires Codex to remain fully stopped. It verifies that the
 installed compacted database still has the exact post-vacuum identity and that
-the retained original still matches its manifest. It then atomically parks
-the compacted file, restores the original, runs a full integrity check, and
-removes only the parked compacted file.
+the retained original still matches its manifest. It then holds
+SQLite-compatible POSIX record locks on both inodes, repeats the process and
+descriptor checks, atomically exchanges the canonical and retained paths,
+restores tracked sidecars, durably records recovery, and removes only the
+displaced compacted file.
+
+An interrupted apply or undo is classified from the exact main-file identities
+on both sides of the exchange. Recovery either finishes the pending sidecar and
+journal work or exchanges the files back while holding the same exclusion
+locks. It never reconstructs the state from filenames alone.
 
 If Codex has reopened or changed the compacted database, automatic undo stops.
 This prevents a rollback from discarding new state. Keep the rollback copy for

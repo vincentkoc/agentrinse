@@ -69,8 +69,10 @@ revalidate that identity before any recovery mutation.
 
 The database executor creates a compacted same-filesystem sibling with
 `VACUUM INTO`, verifies integrity and schema identity, retains the exact
-original under AgentRinse state, then installs the compacted file with atomic
-no-replace renames. Undo and purge share the durable database manifest.
+original under AgentRinse state, then locks both SQLite inodes and atomically
+exchanges the canonical and compacted paths. The locks remain held through
+sidecar archival, manifest persistence, and directory fsync. Undo uses the same
+locked exchange; purge shares the durable database manifest.
 
 ## State
 

@@ -46,7 +46,10 @@ database/WAL/SHM paths, no non-empty WAL, a successful quick check, sufficient
 same-filesystem space, and an exact schema match. Zero-length WAL and SHM
 companions are preserved with the rollback copy. Apply uses
 `VACUUM INTO`, runs a full integrity check, fsyncs the output, retains the
-original file, and installs the compacted file with atomic no-replace renames.
+original file, then holds POSIX record locks on both database inodes while an
+atomic path exchange installs the compacted file. A second owner/descriptor
+check runs after those locks are held and permits only AgentRinse's own file
+descriptors.
 
 ### Claude
 

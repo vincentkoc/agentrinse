@@ -50,7 +50,8 @@ Shipped:
 - recoverable offline compaction for current Codex state, logs, goals, and
   memories SQLite contracts
 - exact migration/table checks, live-owner and descriptor refusal
-- `VACUUM INTO`, full integrity proof, atomic install, undo, and expiry purge
+- `VACUUM INTO`, full integrity proof, locked atomic exchange, undo, and expiry
+  purge
 
 Remaining:
 

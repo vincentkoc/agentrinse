@@ -154,8 +154,10 @@ agentrinse apply --plan plan.json --max-risk experimental --yes
 ```
 
 only databases with at least 512 MiB and 25 percent free pages are proposed.
-the original file is retained for seven days. undo is intentionally strict and
-refuses after Codex has reopened or changed the compacted database:
+apply holds exclusive SQLite-compatible file locks across an atomic path
+exchange, so Codex cannot reopen either inode during installation. the original
+file is retained for seven days. undo uses the same locked exchange and refuses
+after Codex has reopened or changed the compacted database:
 
 ```bash
 agentrinse undo <run-id>
