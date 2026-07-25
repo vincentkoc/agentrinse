@@ -42,6 +42,7 @@ export class ProviderFileExecutionError extends Error {
 export type ProviderFileExecutorDependencies = ProviderFileRevalidationDependencies & {
   clock?: () => Date;
   move?: (source: string, destination: string) => Promise<void>;
+  chmodHandle?: (handle: FileHandle, mode: number) => Promise<void>;
   authorization?: {
     expiresAtMs: number;
     now: () => Date;
@@ -206,8 +207,11 @@ export async function executeProviderFileQuarantine(
   });
 
   let moved = false;
+  let modeSealed = false;
   let sourceHandle: FileHandle | undefined;
   const originalMode = action.target.mode & 0o7777;
+  const chmodHandle =
+    dependencies.chmodHandle ?? ((handle: FileHandle, mode: number) => handle.chmod(mode));
   try {
     sourceHandle = await open(action.target.path, constants.O_RDONLY | constants.O_NOFOLLOW);
     if (!providerFileStatsMatch(await sourceHandle.stat(), action.target)) {
@@ -218,7 +222,8 @@ export async function executeProviderFileQuarantine(
         entry,
       );
     }
-    await sourceHandle.chmod(originalMode & ~0o222);
+    await chmodHandle(sourceHandle, originalMode & ~0o222);
+    modeSealed = true;
     await sourceHandle.sync();
     if (!providerFileStatsMatch(await sourceHandle.stat(), action.target, true)) {
       throw new ProviderFileExecutionError(
@@ -296,7 +301,8 @@ export async function executeProviderFileQuarantine(
       syncDirectory(dirname(action.target.path)),
       syncDirectory(options.quarantineDirectory),
     ]);
-    await sourceHandle.chmod(originalMode);
+    await chmodHandle(sourceHandle, originalMode);
+    modeSealed = false;
     await sourceHandle.sync();
     const quarantineIdentity = await inspectProviderFile(
       quarantinePath,
@@ -331,7 +337,21 @@ export async function executeProviderFileQuarantine(
     };
   } catch (error) {
     if (!moved) {
-      await sourceHandle?.chmod(originalMode).catch(() => undefined);
+      if (modeSealed && sourceHandle !== undefined) {
+        try {
+          await chmodHandle(sourceHandle, originalMode);
+          await sourceHandle.sync();
+          modeSealed = false;
+        } catch (restoreError) {
+          throw new ProviderFileExecutionError(
+            "provider file permissions could not be restored; recovery remains pending",
+            "partially-applied",
+            "PROVIDER_FILE_PERMISSION_RESTORE_FAILED",
+            entry,
+            { cause: new AggregateError([error, restoreError]) },
+          );
+        }
+      }
       entry = await finalizeUnmovedEntry(entry, manifestPath, options.quarantineDirectory, clock);
       if (error instanceof ProviderFileExecutionError) {
         throw error;
