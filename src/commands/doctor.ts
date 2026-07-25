@@ -528,7 +528,7 @@ async function databaseMaintenanceCheck(
       }
     : {
         id: "database-maintenance",
-        status: "pass",
+        status: "warning",
         summary: `offline database maintenance is unavailable (${missing.join(", ")})`,
         remediation: "Install sqlite3 and lsof before using audit --allow-offline-vacuum.",
       };
