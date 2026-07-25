@@ -1,20 +1,11 @@
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
-import { lstat, open, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import type { Stats } from "node:fs";
 
 import type { ProviderFileIdentity, ProviderMutationId } from "../contracts/action.js";
 import { sha256Json } from "./digest.js";
+import { openPinnedProviderFile, type PinnedFile } from "./pinned-file.js";
 
-function inside(root: string, candidate: string): boolean {
-  const result = relative(root, candidate);
-  return result !== "" && !result.startsWith("..") && !isAbsolute(result);
-}
-
-async function hashFileDescriptor(
-  handle: Awaited<ReturnType<typeof open>>,
-  measuredBytes: number,
-): Promise<string> {
+async function hashFileDescriptor(handle: PinnedFile, measuredBytes: number): Promise<string> {
   const hash = createHash("sha256");
   const buffer = Buffer.allocUnsafe(64 * 1024);
   let position = 0;
@@ -35,26 +26,7 @@ async function hashFileDescriptor(
   return hash.digest("hex");
 }
 
-async function assertNoSymlinkBelowRoot(path: string, ownerRoot: string): Promise<void> {
-  const lexicalRoot = resolve(ownerRoot);
-  const lexicalPath = resolve(path);
-  if (!inside(lexicalRoot, lexicalPath)) {
-    throw new Error(`provider file is outside its owner root: ${path}`);
-  }
-  const components = relative(lexicalRoot, lexicalPath).split(/[\\/]/u);
-  let cursor = lexicalRoot;
-  for (const component of components) {
-    cursor = join(cursor, component);
-    if ((await lstat(cursor)).isSymbolicLink()) {
-      throw new Error(`provider cleanup path contains a symlink: ${cursor}`);
-    }
-  }
-}
-
-function stableFileStats(
-  before: Awaited<ReturnType<typeof lstat>>,
-  after: Awaited<ReturnType<typeof lstat>>,
-): boolean {
+function stableFileStats(before: Stats, after: Stats): boolean {
   return (
     before.dev === after.dev &&
     before.ino === after.ino &&
@@ -66,63 +38,25 @@ function stableFileStats(
   );
 }
 
-function sameFileStats(
-  pathStats: Awaited<ReturnType<typeof lstat>>,
-  descriptorStats: Awaited<ReturnType<typeof lstat>>,
-): boolean {
-  return (
-    pathStats.isFile() &&
-    !pathStats.isSymbolicLink() &&
-    pathStats.dev === descriptorStats.dev &&
-    pathStats.ino === descriptorStats.ino &&
-    pathStats.nlink === descriptorStats.nlink &&
-    pathStats.mode === descriptorStats.mode &&
-    pathStats.mtimeMs === descriptorStats.mtimeMs &&
-    pathStats.ctimeMs === descriptorStats.ctimeMs &&
-    pathStats.size === descriptorStats.size
-  );
-}
-
-export async function inspectProviderFile(
+export async function inspectProviderFile<T extends ProviderMutationId>(
   path: string,
   ownerRoot: string,
-  provider: ProviderMutationId,
-): Promise<ProviderFileIdentity> {
-  await assertNoSymlinkBelowRoot(path, ownerRoot);
-  const [physicalRoot, physicalPath] = await Promise.all([
-    realpath(resolve(ownerRoot)),
-    realpath(resolve(path)),
-  ]);
-  const rootStats = await lstat(physicalRoot);
-  if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
-    throw new Error(`provider owner root is not a real directory: ${ownerRoot}`);
-  }
-  if (!inside(physicalRoot, physicalPath)) {
-    throw new Error(`provider file is outside its owner root: ${path}`);
-  }
-
-  const handle = await open(
-    physicalPath,
-    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-  );
-  let after: Awaited<ReturnType<typeof lstat>>;
+  provider: T,
+): Promise<ProviderFileIdentity & { provider: T }> {
+  const handle = await openPinnedProviderFile(path, ownerRoot);
+  let after: Stats;
   let contentSha256: string;
   try {
     const before = await handle.stat();
     if (!before.isFile()) {
       throw new Error(`provider cleanup target is not a regular file: ${path}`);
     }
-    const pathBefore = await lstat(physicalPath);
-    if (!sameFileStats(pathBefore, before)) {
-      throw new Error(`provider file changed while its descriptor was acquired: ${path}`);
-    }
     if (before.nlink !== 1) {
       throw new Error(`provider cleanup target has multiple hard links: ${path}`);
     }
     contentSha256 = await hashFileDescriptor(handle, before.size);
     after = await handle.stat();
-    const pathAfter = await lstat(physicalPath);
-    if (!stableFileStats(before, after) || !sameFileStats(pathAfter, after)) {
+    if (!stableFileStats(before, after)) {
       throw new Error(`provider file changed while its content identity was measured: ${path}`);
     }
     if (after.nlink !== 1) {
@@ -133,9 +67,9 @@ export async function inspectProviderFile(
   }
 
   const identity = {
-    path: physicalPath,
-    ownerRoot: physicalRoot,
-    relativePath: relative(physicalRoot, physicalPath),
+    path: handle.path,
+    ownerRoot: handle.ownerRoot,
+    relativePath: handle.relativePath,
     provider,
     device: after.dev,
     inode: after.ino,
@@ -192,7 +126,7 @@ export function providerFileIdentityMatches(
 }
 
 export function providerFileStatsMatch(
-  stats: Awaited<ReturnType<typeof lstat>>,
+  stats: Stats,
   expected: ProviderFileIdentity,
   allowSealedMode = false,
 ): boolean {

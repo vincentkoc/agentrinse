@@ -1,14 +1,17 @@
-import { constants } from "node:fs";
-import { lstat, open, rm, type FileHandle } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { lstat, rm } from "node:fs/promises";
+import { join } from "node:path";
 
-import type { ProviderFileQuarantineAction } from "../contracts/action.js";
+import {
+  providerFileQuarantineActionSchema,
+  type ProviderFileQuarantineAction,
+} from "../contracts/action.js";
 import {
   providerFileQuarantineEntrySchema,
   type ProviderFileQuarantineEntry,
 } from "../contracts/provider-file-quarantine.js";
 import { ensurePrivateDirectory, syncDirectory, writeJsonAtomic } from "../state/json-file.js";
-import { renameNoReplace } from "./no-clobber-rename.js";
+import { renameAtNoReplace } from "./no-clobber-rename.js";
+import { openPinnedDirectory, openPinnedProviderFile, type PinnedFile } from "./pinned-file.js";
 import {
   inspectProviderFile,
   providerFileIdentityMatches,
@@ -45,7 +48,7 @@ export class ProviderFileExecutionError extends Error {
 export type ProviderFileExecutorDependencies = ProviderFileRevalidationDependencies & {
   clock?: () => Date;
   move?: (source: string, destination: string) => Promise<void>;
-  chmodHandle?: (handle: FileHandle, mode: number) => Promise<void>;
+  chmodHandle?: (handle: PinnedFile, mode: number) => Promise<void>;
   authorization?: {
     expiresAtMs: number;
     now: () => Date;
@@ -141,11 +144,8 @@ export async function executeProviderFileQuarantine(
 ): Promise<ProviderFileExecutionResult> {
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
-  const move =
-    dependencies.move ??
-    ((source: string, destination: string) =>
-      renameNoReplace(source, destination, dependencies.platform ?? process.platform));
   const quarantinePath = providerFileQuarantinePath(options.quarantineDirectory, options.entryId);
+  const quarantineBasename = `${options.entryId}.payload`;
   const manifestPath = join(options.quarantineDirectory, `${options.entryId}.json`);
 
   if (!["darwin", "linux"].includes(dependencies.platform ?? process.platform)) {
@@ -175,51 +175,72 @@ export async function executeProviderFileQuarantine(
   }
 
   await ensurePrivateDirectory(options.quarantineDirectory);
-  const [quarantineStats, sourceStats] = await Promise.all([
-    lstat(options.quarantineDirectory),
-    lstat(action.target.path),
-  ]);
-  if (quarantineStats.dev !== sourceStats.dev) {
+  const quarantineDirectoryHandle = await openPinnedDirectory(options.quarantineDirectory);
+  let sourceHandle: PinnedFile;
+  try {
+    sourceHandle = await openPinnedProviderFile(action.target.path, action.target.ownerRoot);
+    const [quarantineStats, sourceStats] = await Promise.all([
+      quarantineDirectoryHandle.stat(),
+      sourceHandle.stat(),
+    ]);
+    if (quarantineStats.dev !== sourceStats.dev) {
+      throw new ProviderFileExecutionError(
+        "provider-file recovery storage is on a different filesystem",
+        "skipped-stale",
+        "PROVIDER_FILE_QUARANTINE_CROSS_DEVICE",
+      );
+    }
+    if ((await pathExists(quarantinePath)) || (await pathExists(manifestPath))) {
+      throw new ProviderFileExecutionError(
+        "provider-file quarantine destination already exists",
+        "failed",
+        "PROVIDER_FILE_DESTINATION_OCCUPIED",
+      );
+    }
+  } catch (error) {
+    await quarantineDirectoryHandle.close().catch(() => undefined);
+    if (error instanceof ProviderFileExecutionError) {
+      throw error;
+    }
     throw new ProviderFileExecutionError(
-      "provider-file recovery storage is on a different filesystem",
-      "skipped-stale",
-      "PROVIDER_FILE_QUARANTINE_CROSS_DEVICE",
-    );
-  }
-  if ((await pathExists(quarantinePath)) || (await pathExists(manifestPath))) {
-    throw new ProviderFileExecutionError(
-      "provider-file quarantine destination already exists",
+      error instanceof Error ? error.message : String(error),
       "failed",
-      "PROVIDER_FILE_DESTINATION_OCCUPIED",
+      "PROVIDER_FILE_QUARANTINE_FAILED",
+      undefined,
+      { cause: error },
     );
   }
 
-  let entry = await persist(manifestPath, options.quarantineDirectory, {
-    schemaVersion: 1,
-    entryId: options.entryId,
-    runId: options.runId,
-    actionId: action.actionId,
-    resourceId: action.resourceId,
-    policyId: action.policyId,
-    status: "preparing",
-    originalPath: action.target.path,
-    quarantinePath,
-    createdAt: clock().toISOString(),
-    expiresAt: new Date(clock().getTime() + action.quarantineTtlMinutes * 60_000).toISOString(),
-    target: action.target,
-  });
+  let entry: ProviderFileQuarantineEntry;
+  try {
+    entry = await persist(manifestPath, options.quarantineDirectory, {
+      schemaVersion: 1,
+      entryId: options.entryId,
+      runId: options.runId,
+      actionId: action.actionId,
+      resourceId: action.resourceId,
+      policyId: action.policyId,
+      status: "preparing",
+      originalPath: action.target.path,
+      quarantinePath,
+      createdAt: clock().toISOString(),
+      expiresAt: new Date(clock().getTime() + action.quarantineTtlMinutes * 60_000).toISOString(),
+      target: action.target,
+    });
+  } catch (error) {
+    await Promise.all([
+      sourceHandle.close().catch(() => undefined),
+      quarantineDirectoryHandle.close().catch(() => undefined),
+    ]);
+    throw error;
+  }
 
   let moved = false;
   let modeSealed = false;
-  let sourceHandle: FileHandle | undefined;
   const originalMode = action.target.mode & 0o7777;
   const chmodHandle =
-    dependencies.chmodHandle ?? ((handle: FileHandle, mode: number) => handle.chmod(mode));
+    dependencies.chmodHandle ?? ((handle: PinnedFile, mode: number) => handle.chmod(mode));
   try {
-    sourceHandle = await open(
-      action.target.path,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-    );
     if (!providerFileStatsMatch(await sourceHandle.stat(), action.target)) {
       throw new ProviderFileExecutionError(
         "provider file identity changed while acquiring exclusive access",
@@ -253,10 +274,10 @@ export async function executeProviderFileQuarantine(
       );
     }
     const readiness = await revalidateProviderFileQuarantine(
-      {
+      providerFileQuarantineActionSchema.parse({
         ...action,
         target: sealed,
-      },
+      }),
       undefined,
       undefined,
       {
@@ -273,16 +294,39 @@ export async function executeProviderFileQuarantine(
       );
     }
     assertAuthorized(dependencies, entry);
-    await move(action.target.path, quarantinePath);
+    if (dependencies.move !== undefined) {
+      await dependencies.move(action.target.path, quarantinePath);
+    } else {
+      await renameAtNoReplace(
+        sourceHandle.parent.fd,
+        sourceHandle.basename,
+        quarantineDirectoryHandle.fd,
+        quarantineBasename,
+        dependencies.platform ?? process.platform,
+      );
+    }
     moved = true;
-    if (!providerFileStatsMatch(await lstat(quarantinePath), action.target, true)) {
+    const movedHandle = await openPinnedProviderFile(
+      quarantinePath,
+      options.quarantineDirectory,
+    ).catch(() => undefined);
+    const movedStats = await movedHandle?.stat().catch(() => undefined);
+    await movedHandle?.close().catch(() => undefined);
+    if (movedStats === undefined || !providerFileStatsMatch(movedStats, action.target, true)) {
       let rollbackError: unknown;
       try {
-        await move(quarantinePath, action.target.path);
-        await Promise.all([
-          syncDirectory(dirname(action.target.path)),
-          syncDirectory(options.quarantineDirectory),
-        ]);
+        if (dependencies.move !== undefined) {
+          await dependencies.move(quarantinePath, action.target.path);
+        } else {
+          await renameAtNoReplace(
+            quarantineDirectoryHandle.fd,
+            quarantineBasename,
+            sourceHandle.parent.fd,
+            sourceHandle.basename,
+            dependencies.platform ?? process.platform,
+          );
+        }
+        await Promise.all([sourceHandle.parent.sync(), quarantineDirectoryHandle.sync()]);
         moved = false;
       } catch (error) {
         rollbackError = error;
@@ -303,10 +347,7 @@ export async function executeProviderFileQuarantine(
         entry,
       );
     }
-    await Promise.all([
-      syncDirectory(dirname(action.target.path)),
-      syncDirectory(options.quarantineDirectory),
-    ]);
+    await Promise.all([sourceHandle.parent.sync(), quarantineDirectoryHandle.sync()]);
     await chmodHandle(sourceHandle, originalMode);
     modeSealed = false;
     await sourceHandle.sync();
@@ -343,7 +384,7 @@ export async function executeProviderFileQuarantine(
     };
   } catch (error) {
     if (!moved) {
-      if (modeSealed && sourceHandle !== undefined) {
+      if (modeSealed) {
         try {
           await chmodHandle(sourceHandle, originalMode);
           await sourceHandle.sync();
@@ -398,6 +439,9 @@ export async function executeProviderFileQuarantine(
       { cause: error, quarantinedBytes: moved ? action.target.measuredBytes : 0 },
     );
   } finally {
-    await sourceHandle?.close().catch(() => undefined);
+    await Promise.all([
+      sourceHandle.close().catch(() => undefined),
+      quarantineDirectoryHandle.close().catch(() => undefined),
+    ]);
   }
 }

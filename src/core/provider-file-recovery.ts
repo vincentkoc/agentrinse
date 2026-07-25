@@ -1,14 +1,19 @@
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, type FileHandle } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { lstat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import {
   providerFileQuarantineEntrySchema,
   type ProviderFileQuarantineEntry,
 } from "../contracts/provider-file-quarantine.js";
-import { syncDirectory, writeJsonAtomic } from "../state/json-file.js";
-import { renameNoReplace } from "./no-clobber-rename.js";
+import { writeJsonAtomic } from "../state/json-file.js";
+import { renameAtNoReplace } from "./no-clobber-rename.js";
+import {
+  openPinnedProviderFile,
+  openPinnedProviderParent,
+  type PinnedFile,
+} from "./pinned-file.js";
 import {
   inspectProviderFile,
   providerFileIdentityMatches,
@@ -25,7 +30,7 @@ export type ProviderFileRecoveryDependencies = {
     provider: ProviderFileQuarantineEntry["target"]["provider"],
   ) => Promise<ProviderProcessResult>;
   inspectOpenHandles?: (path: string) => Promise<ProcessOwnershipResult>;
-  truncateHandle?: (handle: FileHandle) => Promise<void>;
+  truncateHandle?: (handle: PinnedFile) => Promise<void>;
   platform?: NodeJS.Platform;
 };
 
@@ -65,10 +70,11 @@ async function pathExists(path: string): Promise<boolean> {
 
 async function openValidatedFile(
   path: string,
+  ownerRoot: string,
   identity: ProviderFileQuarantineEntry["target"],
   allowSealedMode = false,
-): Promise<FileHandle> {
-  const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+): Promise<PinnedFile> {
+  const handle = await openPinnedProviderFile(path, ownerRoot);
   try {
     const stats = await handle.stat();
     if (!stats.isFile()) {
@@ -86,12 +92,12 @@ async function openValidatedFile(
 
 async function openValidatedWritableFile(
   path: string,
+  ownerRoot: string,
   identity: ProviderFileQuarantineEntry["target"],
-  readHandle: FileHandle,
-): Promise<FileHandle> {
-  const openWritable = () =>
-    open(path, constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  let writeHandle: FileHandle | undefined;
+  readHandle: PinnedFile,
+): Promise<PinnedFile> {
+  const openWritable = () => openPinnedProviderFile(path, ownerRoot, constants.O_RDWR);
+  let writeHandle: PinnedFile | undefined;
   let modeAdjusted = false;
   try {
     try {
@@ -136,7 +142,7 @@ async function restoreValidatedMode(
   path: string,
   identity: ProviderFileQuarantineEntry["target"],
 ): Promise<void> {
-  const handle = await openValidatedFile(path, identity, true);
+  const handle = await openValidatedFile(path, identity.ownerRoot, identity, true);
   try {
     await handle.chmod(identity.mode & 0o7777);
     await handle.sync();
@@ -372,10 +378,6 @@ export async function undoProviderFileQuarantine(
 ): Promise<ProviderFileQuarantineEntry> {
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
-  const move =
-    dependencies.move ??
-    ((source: string, destination: string) =>
-      renameNoReplace(source, destination, dependencies.platform ?? process.platform));
   let entry = await reconcile(providerFileQuarantineEntrySchema.parse(input), options);
   if (entry.status === "restored") {
     return entry;
@@ -390,8 +392,13 @@ export async function undoProviderFileQuarantine(
   await assertOffline(entry, entry.quarantinePath, dependencies);
   const sourceHandle = await openValidatedFile(
     entry.quarantinePath,
+    options.quarantineDirectory,
     entry.quarantineIdentity,
     true,
+  );
+  const destination = await openPinnedProviderParent(
+    entry.target.ownerRoot,
+    entry.target.relativePath,
   );
   try {
     await sourceHandle.chmod(entry.target.mode & ~0o222);
@@ -403,15 +410,38 @@ export async function undoProviderFileQuarantine(
       { ...entry, status: "restoring", quarantineIdentity: entry.quarantineIdentity },
       options,
     );
-    await move(entry.quarantinePath, entry.originalPath);
-    if (!providerFileStatsMatch(await lstat(entry.originalPath), entry.target, true)) {
-      await move(entry.originalPath, entry.quarantinePath);
+    if (dependencies.move !== undefined) {
+      await dependencies.move(entry.quarantinePath, entry.originalPath);
+    } else {
+      await renameAtNoReplace(
+        sourceHandle.parent.fd,
+        sourceHandle.basename,
+        destination.parent.fd,
+        destination.basename,
+        dependencies.platform ?? process.platform,
+      );
+    }
+    const restoredHandle = await openPinnedProviderFile(
+      entry.originalPath,
+      entry.target.ownerRoot,
+    ).catch(() => undefined);
+    const restoredStats = await restoredHandle?.stat().catch(() => undefined);
+    await restoredHandle?.close().catch(() => undefined);
+    if (restoredStats === undefined || !providerFileStatsMatch(restoredStats, entry.target, true)) {
+      if (dependencies.move !== undefined) {
+        await dependencies.move(entry.originalPath, entry.quarantinePath);
+      } else {
+        await renameAtNoReplace(
+          destination.parent.fd,
+          destination.basename,
+          sourceHandle.parent.fd,
+          sourceHandle.basename,
+          dependencies.platform ?? process.platform,
+        );
+      }
       throw new Error("provider-file restore pathname changed before the atomic move");
     }
-    await Promise.all([
-      syncDirectory(dirname(entry.originalPath)),
-      syncDirectory(options.quarantineDirectory),
-    ]);
+    await Promise.all([destination.parent.sync(), sourceHandle.parent.sync()]);
     const sealedRestored = await inspectProviderFile(
       entry.originalPath,
       entry.target.ownerRoot,
@@ -422,14 +452,24 @@ export async function undoProviderFileQuarantine(
     }
     await sourceHandle.chmod(entry.target.mode & 0o7777);
     await sourceHandle.sync();
+    const finalHandle = await openPinnedProviderFile(
+      entry.originalPath,
+      entry.target.ownerRoot,
+    ).catch(() => undefined);
+    const finalStats = await finalHandle?.stat().catch(() => undefined);
+    await finalHandle?.close().catch(() => undefined);
     if (
       !providerFileStatsMatch(await sourceHandle.stat(), entry.target) ||
-      !providerFileStatsMatch(await lstat(entry.originalPath), entry.target)
+      finalStats === undefined ||
+      !providerFileStatsMatch(finalStats, entry.target)
     ) {
       throw new Error("restored provider file mode changed before recovery completed");
     }
   } finally {
-    await sourceHandle.close();
+    await Promise.all([
+      sourceHandle.close().catch(() => undefined),
+      destination.parent.close().catch(() => undefined),
+    ]);
   }
   return persist(
     {
@@ -448,10 +488,6 @@ export async function purgeProviderFileQuarantine(
 ): Promise<{ entry: ProviderFileQuarantineEntry; reclaimedBytes: number }> {
   const dependencies = options.dependencies ?? {};
   const clock = dependencies.clock ?? (() => new Date());
-  const move =
-    dependencies.move ??
-    ((source: string, destination: string) =>
-      renameNoReplace(source, destination, dependencies.platform ?? process.platform));
   let entry = await reconcile(providerFileQuarantineEntrySchema.parse(input), options);
   if (entry.status === "purged") {
     return { entry, reclaimedBytes: 0 };
@@ -469,24 +505,61 @@ export async function purgeProviderFileQuarantine(
   const alreadyIsolated = await pathExists(purgeIsolationPath);
   const payloadPath = alreadyIsolated ? purgeIsolationPath : entry.quarantinePath;
   await assertOffline(entry, payloadPath, dependencies);
-  const payloadHandle = await openValidatedFile(payloadPath, entry.quarantineIdentity, true);
-  let writableHandle: FileHandle | undefined;
+  const payloadHandle = await openValidatedFile(
+    payloadPath,
+    options.quarantineDirectory,
+    entry.quarantineIdentity,
+    true,
+  );
+  let writableHandle: PinnedFile | undefined;
   try {
-    writableHandle = await openValidatedWritableFile(payloadPath, entry.target, payloadHandle);
+    writableHandle = await openValidatedWritableFile(
+      payloadPath,
+      options.quarantineDirectory,
+      entry.target,
+      payloadHandle,
+    );
     entry = await persist(
       { ...entry, status: "purging", quarantineIdentity: entry.quarantineIdentity },
       options,
     );
     if (!alreadyIsolated) {
-      await move(entry.quarantinePath, purgeIsolationPath);
+      if (dependencies.move !== undefined) {
+        await dependencies.move(entry.quarantinePath, purgeIsolationPath);
+      } else {
+        await renameAtNoReplace(
+          payloadHandle.parent.fd,
+          payloadHandle.basename,
+          payloadHandle.parent.fd,
+          `${entry.entryId}.payload.purging`,
+          dependencies.platform ?? process.platform,
+        );
+      }
+      const isolatedHandle = await openPinnedProviderFile(
+        purgeIsolationPath,
+        options.quarantineDirectory,
+      ).catch(() => undefined);
+      const isolatedStats = await isolatedHandle?.stat().catch(() => undefined);
+      await isolatedHandle?.close().catch(() => undefined);
       if (
-        !providerFileStatsMatch(await lstat(purgeIsolationPath), entry.target, true) ||
+        isolatedStats === undefined ||
+        !providerFileStatsMatch(isolatedStats, entry.target, true) ||
         !providerFileStatsMatch(await payloadHandle.stat(), entry.target, true)
       ) {
         let rollbackError: unknown;
         try {
-          await move(purgeIsolationPath, entry.quarantinePath);
-          await syncDirectory(options.quarantineDirectory);
+          if (dependencies.move !== undefined) {
+            await dependencies.move(purgeIsolationPath, entry.quarantinePath);
+          } else {
+            await renameAtNoReplace(
+              payloadHandle.parent.fd,
+              `${entry.entryId}.payload.purging`,
+              payloadHandle.parent.fd,
+              payloadHandle.basename,
+              dependencies.platform ?? process.platform,
+            );
+          }
+          await payloadHandle.parent.sync();
         } catch (error) {
           rollbackError = error;
         }
@@ -500,9 +573,9 @@ export async function purgeProviderFileQuarantine(
           "provider-file purge pathname changed before the atomic claim; the unexpected inode was restored",
         );
       }
-      await syncDirectory(options.quarantineDirectory);
+      await payloadHandle.parent.sync();
     }
-    await (dependencies.truncateHandle ?? ((handle: FileHandle) => handle.truncate(0)))(
+    await (dependencies.truncateHandle ?? ((handle: PinnedFile) => handle.truncate(0)))(
       writableHandle,
     );
     await writableHandle.sync();

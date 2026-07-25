@@ -36,11 +36,14 @@ import { writeJsonAtomic, readJsonFile } from "../../src/state/json-file.js";
 
 const NOW = new Date("2026-07-25T00:00:00.000Z");
 const execFileAsync = promisify(execFile);
+type ClaudeProviderFileQuarantineAction = Extract<
+  ProviderFileQuarantineAction,
+  { adapter: "claude" }
+>;
 
 function idleDependencies() {
   return {
     clock: () => NOW,
-    move: rename,
     authorizeTarget: async () => undefined,
     inspectProcesses: async () => ({ status: "idle" as const, pids: [] as [] }),
     inspectOpenHandles: async () => ({ status: "idle" as const, matches: [] as [] }),
@@ -48,7 +51,7 @@ function idleDependencies() {
 }
 
 async function fixture(): Promise<{
-  action: ProviderFileQuarantineAction;
+  action: ClaudeProviderFileQuarantineAction;
   file: string;
   ownerRoot: string;
   quarantineDirectory: string;
@@ -273,7 +276,7 @@ describe("provider-file quarantine execution and recovery", () => {
     await expect(readFile(protectedFile, "utf8")).resolves.toBe('{"token":"synthetic"}\n');
     await expect(
       readJsonFile(join(selected.quarantineDirectory, "entry-race.json")),
-    ).resolves.toMatchObject({ status: "restored" });
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("rolls back when the source pathname changes before rename", async () => {
@@ -311,6 +314,39 @@ describe("provider-file quarantine execution and recovery", () => {
     await expect(
       readJsonFile(join(selected.quarantineDirectory, "entry-rename-race.json")),
     ).resolves.toMatchObject({ status: "restored" });
+  });
+
+  it("keeps mutation inside the pinned parent after an intermediate symlink race", async () => {
+    const selected = await fixture();
+    const debugDirectory = join(selected.ownerRoot, "debug");
+    const movedDebugDirectory = join(selected.ownerRoot, "debug-moved");
+    const outsideDirectory = await mkdtemp(join(tmpdir(), "agentrinse-provider-outside-"));
+    const outsideFile = join(outsideDirectory, "session.txt");
+    await writeFile(outsideFile, "outside replacement\n");
+    let raced = false;
+
+    const result = await executeProviderFileQuarantine(selected.action, {
+      runId: "run-parent-race",
+      entryId: "entry-parent-race",
+      quarantineDirectory: selected.quarantineDirectory,
+      dependencies: {
+        ...idleDependencies(),
+        inspectOpenHandles: async () => {
+          if (!raced) {
+            raced = true;
+            await rename(debugDirectory, movedDebugDirectory);
+            await symlink(outsideDirectory, debugDirectory);
+          }
+          return { status: "idle" as const, matches: [] as [] };
+        },
+      },
+    });
+
+    await expect(readFile(result.quarantinePath, "utf8")).resolves.toBe("synthetic debug output\n");
+    await expect(readFile(outsideFile, "utf8")).resolves.toBe("outside replacement\n");
+    await expect(lstat(join(movedDebugDirectory, "session.txt"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 
   it("rejects content changed after planning", async () => {
