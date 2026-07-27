@@ -1947,8 +1947,8 @@ and undocumented cache paths remain protected.
 
 ### Native cleanup interaction
 
-AgentRinse inventories project sessions, debug data, managed worktrees,
-`paste-cache`, and `image-cache` as native-retention resources. Findings report:
+AgentRinse inventories project sessions, debug data, `paste-cache`, and
+`image-cache` as native-retention resources. Findings report:
 
 ```text
 native cleanup expected

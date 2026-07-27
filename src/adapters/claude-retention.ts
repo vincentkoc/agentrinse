@@ -29,7 +29,7 @@ export const claudeNativeRetentionFactsSchema = z.object({
 
 export type ClaudeNativeRetentionFacts = z.infer<typeof claudeNativeRetentionFactsSchema>;
 
-type SettingsFileHandle = Pick<FileHandle, "close" | "readFile" | "stat">;
+type SettingsFileHandle = Pick<FileHandle, "close" | "read" | "stat">;
 
 export type ClaudeRetentionDependencies = {
   lstat(path: string): Promise<Stats>;
@@ -46,13 +46,7 @@ const DEFAULT_DEPENDENCIES: ClaudeRetentionDependencies = {
   open,
 };
 
-const NATIVE_RETENTION_PATHS = new Set([
-  "projects",
-  "debug",
-  "worktrees",
-  "paste-cache",
-  "image-cache",
-]);
+const NATIVE_RETENTION_PATHS = new Set(["projects", "debug", "paste-cache", "image-cache"]);
 
 function isMissing(error: unknown): boolean {
   return (
@@ -69,6 +63,27 @@ function stableStats(before: Stats, after: Stats): boolean {
     before.ctimeMs === after.ctimeMs &&
     before.size === after.size
   );
+}
+
+async function readBoundedSettings(
+  handle: SettingsFileHandle,
+): Promise<{ contents?: string; overflow: boolean }> {
+  const buffer = Buffer.allocUnsafe(MAX_SETTINGS_BYTES + 1);
+  let offset = 0;
+  while (offset < buffer.length) {
+    const result = await handle.read(buffer, offset, buffer.length - offset, offset);
+    if (result.bytesRead === 0) {
+      break;
+    }
+    offset += result.bytesRead;
+  }
+  if (offset > MAX_SETTINGS_BYTES) {
+    return { overflow: true };
+  }
+  return {
+    contents: buffer.subarray(0, offset).toString("utf8"),
+    overflow: false,
+  };
 }
 
 function inspection(
@@ -165,7 +180,7 @@ export async function inspectClaudeNativeRetention(
         ),
       ]);
     }
-    contents = await handle.readFile({ encoding: "utf8" });
+    const boundedRead = await readBoundedSettings(handle);
     const after = await handle.stat();
     if (!stableStats(before, after)) {
       return inspection("changed", [
@@ -175,6 +190,15 @@ export async function inspectClaudeNativeRetention(
         ),
       ]);
     }
+    if (boundedRead.overflow || boundedRead.contents === undefined) {
+      return inspection("too-large", [
+        warning(
+          "CLAUDE_RETENTION_SETTINGS_TOO_LARGE",
+          "Claude user settings exceed the inspection limit; native retention is uncertain.",
+        ),
+      ]);
+    }
+    contents = boundedRead.contents;
   } catch {
     return inspection("unreadable", [
       warning(

@@ -59,14 +59,13 @@ credentials, plugins, undocumented caches, and native orphaned-worktree
 cleanup stay provider-owned.
 
 AgentRinse reports Claude's native startup retention for project sessions,
-debug data, managed worktrees, `paste-cache`, and `image-cache`. It reads only
-the direct user `settings.json`, with a 1 MiB limit and stable-file check. A
-valid user `cleanupPeriodDays` value is reported alongside Claude's documented
-30-day default, but never presented as globally effective because
-higher-precedence settings are not resolved. Missing settings preserve the
-documented default signal. Malformed, unreadable, changing, symlinked,
-oversized, or invalid settings make native cleanup uncertain and emit no
-action.
+debug data, `paste-cache`, and `image-cache`. It reads only the direct user
+`settings.json`, with a 1 MiB limit and stable-file check. A valid user
+`cleanupPeriodDays` value is reported alongside Claude's documented 30-day
+default, but never presented as globally effective because higher-precedence
+settings are not resolved. Missing settings preserve the documented default
+signal. Malformed, unreadable, changing, symlinked, oversized, or invalid
+settings make native cleanup uncertain and emit no action.
 
 Direct regular files matching `debug/*.txt` may produce
 `provider.file-quarantine` after 30 days. The action is `recoverable`, excluded

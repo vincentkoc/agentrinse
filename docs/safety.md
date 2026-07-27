@@ -86,8 +86,8 @@ open descriptors remain protected.
 ## Native Provider Retention Reporting
 
 Claude native retention is report-only. AgentRinse inventories project
-sessions, debug data, managed worktrees, `paste-cache`, and `image-cache`, then
-reports Claude's documented `cleanupPeriodDays` startup sweep.
+sessions, debug data, `paste-cache`, and `image-cache`, then reports Claude's
+documented `cleanupPeriodDays` startup sweep.
 
 The user `settings.json` read is pinned to one direct regular file, capped at
 1 MiB, and checked for stable device, inode, mode, timestamps, and size before

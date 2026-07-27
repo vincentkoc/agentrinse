@@ -48,8 +48,7 @@ adds one narrow exception: explicit offline compaction for the exact current
 Codex `state_5`, `logs_2`, `goals_1`, and `memories_1` SQLite contracts. Claude
 cleanup is limited to exact old debug text files and its rebuildable changelog
 cache. AgentRinse also reports Claude's native retention policy for sessions,
-managed worktrees, debug data, paste cache, and image cache. Docker remains
-audit-only.
+debug data, paste cache, and image cache. Docker remains audit-only.
 
 ## agent integrations
 

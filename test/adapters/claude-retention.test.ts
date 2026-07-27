@@ -47,10 +47,15 @@ describe("Claude native retention reporting", () => {
     );
     const finding = await claude.classify(context, sessions!);
 
-    expect(nativeResources).toHaveLength(5);
+    expect(nativeResources).toHaveLength(4);
     expect(
       nativeResources.filter((resource) => resource.resource.kind === "agent-cache"),
     ).toHaveLength(2);
+    expect(
+      nativeResources.some(
+        (resource) => resource.resource.displayName === "Claude managed worktrees",
+      ),
+    ).toBe(false);
     expect(sessions?.facts.nativeRetention).toEqual({
       mechanism: "cleanupPeriodDays",
       documentedDefaultDays: 30,
@@ -162,11 +167,21 @@ describe("Claude native retention reporting", () => {
     const before = await lstat(settingsPath);
     const after = await lstat(changedPath);
     const stat = vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after);
+    const payload = Buffer.from('{"cleanupPeriodDays":45}\n');
+    const read = vi.fn(
+      async (buffer: Buffer, offset: number, _length: number, position: number) => {
+        if (position > 0) {
+          return { bytesRead: 0, buffer };
+        }
+        payload.copy(buffer, offset);
+        return { bytesRead: payload.length, buffer };
+      },
+    );
     const dependencies = {
       lstat: async () => before,
       open: async () => ({
         stat,
-        readFile: async () => '{"cleanupPeriodDays":45}\n',
+        read,
         close: async () => undefined,
       }),
     } as unknown as ClaudeRetentionDependencies;
@@ -178,5 +193,37 @@ describe("Claude native retention reporting", () => {
       expect.objectContaining({ code: "CLAUDE_RETENTION_SETTINGS_CHANGED" }),
     );
     expect(stat).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds a growing settings read to one byte beyond the inspection limit", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, ".claude");
+    const settingsPath = join(root, "settings.json");
+    await mkdir(root);
+    await writeFile(settingsPath, "{}\n");
+    const stats = await lstat(settingsPath);
+    const read = vi.fn(
+      async (buffer: Buffer, _offset: number, length: number, _position: number) => ({
+        bytesRead: length,
+        buffer,
+      }),
+    );
+    const dependencies = {
+      lstat: async () => stats,
+      open: async () => ({
+        stat: async () => stats,
+        read,
+        close: async () => undefined,
+      }),
+    } as unknown as ClaudeRetentionDependencies;
+
+    const result = await inspectClaudeNativeRetention(root, "darwin", dependencies);
+
+    expect(result.facts.userSettingsStatus).toBe("too-large");
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "CLAUDE_RETENTION_SETTINGS_TOO_LARGE" }),
+    );
+    expect(read).toHaveBeenCalledOnce();
+    expect(read.mock.calls[0]?.[2]).toBe(1024 * 1024 + 1);
   });
 });
