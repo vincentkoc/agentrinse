@@ -35,6 +35,11 @@ import {
 } from "./codex-database.js";
 import { collectClaudeChangelogCache } from "./claude-cache.js";
 import { collectClaudeDebugLogs } from "./claude-debug.js";
+import {
+  claudeNativeRetentionFactsSchema,
+  inspectClaudeNativeRetention,
+  usesClaudeNativeRetention,
+} from "./claude-retention.js";
 import { collectProviderReachability } from "./provider-reachability.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
@@ -243,6 +248,13 @@ export class ProviderAuditAdapter implements AuditAdapter {
     if (this.options.inventoryResources === false) {
       return { resources: [], diagnostics };
     }
+    const claudeRetention =
+      this.spec.id === "claude"
+        ? await inspectClaudeNativeRetention(probe.root, this.options.platform ?? process.platform)
+        : undefined;
+    if (claudeRetention !== undefined) {
+      diagnostics.push(...claudeRetention.diagnostics);
+    }
 
     for (const candidate of this.spec.resources) {
       context.signal?.throwIfAborted();
@@ -310,6 +322,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
             entries: measurement?.entries,
             symlinksSkipped: measurement?.symlinksSkipped,
             measurementTruncated: measurement?.truncated,
+            ...(claudeRetention !== undefined && usesClaudeNativeRetention(candidate.relativePath)
+              ? { nativeRetention: claudeRetention.facts }
+              : {}),
             ...(databaseInspection === undefined
               ? {}
               : {
@@ -357,6 +372,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
     const observedAt = context.now.toISOString();
     const providerFileIdentity = providerFileIdentitySchema.safeParse(
       resource.facts.providerFileIdentity,
+    );
+    const claudeNativeRetention = claudeNativeRetentionFactsSchema.safeParse(
+      resource.facts.nativeRetention,
     );
     const claudeProviderFileContract =
       typeof resource.facts.policyId === "string"
@@ -546,6 +564,45 @@ export class ProviderAuditAdapter implements AuditAdapter {
         candidateActions,
         measuredBytes: databaseIdentity.data.measuredBytes,
         estimatedReclaimBytes,
+        warnings: [],
+      };
+    }
+    if (this.spec.id === "claude" && claudeNativeRetention.success) {
+      const uncertain = !["missing", "valid"].includes(
+        claudeNativeRetention.data.userSettingsStatus,
+      );
+      const configuredDays = claudeNativeRetention.data.userConfiguredDays;
+      return {
+        schemaVersion: 1,
+        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
+        auditId: context.auditId,
+        observedAt,
+        resource: resource.resource,
+        state: "protected",
+        confidence: uncertain ? "unknown" : "high",
+        roots: [
+          {
+            code: uncertain
+              ? "claude-native-retention-uncertain"
+              : "claude-native-retention-expected",
+            source: this.id,
+            observedAt,
+            detail: uncertain
+              ? "Claude user settings could not be validated; Claude may pause native cleanup unless managed settings provide cleanupPeriodDays."
+              : configuredDays === undefined
+                ? "Claude documents a 30-day startup retention sweep; higher-precedence settings were not resolved."
+                : `Claude user settings declare a ${configuredDays}-day startup retention sweep; higher-precedence settings were not resolved.`,
+          },
+          {
+            code: "provider-owned-report-only",
+            source: this.id,
+            observedAt,
+            detail: "Claude owns this retention sweep; AgentRinse does not mutate the resource.",
+          },
+        ],
+        facts: resource.facts,
+        candidateActions: [],
+        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
         warnings: [],
       };
     }

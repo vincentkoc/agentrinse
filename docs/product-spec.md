@@ -1947,15 +1947,25 @@ and undocumented cache paths remain protected.
 
 ### Native cleanup interaction
 
-If Claude is expected to remove an orphaned worktree under its configured
-retention policy, AgentRinse reports:
+AgentRinse inventories project sessions, debug data, `paste-cache`, and
+`image-cache` as native-retention resources. Findings report:
 
 ```text
 native cleanup expected
 ```
 
-It may still propose safe artifact trimming. It should avoid racing the
-provider's startup cleanup and must revalidate path existence before action.
+The finding includes Claude's documented 30-day default and a valid user-level
+`cleanupPeriodDays` when present. It explicitly marks the effective value as
+unknown because higher-precedence settings are not resolved. The user settings
+read is limited to a stable direct regular file of at most 1 MiB. Only empty or
+retention-only objects are validated; additional fields preserve the observed
+cleanup period but leave whole-file validity unverified. Malformed, unreadable,
+changing, symlinked, oversized, invalid, or unverified settings produce
+`native cleanup uncertain` instead of falling back to 30 days.
+
+Native retention never emits an AgentRinse action. Exact debug-log and
+changelog-cache quarantine remain separate policies with their own apply-time
+revalidation.
 
 ## Cursor Adapter
 
@@ -3586,6 +3596,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] exact provider-file quarantine, undo, purge, and recovery foundation
 - [x] recoverable Claude debug-log quarantine
 - [x] recoverable Claude changelog-cache quarantine
+- [x] Claude native retention and cache inventory reporting
 
 ### Documentation and release
 
@@ -3627,14 +3638,16 @@ Verified on 2026-07-24:
 
 ## Reference Links
 
-Primary references current as of 2026-07-23:
+Primary references current as of 2026-07-27:
 
 - Codex worktrees:
   `https://developers.openai.com/codex/environments/git-worktrees`
 - Codex source:
   `https://github.com/openai/codex`
 - Claude Code settings:
-  `https://docs.anthropic.com/en/docs/claude-code/settings`
+  `https://code.claude.com/docs/en/settings`
+- Claude Code application data:
+  `https://code.claude.com/docs/en/claude-directory`
 - Cursor documentation:
   `https://cursor.com/docs`
 - GitHub Copilot CLI configuration directory:

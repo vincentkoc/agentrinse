@@ -85,6 +85,16 @@ export const PROVIDER_SPECS: Record<ProviderAdapterId, ProviderSpec> = {
         displayName: "Claude managed worktrees",
         kind: "git-worktree",
       },
+      {
+        relativePath: "paste-cache",
+        displayName: "Claude paste cache",
+        kind: "agent-cache",
+      },
+      {
+        relativePath: "image-cache",
+        displayName: "Claude image cache",
+        kind: "agent-cache",
+      },
     ],
   },
   cursor: {
