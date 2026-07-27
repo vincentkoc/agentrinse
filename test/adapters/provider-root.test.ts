@@ -36,4 +36,37 @@ describe("resolveProviderRoot", () => {
       }),
     ).toThrow("CLAUDE_CONFIG_DIR must be an absolute path");
   });
+
+  it("prefers an explicit root over COPILOT_HOME", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.copilot, "/fixture/home", {
+        root: "/fixture/configured-copilot",
+        environment: { COPILOT_HOME: "/fixture/environment-copilot" },
+      }),
+    ).toBe("/fixture/configured-copilot");
+  });
+
+  it("uses an absolute COPILOT_HOME before the default", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.copilot, "/fixture/home", {
+        environment: { COPILOT_HOME: "/fixture/environment-copilot" },
+      }),
+    ).toBe("/fixture/environment-copilot");
+  });
+
+  it("falls back to the Copilot directory under the audited home", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.copilot, "/fixture/home", {
+        environment: {},
+      }),
+    ).toBe("/fixture/home/.copilot");
+  });
+
+  it("rejects a relative COPILOT_HOME", () => {
+    expect(() =>
+      resolveProviderRoot(PROVIDER_SPECS.copilot, "/fixture/home", {
+        environment: { COPILOT_HOME: "relative/copilot" },
+      }),
+    ).toThrow("COPILOT_HOME must be an absolute path");
+  });
 });

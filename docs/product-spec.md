@@ -1276,7 +1276,9 @@ Claude root precedence is the explicit adapter root, an absolute
 `$CLAUDE_CONFIG_DIR` is invalid and degrades only the Claude adapter. Discovery
 and mutation authorization use the same resolver.
 
-`$COPILOT_HOME` falls back to `$HOME/.copilot`.
+Copilot root precedence is the explicit adapter root, an absolute
+`$COPILOT_HOME`, then `$HOME/.copilot`. A relative `$COPILOT_HOME` is invalid
+and degrades only the Copilot adapter.
 
 `$GROK_HOME` falls back to `$HOME/.grok`.
 
