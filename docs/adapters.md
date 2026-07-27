@@ -11,7 +11,7 @@ is proven.
 | Codex          | sessions, worktrees, four SQLite DBs, offline compaction  | conditional     |
 | Claude         | sessions, caches, native retention, exact file quarantine | conditional     |
 | Cursor         | workspace state, global state, logs                       | all             |
-| GitHub Copilot | CLI sessions and logs                                     | all             |
+| GitHub Copilot | CLI sessions, logs, native maintenance guidance           | all             |
 | Zed            | user-data root                                            | all             |
 | OpenCode       | database, logs, snapshots                                 | all             |
 | Grok Build     | version-gated data root                                   | all             |
@@ -90,7 +90,15 @@ does not make workspace storage disposable.
 ### GitHub Copilot
 
 Configuration, authentication, custom agents, skills, and plugins are
-permanent protection roots. Sessions and logs are only inventoried.
+permanent protection roots. Sessions and logs remain report-only.
+
+AgentRinse reports Copilot's local-only `/session prune` command, including
+dry-run support and the default protection for named and current sessions. It
+also reports the process-log startup retention introduced in Copilot CLI
+`1.0.52`: direct `process-*.log` files older than seven days or beyond the
+newest 50 are provider-pruned, while extension logs are outside that contract.
+The provider adapter does not execute Copilot to determine its installed
+version, so both findings stay unknown-confidence and emit no action.
 
 ### Zed
 
