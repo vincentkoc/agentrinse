@@ -40,6 +40,10 @@ import {
   inspectClaudeNativeRetention,
   usesClaudeNativeRetention,
 } from "./claude-retention.js";
+import {
+  copilotNativeMaintenanceFactsSchema,
+  copilotNativeMaintenanceFor,
+} from "./copilot-maintenance.js";
 import { collectProviderReachability } from "./provider-reachability.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
@@ -260,6 +264,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
       context.signal?.throwIfAborted();
       const path =
         candidate.relativePath === "." ? probe.root : join(probe.root, candidate.relativePath);
+      const copilotNativeMaintenance =
+        this.spec.id === "copilot"
+          ? copilotNativeMaintenanceFor(candidate.relativePath)
+          : undefined;
 
       try {
         const stats = await lstat(path);
@@ -325,6 +333,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
             ...(claudeRetention !== undefined && usesClaudeNativeRetention(candidate.relativePath)
               ? { nativeRetention: claudeRetention.facts }
               : {}),
+            ...(copilotNativeMaintenance === undefined
+              ? {}
+              : { nativeMaintenance: copilotNativeMaintenance }),
             ...(databaseInspection === undefined
               ? {}
               : {
@@ -375,6 +386,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
     );
     const claudeNativeRetention = claudeNativeRetentionFactsSchema.safeParse(
       resource.facts.nativeRetention,
+    );
+    const copilotNativeMaintenance = copilotNativeMaintenanceFactsSchema.safeParse(
+      resource.facts.nativeMaintenance,
     );
     const claudeProviderFileContract =
       typeof resource.facts.policyId === "string"
@@ -598,6 +612,39 @@ export class ProviderAuditAdapter implements AuditAdapter {
             source: this.id,
             observedAt,
             detail: "Claude owns this retention sweep; AgentRinse does not mutate the resource.",
+          },
+        ],
+        facts: resource.facts,
+        candidateActions: [],
+        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
+        warnings: [],
+      };
+    }
+    if (this.spec.id === "copilot" && copilotNativeMaintenance.success) {
+      const detail =
+        copilotNativeMaintenance.data.kind === "session-prune"
+          ? "Current Copilot CLI documents local-only session pruning with dry-run support; AgentRinse did not probe the installed CLI version."
+          : "Copilot CLI 1.0.52 introduced startup pruning for direct process logs older than seven days or beyond the newest 50; AgentRinse did not probe the installed CLI version.";
+      return {
+        schemaVersion: 1,
+        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
+        auditId: context.auditId,
+        observedAt,
+        resource: resource.resource,
+        state: "protected",
+        confidence: "unknown",
+        roots: [
+          {
+            code: "copilot-native-maintenance-version-unverified",
+            source: this.id,
+            observedAt,
+            detail,
+          },
+          {
+            code: "provider-owned-report-only",
+            source: this.id,
+            observedAt,
+            detail: "Copilot owns this maintenance path; AgentRinse does not mutate the resource.",
           },
         ],
         facts: resource.facts,

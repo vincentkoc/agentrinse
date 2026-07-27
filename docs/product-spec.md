@@ -2061,8 +2061,12 @@ Inventory:
   protected
 - cloud-synced status is not evidence that a local session may be deleted
 - editor extension logs inherit the host editor's lifecycle
-- CLI logs may become a safe age-filtered action after exact current CLI
-  retention behavior is tested
+- report the local-only `/session prune --older-than <days>` owner command,
+  including dry-run support and named-session opt-in
+- report the `1.0.52+` process-log startup sweep for direct `process-*.log`
+  files older than seven days or beyond the newest 50
+- keep both findings unknown-confidence until installed CLI support is proven
+- extension logs remain outside the process-log startup sweep
 
 AgentRinse should prefer Copilot CLI commands or documented configuration
 paths over inspecting undocumented editor database keys.

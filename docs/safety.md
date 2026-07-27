@@ -100,6 +100,13 @@ signal. Malformed, unreadable, changing, symlinked, oversized, invalid, or
 unverified settings downgrade the finding to unknown confidence. AgentRinse
 does not substitute the default or emit a cleanup action in that state.
 
+Copilot native maintenance is also report-only. AgentRinse records the
+local-only session-prune contract and the process-log startup retention
+introduced in Copilot CLI `1.0.52`, but does not execute the installed CLI to
+prove support. These findings remain unknown-confidence and emit no action.
+Synced sessions, named sessions, the current session, extension logs, and
+Copilot configuration remain protected.
+
 ## Recoverable Codex Database Boundary
 
 `database.vacuum` is `experimental` and excluded by every lower risk ceiling.

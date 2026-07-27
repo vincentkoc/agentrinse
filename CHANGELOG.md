@@ -31,6 +31,8 @@ The project follows semantic versioning after its first supported release.
 - report-only Claude native retention findings for sessions, debug data, paste
   cache, and image cache, including the documented default and any valid user
   `cleanupPeriodDays`
+- report-only Copilot native maintenance findings for local session pruning and
+  the versioned direct process-log startup sweep
 
 ### Fixed
 

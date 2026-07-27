@@ -56,28 +56,29 @@ provider state is report-only unless the table below says otherwise.
 agentrinse never erases transcripts, sessions, credentials, configuration, or
 logical memory records.
 
-| Logo                                                                        | Client                                                      | Mode                   | What it protects                                                    |
-| --------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------- |
-| <img width="48px" src="docs/client-openai.jpg" alt="OpenAI Codex" />        | [OpenAI Codex](https://github.com/openai/codex)             | audit + offline vacuum | sessions, workspace roots, reachability, and supported SQLite state |
-| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | [Claude Code](https://code.claude.com/docs/en/overview)     | retention + quarantine | sessions, caches, roots, native retention, and exact old files      |
-| <img width="48px" src="docs/client-cursor.jpg" alt="Cursor" />              | [Cursor](https://cursor.com/docs)                           | audit-only             | local agent state and workspace references                          |
-| <img width="48px" src="docs/client-copilot.png" alt="GitHub Copilot CLI" /> | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | audit-only             | local session and configuration state                               |
-| <img width="48px" src="docs/client-zed.svg" alt="Zed" />                    | [Zed](https://zed.dev/docs/ai/overview)                     | audit-only             | local agent state                                                   |
-| <img width="48px" src="docs/client-opencode.png" alt="OpenCode" />          | [OpenCode](https://opencode.ai/)                            | audit-only             | local agent state                                                   |
-| <img width="48px" src="docs/client-grok-build.svg" alt="Grok Build" />      | [Grok Build](https://docs.x.ai/build/overview)              | audit-only             | local agent state                                                   |
+| Logo                                                                        | Client                                                      | Mode                    | What it protects                                                    |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| <img width="48px" src="docs/client-openai.jpg" alt="OpenAI Codex" />        | [OpenAI Codex](https://github.com/openai/codex)             | audit + offline vacuum  | sessions, workspace roots, reachability, and supported SQLite state |
+| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | [Claude Code](https://code.claude.com/docs/en/overview)     | retention + quarantine  | sessions, caches, roots, native retention, and exact old files      |
+| <img width="48px" src="docs/client-cursor.jpg" alt="Cursor" />              | [Cursor](https://cursor.com/docs)                           | audit-only              | local agent state and workspace references                          |
+| <img width="48px" src="docs/client-copilot.png" alt="GitHub Copilot CLI" /> | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | audit + native guidance | local sessions, process logs, and provider-owned maintenance        |
+| <img width="48px" src="docs/client-zed.svg" alt="Zed" />                    | [Zed](https://zed.dev/docs/ai/overview)                     | audit-only              | local agent state                                                   |
+| <img width="48px" src="docs/client-opencode.png" alt="OpenCode" />          | [OpenCode](https://opencode.ai/)                            | audit-only              | local agent state                                                   |
+| <img width="48px" src="docs/client-grok-build.svg" alt="Grok Build" />      | [Grok Build](https://docs.x.ai/build/overview)              | audit-only              | local agent state                                                   |
 
 ## cleanup surfaces
 
-| Icon                                                                 | Surface                              | Mode               | What it understands                                                     |
-| -------------------------------------------------------------------- | ------------------------------------ | ------------------ | ----------------------------------------------------------------------- |
-| 🌿                                                                   | Git worktrees                        | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots |
-| 🧹                                                                   | Build artifacts                      | safe-clean         | exact configured rebuildable directories                                |
-| 🗜️                                                                   | Codex SQLite state                   | experimental       | schema versions, free pages, sidecars, owner processes, and rollback    |
-| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />  | Claude native retention              | report-only        | default or user retention, settings validity, and provider ownership    |
-| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />  | Claude logs and changelog cache      | recoverable        | exact old files, provider liveness, seven-day undo, and explicit purge  |
-| ⚡                                                                   | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                |
-| <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" /> | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images and containers                                                   |
-| 🕳️                                                                   | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                         |
+| Icon                                                                        | Surface                              | Mode               | What it understands                                                     |
+| --------------------------------------------------------------------------- | ------------------------------------ | ------------------ | ----------------------------------------------------------------------- |
+| 🌿                                                                          | Git worktrees                        | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots |
+| 🧹                                                                          | Build artifacts                      | safe-clean         | exact configured rebuildable directories                                |
+| 🗜️                                                                          | Codex SQLite state                   | experimental       | schema versions, free pages, sidecars, owner processes, and rollback    |
+| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | Claude native retention              | report-only        | default or user retention, settings validity, and provider ownership    |
+| <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | Claude logs and changelog cache      | recoverable        | exact old files, provider liveness, seven-day undo, and explicit purge  |
+| <img width="48px" src="docs/client-copilot.png" alt="GitHub Copilot CLI" /> | Copilot native maintenance           | report-only        | local session pruning and versioned process-log retention               |
+| ⚡                                                                          | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                |
+| <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" />        | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images and containers                                                   |
+| 🕳️                                                                          | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                         |
 
 ## install
 
