@@ -61,7 +61,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "24.13.3",
+    "@types/node": "26.1.1",
     "oxfmt": "0.60.0",
     "oxlint": "1.75.0",
     "publint": "0.3.22",
