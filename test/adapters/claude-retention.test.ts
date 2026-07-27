@@ -88,7 +88,7 @@ describe("Claude native retention reporting", () => {
     expect(finding.roots[0]).toMatchObject({
       code: "claude-native-retention-expected",
       detail:
-        "Claude user settings declare a 45-day startup retention sweep; managed and project overrides were not resolved.",
+        "Claude user settings declare a 45-day startup retention sweep; higher-precedence settings were not resolved.",
     });
     expect(finding.candidateActions).toEqual([]);
   });

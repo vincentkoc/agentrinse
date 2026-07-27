@@ -590,8 +590,8 @@ export class ProviderAuditAdapter implements AuditAdapter {
             detail: uncertain
               ? "Claude user settings could not be validated; Claude may pause native cleanup unless managed settings provide cleanupPeriodDays."
               : configuredDays === undefined
-                ? "Claude documents a 30-day startup retention sweep; managed and project overrides were not resolved."
-                : `Claude user settings declare a ${configuredDays}-day startup retention sweep; managed and project overrides were not resolved.`,
+                ? "Claude documents a 30-day startup retention sweep; higher-precedence settings were not resolved."
+                : `Claude user settings declare a ${configuredDays}-day startup retention sweep; higher-precedence settings were not resolved.`,
           },
           {
             code: "provider-owned-report-only",
