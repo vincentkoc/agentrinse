@@ -26,6 +26,8 @@ The project follows semantic versioning after its first supported release.
   command lines, with fail-closed incomplete process evidence
 - recoverable quarantine for direct Claude `debug/*.txt` files older than 30
   days, with a seven-day undo window before purge
+- recoverable quarantine for the exact Claude `cache/changelog.md` file after
+  30 days, without matching neighboring or undocumented cache files
 
 ### Fixed
 
@@ -40,8 +42,9 @@ The project follows semantic versioning after its first supported release.
   path contract for disposable log or cache files
 - directories, symlinks, sessions, transcripts, databases, credentials,
   configuration, and ambiguous recovery state remain outside this boundary
-- Claude cleanup excludes JSONL, nested paths, recent logs, active Claude
-  processes, open descriptors, and incomplete directory enumeration
+- Claude cleanup excludes JSONL, nested paths, recent files, undocumented
+  caches, active Claude processes, open descriptors, and incomplete directory
+  enumeration
 
 ## [0.4.0] - 2026-07-25
 

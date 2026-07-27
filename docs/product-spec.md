@@ -1887,6 +1887,7 @@ AgentRinse owns:
 - Git safety analysis
 - artifact trimming
 - recoverable quarantine for exact old Claude debug logs
+- recoverable quarantine for the exact stale Claude changelog cache
 - explanation of native retention behavior
 
 ### Discovery
@@ -1900,6 +1901,8 @@ Detect:
 - live Claude processes
 - configured `cleanupPeriodDays`
 - direct regular `debug/*.txt` files old enough for the AgentRinse policy
+- the exact regular `cache/changelog.md` file when it exceeds the AgentRinse
+  age policy
 
 ### Session handling
 
@@ -1917,16 +1920,30 @@ Provider settings parsing failures protect affected resources.
 
 ### Debug log handling
 
-Direct regular files matching `debug/*.txt` are the only Claude-owned mutation
-surface in this phase. A file must be at least 30 days old and completely
-identified before it can emit `provider.file-quarantine`. The action is
-`recoverable`, retains the file for seven days, and revalidates the configured
-Claude root, exact content identity, stopped provider processes, and open
-descriptors before its atomic move.
+Direct regular files matching `debug/*.txt` are one Claude-owned mutation
+surface. A file must be at least 30 days old and completely identified before
+it can emit `provider.file-quarantine`. The action is `recoverable`, retains
+the file for seven days, and revalidates the configured Claude root, exact
+content identity, stopped provider processes, and open descriptors before its
+atomic move.
 
 Directories, nested debug paths, JSONL, transcripts, prompt history,
 checkpoint state, tasks, settings, credentials, plugins, and caches do not
-match this policy.
+match this debug-log policy.
+
+### Changelog cache handling
+
+The exact regular file `cache/changelog.md` may emit a separate
+`claude.changelog-cache` policy action after 30 days. [Claude's
+application-data
+reference](https://code.claude.com/docs/en/claude-directory) documents this
+release-notes cache as rebuildable and refreshed in the background. The action
+uses the same seven-day recoverable quarantine, configured-root, complete
+identity, stopped-provider, and open-descriptor checks as debug logs.
+
+No directory or wildcard cache policy exists. Neighboring cache files,
+`paste-cache`, `image-cache`, `remote-settings.json`, `policy-limits.json`,
+and undocumented cache paths remain protected.
 
 ### Native cleanup interaction
 
@@ -3568,6 +3585,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] offline Codex database compaction
 - [x] exact provider-file quarantine, undo, purge, and recovery foundation
 - [x] recoverable Claude debug-log quarantine
+- [x] recoverable Claude changelog-cache quarantine
 
 ### Documentation and release
 

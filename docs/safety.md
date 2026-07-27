@@ -73,10 +73,15 @@ Directories, sessions, transcripts, databases, credentials, configuration,
 plugins, and caches without an explicit file-level owner contract are not
 accepted.
 
-The first registered owner contract is Claude `debug/*.txt`: one direct
-regular file, at least 30 days old, retained in quarantine for seven days.
-JSONL, nested paths, recent files, incomplete directory enumeration, active
-Claude processes, and open descriptors remain protected.
+The registered Claude owner contracts are:
+
+- `debug/*.txt`: one direct regular debug file
+- `cache/changelog.md`: the exact rebuildable changelog cache
+
+Both require a minimum age of 30 days and seven days of recoverable
+quarantine. JSONL, nested paths, neighboring or undocumented cache files,
+recent files, incomplete directory enumeration, active Claude processes, and
+open descriptors remain protected.
 
 ## Recoverable Codex Database Boundary
 
