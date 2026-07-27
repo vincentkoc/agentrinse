@@ -8,6 +8,16 @@ export type ProviderRootOptions = {
   platform?: NodeJS.Platform;
 };
 
+function providerRootEnvironment(spec: ProviderSpec): string | undefined {
+  if (spec.id === "claude") {
+    return "CLAUDE_CONFIG_DIR";
+  }
+  if (spec.id === "copilot") {
+    return "COPILOT_HOME";
+  }
+  return undefined;
+}
+
 export function resolveProviderRoot(
   spec: ProviderSpec,
   home: string,
@@ -16,11 +26,12 @@ export function resolveProviderRoot(
   if (options.root !== undefined) {
     return resolve(options.root);
   }
-  if (spec.id === "claude") {
-    const configuredRoot = options.environment?.CLAUDE_CONFIG_DIR;
+  const environmentVariable = providerRootEnvironment(spec);
+  if (environmentVariable !== undefined) {
+    const configuredRoot = options.environment?.[environmentVariable];
     if (configuredRoot !== undefined && configuredRoot !== "") {
       if (!isAbsolute(configuredRoot)) {
-        throw new Error("CLAUDE_CONFIG_DIR must be an absolute path");
+        throw new Error(`${environmentVariable} must be an absolute path`);
       }
       return resolve(configuredRoot);
     }

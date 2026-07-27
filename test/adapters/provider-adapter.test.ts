@@ -149,6 +149,46 @@ describe("ProviderAuditAdapter", () => {
     expect(probe).toMatchObject({ status: "available", root });
   });
 
+  it("uses COPILOT_HOME as the default Copilot root", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "copilot-state");
+    await mkdir(join(root, "session-state"), { recursive: true });
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.copilot, {
+      environment: { COPILOT_HOME: root },
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+
+    expect(probe).toMatchObject({ status: "available", root });
+    expect(collection.resources[0]?.resource.path).toBe(join(root, "session-state"));
+  });
+
+  it("fails closed for a relative COPILOT_HOME", async () => {
+    const context = await fixtureContext();
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.copilot, {
+      environment: { COPILOT_HOME: "relative/copilot-state" },
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+
+    expect(probe).toMatchObject({
+      status: "degraded",
+      detail: "GitHub Copilot CLI root configuration is invalid",
+      diagnostics: [
+        {
+          code: "PROVIDER_ROOT_INVALID",
+          message: "COPILOT_HOME must be an absolute path",
+        },
+      ],
+    });
+    expect((await adapter.collect(context, probe)).resources).toEqual([]);
+  });
+
   it("proposes an experimental offline vacuum only with explicit authorization", async () => {
     const context = await fixtureContext();
     const path = join(context.home, ".codex", "state_5.sqlite");

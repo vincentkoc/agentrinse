@@ -37,6 +37,8 @@ The project follows semantic versioning after its first supported release.
 - Claude discovery and provider-file authorization now share explicit root,
   absolute `CLAUDE_CONFIG_DIR`, and `$HOME/.claude` precedence and fail closed
   on relative environment values
+- Copilot discovery now honors explicit root, absolute `COPILOT_HOME`, and
+  `$HOME/.copilot` precedence and fails closed on relative environment values
 
 ### Safety
 
