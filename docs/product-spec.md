@@ -1957,9 +1957,11 @@ native cleanup expected
 The finding includes Claude's documented 30-day default and a valid user-level
 `cleanupPeriodDays` when present. It explicitly marks the effective value as
 unknown because higher-precedence settings are not resolved. The user settings
-read is limited to a stable direct regular file of at most 1 MiB.
-Malformed, unreadable, changing, symlinked, oversized, or invalid settings
-produce `native cleanup uncertain` instead of falling back to 30 days.
+read is limited to a stable direct regular file of at most 1 MiB. Only empty or
+retention-only objects are validated; additional fields preserve the observed
+cleanup period but leave whole-file validity unverified. Malformed, unreadable,
+changing, symlinked, oversized, invalid, or unverified settings produce
+`native cleanup uncertain` instead of falling back to 30 days.
 
 Native retention never emits an AgentRinse action. Exact debug-log and
 changelog-cache quarantine remain separate policies with their own apply-time

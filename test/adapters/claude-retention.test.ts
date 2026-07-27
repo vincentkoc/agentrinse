@@ -137,6 +137,41 @@ describe("Claude native retention reporting", () => {
     ]);
   });
 
+  it("reports additional settings fields as unverified instead of validating the whole file", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, ".claude");
+    await mkdir(join(root, "projects"), { recursive: true });
+    await writeFile(join(root, "settings.json"), '{"cleanupPeriodDays":45,"permissions":1}\n');
+    const claude = adapter();
+
+    const probe = await claude.probe(context);
+    const collection = await claude.collect(context, probe);
+    const sessions = collection.resources.find(
+      (resource) => resource.resource.displayName === "Claude project sessions",
+    );
+    const finding = await claude.classify(context, sessions!);
+
+    expect(collection.diagnostics).toContainEqual(
+      expect.objectContaining({
+        code: "CLAUDE_RETENTION_SETTINGS_UNVERIFIED",
+      }),
+    );
+    expect(sessions?.facts.nativeRetention).toMatchObject({
+      userSettingsStatus: "unverified",
+      userConfiguredDays: 45,
+      effectiveDaysKnown: false,
+    });
+    expect(finding).toMatchObject({
+      state: "protected",
+      confidence: "unknown",
+      roots: [
+        { code: "claude-native-retention-uncertain" },
+        { code: "provider-owned-report-only" },
+      ],
+      candidateActions: [],
+    });
+  });
+
   it("does not follow a symlinked Claude settings file", async () => {
     const context = await fixtureContext();
     const root = join(context.home, ".claude");

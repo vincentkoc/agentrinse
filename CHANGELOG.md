@@ -48,9 +48,9 @@ The project follows semantic versioning after its first supported release.
 - Claude cleanup excludes JSONL, nested paths, recent files, undocumented
   caches, active Claude processes, open descriptors, and incomplete directory
   enumeration
-- malformed, unreadable, changing, symlinked, oversized, and invalid Claude
-  settings make native retention uncertain instead of assuming the default or
-  emitting an action
+- malformed, unreadable, changing, symlinked, oversized, invalid, and
+  whole-file-unverified Claude settings make native retention uncertain instead
+  of assuming the default or emitting an action
 
 ## [0.4.0] - 2026-07-25
 

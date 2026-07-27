@@ -63,9 +63,11 @@ debug data, `paste-cache`, and `image-cache`. It reads only the direct user
 `settings.json`, with a 1 MiB limit and stable-file check. A valid user
 `cleanupPeriodDays` value is reported alongside Claude's documented 30-day
 default, but never presented as globally effective because higher-precedence
-settings are not resolved. Missing settings preserve the documented default
-signal. Malformed, unreadable, changing, symlinked, oversized, or invalid
-settings make native cleanup uncertain and emit no action.
+settings are not resolved. AgentRinse validates only empty or retention-only
+user settings objects; additional fields remain unverified rather than copying
+Claude's full settings schema. Missing settings preserve the documented default
+signal. Malformed, unreadable, changing, symlinked, oversized, invalid, or
+unverified settings make native cleanup uncertain and emit no action.
 
 Direct regular files matching `debug/*.txt` may produce
 `provider.file-quarantine` after 30 days. The action is `recoverable`, excluded

@@ -93,10 +93,12 @@ The user `settings.json` read is pinned to one direct regular file, capped at
 1 MiB, and checked for stable device, inode, mode, timestamps, and size before
 and after reading. AgentRinse reports a valid user value but does not call it
 globally effective because higher-precedence settings are outside this
-inspection. Missing user settings retain the documented 30-day default signal.
-Malformed, unreadable, changing, symlinked, oversized, or invalid settings
-downgrade the finding to unknown confidence. AgentRinse does not substitute
-the default or emit a cleanup action in that state.
+inspection. Only empty or retention-only user settings objects are validated;
+additional fields preserve any observed cleanup period but make whole-file
+validity unverified. Missing user settings retain the documented 30-day default
+signal. Malformed, unreadable, changing, symlinked, oversized, invalid, or
+unverified settings downgrade the finding to unknown confidence. AgentRinse
+does not substitute the default or emit a cleanup action in that state.
 
 ## Recoverable Codex Database Boundary
 

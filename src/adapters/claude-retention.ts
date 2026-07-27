@@ -23,6 +23,7 @@ export const claudeNativeRetentionFactsSchema = z.object({
     "unreadable",
     "unsupported",
     "too-large",
+    "unverified",
   ]),
   userConfiguredDays: z.number().int().min(1).optional(),
 });
@@ -230,11 +231,12 @@ export async function inspectClaudeNativeRetention(
     ]);
   }
 
-  const cleanupPeriodDays = (value as Record<string, unknown>).cleanupPeriodDays;
-  if (cleanupPeriodDays === undefined) {
-    return inspection("valid");
-  }
-  if (!Number.isInteger(cleanupPeriodDays) || (cleanupPeriodDays as number) < 1) {
+  const settings = value as Record<string, unknown>;
+  const cleanupPeriodDays = settings.cleanupPeriodDays;
+  if (
+    cleanupPeriodDays !== undefined &&
+    (!Number.isInteger(cleanupPeriodDays) || (cleanupPeriodDays as number) < 1)
+  ) {
     return inspection("invalid", [
       warning(
         "CLAUDE_RETENTION_SETTINGS_INVALID",
@@ -242,5 +244,19 @@ export async function inspectClaudeNativeRetention(
       ),
     ]);
   }
-  return inspection("valid", [], cleanupPeriodDays as number);
+  const userConfiguredDays =
+    cleanupPeriodDays === undefined ? undefined : (cleanupPeriodDays as number);
+  if (Object.keys(settings).some((key) => key !== "cleanupPeriodDays")) {
+    return inspection(
+      "unverified",
+      [
+        warning(
+          "CLAUDE_RETENTION_SETTINGS_UNVERIFIED",
+          "Claude user settings contain fields AgentRinse does not validate; native retention is uncertain.",
+        ),
+      ],
+      userConfiguredDays,
+    );
+  }
+  return inspection("valid", [], userConfiguredDays);
 }
