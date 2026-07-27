@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -96,6 +96,27 @@ describe("provider file policy", () => {
     },
   );
 
+  it.skipIf(sep !== "/")("rejects a root-level debug filename containing a backslash", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const ownerRoot = join(home, "claude-data");
+    const action = await actionFor(ownerRoot, "debug\\session.txt");
+
+    await expect(
+      authorizeProviderFileAction(
+        action,
+        home,
+        DEFAULT_CONFIG,
+        "darwin",
+        {
+          CLAUDE_CONFIG_DIR: ownerRoot,
+        },
+        new Date("2026-07-25T00:00:00.000Z"),
+      ),
+    ).rejects.toThrow(
+      `provider-file target is not approved by policy claude:${CLAUDE_DEBUG_LOG_POLICY_ID}`,
+    );
+  });
+
   it("rejects recent logs and shortened recovery windows at authorization", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
@@ -176,6 +197,27 @@ describe("provider file policy", () => {
       );
     },
   );
+
+  it.skipIf(sep !== "/")("rejects a root-level cache filename containing a backslash", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const ownerRoot = join(home, "claude-data");
+    const action = await cacheActionFor(ownerRoot, "cache\\changelog.md");
+
+    await expect(
+      authorizeProviderFileAction(
+        action,
+        home,
+        DEFAULT_CONFIG,
+        "darwin",
+        {
+          CLAUDE_CONFIG_DIR: ownerRoot,
+        },
+        new Date("2026-07-27T00:00:00.000Z"),
+      ),
+    ).rejects.toThrow(
+      `provider-file target is not approved by policy claude:${CLAUDE_CHANGELOG_CACHE_POLICY_ID}`,
+    );
+  });
 
   it("rejects recent changelog caches and shortened recovery windows at authorization", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -146,10 +146,12 @@ describe("Claude changelog cache cleanup", () => {
   });
 
   it("matches only the exact Claude changelog cache path", () => {
-    expect(isClaudeChangelogCacheRelativePath("cache/changelog.md")).toBe(true);
-    expect(isClaudeChangelogCacheRelativePath("cache\\changelog.md")).toBe(true);
+    expect(isClaudeChangelogCacheRelativePath(`cache${sep}changelog.md`)).toBe(true);
     expect(isClaudeChangelogCacheRelativePath("cache/my-closed-issues.json")).toBe(false);
     expect(isClaudeChangelogCacheRelativePath("cache/nested/changelog.md")).toBe(false);
     expect(isClaudeChangelogCacheRelativePath("changelog.md")).toBe(false);
+    if (sep === "/") {
+      expect(isClaudeChangelogCacheRelativePath("cache\\changelog.md")).toBe(false);
+    }
   });
 });

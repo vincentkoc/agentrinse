@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -124,10 +124,12 @@ describe("Claude debug cleanup", () => {
   });
 
   it("matches only one direct Claude debug text file", () => {
-    expect(isClaudeDebugLogRelativePath("debug/session.txt")).toBe(true);
-    expect(isClaudeDebugLogRelativePath("debug\\session.txt")).toBe(true);
+    expect(isClaudeDebugLogRelativePath(`debug${sep}session.txt`)).toBe(true);
     expect(isClaudeDebugLogRelativePath("debug/session.jsonl")).toBe(false);
     expect(isClaudeDebugLogRelativePath("debug/nested/session.txt")).toBe(false);
     expect(isClaudeDebugLogRelativePath("projects/session.txt")).toBe(false);
+    if (sep === "/") {
+      expect(isClaudeDebugLogRelativePath("debug\\session.txt")).toBe(false);
+    }
   });
 });

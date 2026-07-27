@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 
 import { resolveProviderRoot } from "../adapters/provider-root.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
@@ -21,7 +21,7 @@ export const CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES = 30 * 24 * 60;
 export const CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
 
 export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
-  const components = relativePath.split(/[\\/]/u);
+  const components = relativePath.split(sep);
   return (
     components.length === 2 &&
     components[0] === "debug" &&
@@ -31,7 +31,7 @@ export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
 }
 
 export function isClaudeChangelogCacheRelativePath(relativePath: string): boolean {
-  const components = relativePath.split(/[\\/]/u);
+  const components = relativePath.split(sep);
   return components.length === 2 && components[0] === "cache" && components[1] === "changelog.md";
 }
 
