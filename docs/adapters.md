@@ -54,14 +54,21 @@ descriptors.
 ### Claude
 
 Transcripts, prompt history, checkpoint files, task state, settings,
-credentials, plugins, caches, and native orphaned-worktree cleanup stay
-provider-owned.
+credentials, plugins, undocumented caches, and native orphaned-worktree
+cleanup stay provider-owned.
 
 Direct regular files matching `debug/*.txt` may produce
 `provider.file-quarantine` after 30 days. The action is `recoverable`, excluded
 by the default `safe` ceiling, retains the exact file for seven days, and
 requires Claude to be stopped with no open descriptor. JSONL and nested paths
 never match this policy.
+
+The exact regular file `cache/changelog.md` may use the same recoverable
+quarantine boundary after 30 days. [Claude's application-data
+reference](https://code.claude.com/docs/en/claude-directory) documents it as a
+release-notes cache that is refreshed in the background. AgentRinse does not
+enumerate or mutate neighboring cache files, `paste-cache`, `image-cache`,
+`remote-settings.json`, or `policy-limits.json`.
 
 ### Cursor
 

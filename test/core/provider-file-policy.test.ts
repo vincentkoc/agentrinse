@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +9,7 @@ import type { ProviderFileQuarantineAction } from "../../src/contracts/action.js
 import { inspectProviderFile } from "../../src/core/provider-file-identity.js";
 import {
   authorizeProviderFileAction,
+  CLAUDE_CHANGELOG_CACHE_POLICY_ID,
   CLAUDE_DEBUG_LOG_POLICY_ID,
 } from "../../src/core/provider-file-policy.js";
 
@@ -34,6 +35,20 @@ async function actionFor(
     pendingQuarantineBytes: target.measuredBytes,
     quarantineTtlMinutes: 7 * 24 * 60,
     target,
+  };
+}
+
+async function cacheActionFor(
+  ownerRoot: string,
+  relativePath: string,
+  mtime = new Date("2026-06-01T00:00:00.000Z"),
+): Promise<Extract<ProviderFileQuarantineAction, { adapter: "claude" }>> {
+  const action = await actionFor(ownerRoot, relativePath, mtime);
+  return {
+    ...action,
+    resourceId: "claude:agent-cache:policy-test",
+    policyId: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+    description: "quarantine a synthetic Claude changelog cache",
   };
 }
 
@@ -81,6 +96,27 @@ describe("provider file policy", () => {
     },
   );
 
+  it.skipIf(sep !== "/")("rejects a root-level debug filename containing a backslash", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const ownerRoot = join(home, "claude-data");
+    const action = await actionFor(ownerRoot, "debug\\session.txt");
+
+    await expect(
+      authorizeProviderFileAction(
+        action,
+        home,
+        DEFAULT_CONFIG,
+        "darwin",
+        {
+          CLAUDE_CONFIG_DIR: ownerRoot,
+        },
+        new Date("2026-07-25T00:00:00.000Z"),
+      ),
+    ).rejects.toThrow(
+      `provider-file target is not approved by policy claude:${CLAUDE_DEBUG_LOG_POLICY_ID}`,
+    );
+  });
+
   it("rejects recent logs and shortened recovery windows at authorization", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
@@ -115,6 +151,108 @@ describe("provider file policy", () => {
           CLAUDE_CONFIG_DIR: ownerRoot,
         },
         new Date("2026-07-25T00:00:00.000Z"),
+      ),
+    ).rejects.toThrow("at least seven days");
+  });
+
+  it("authorizes only the exact old Claude changelog cache", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const ownerRoot = join(home, "claude-data");
+    const action = await cacheActionFor(ownerRoot, "cache/changelog.md");
+
+    await expect(
+      authorizeProviderFileAction(
+        action,
+        home,
+        DEFAULT_CONFIG,
+        "darwin",
+        {
+          CLAUDE_CONFIG_DIR: ownerRoot,
+        },
+        new Date("2026-07-27T00:00:00.000Z"),
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it.each(["cache/my-closed-issues.json", "cache/nested/changelog.md", "changelog.md"])(
+    "rejects the non-cache-policy path %s",
+    async (relativePath) => {
+      const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+      const ownerRoot = join(home, "claude-data");
+      const action = await cacheActionFor(ownerRoot, relativePath);
+
+      await expect(
+        authorizeProviderFileAction(
+          action,
+          home,
+          DEFAULT_CONFIG,
+          "darwin",
+          {
+            CLAUDE_CONFIG_DIR: ownerRoot,
+          },
+          new Date("2026-07-27T00:00:00.000Z"),
+        ),
+      ).rejects.toThrow(
+        `provider-file target is not approved by policy claude:${CLAUDE_CHANGELOG_CACHE_POLICY_ID}`,
+      );
+    },
+  );
+
+  it.skipIf(sep !== "/")("rejects a root-level cache filename containing a backslash", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const ownerRoot = join(home, "claude-data");
+    const action = await cacheActionFor(ownerRoot, "cache\\changelog.md");
+
+    await expect(
+      authorizeProviderFileAction(
+        action,
+        home,
+        DEFAULT_CONFIG,
+        "darwin",
+        {
+          CLAUDE_CONFIG_DIR: ownerRoot,
+        },
+        new Date("2026-07-27T00:00:00.000Z"),
+      ),
+    ).rejects.toThrow(
+      `provider-file target is not approved by policy claude:${CLAUDE_CHANGELOG_CACHE_POLICY_ID}`,
+    );
+  });
+
+  it("rejects recent changelog caches and shortened recovery windows at authorization", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const ownerRoot = join(home, "claude-data");
+    const recent = await cacheActionFor(
+      ownerRoot,
+      "cache/changelog.md",
+      new Date("2026-07-20T00:00:00.000Z"),
+    );
+
+    await expect(
+      authorizeProviderFileAction(
+        recent,
+        home,
+        DEFAULT_CONFIG,
+        "darwin",
+        {
+          CLAUDE_CONFIG_DIR: ownerRoot,
+        },
+        new Date("2026-07-27T00:00:00.000Z"),
+      ),
+    ).rejects.toThrow("Claude changelog caches must be at least 30 days old");
+
+    const old = await cacheActionFor(ownerRoot, "cache/changelog.md");
+    old.quarantineTtlMinutes = 60;
+    await expect(
+      authorizeProviderFileAction(
+        old,
+        home,
+        DEFAULT_CONFIG,
+        "darwin",
+        {
+          CLAUDE_CONFIG_DIR: ownerRoot,
+        },
+        new Date("2026-07-27T00:00:00.000Z"),
       ),
     ).rejects.toThrow("at least seven days");
   });
