@@ -6,6 +6,7 @@ export const resourceKindSchema = z.enum([
   "agent-home",
   "agent-session-store",
   "agent-log-store",
+  "agent-cache",
   "agent-database",
   "agent-snapshot-store",
   "agent-runtime",

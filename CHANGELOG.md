@@ -8,6 +8,7 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- `agent-cache` resource identity for provider-owned disposable cache artifacts
 - recoverable `provider.file-quarantine` execution, undo, purge, run-journal,
   manifest, and JSON Schema contracts for exact provider-owned regular files
 - streamed content identity, provider-process and descriptor refusal,
