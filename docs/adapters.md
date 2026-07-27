@@ -1,14 +1,15 @@
 # Adapter Matrix
 
 Provider and Docker adapters are read-only except for versioned Codex database
-maintenance and exact Claude debug-log quarantine. Artifact cleanup is scoped
-to explicitly configured rebuildable directories. The Git adapter can emit one
-recoverable whole-worktree action when every safety gate is proven.
+maintenance and exact Claude debug-log and changelog-cache quarantine. Artifact
+cleanup is scoped to explicitly configured rebuildable directories. The Git
+adapter can emit one recoverable whole-worktree action when every safety gate
+is proven.
 
 | Adapter        | Current capability                                        | Protected state |
 | -------------- | --------------------------------------------------------- | --------------- |
 | Codex          | sessions, worktrees, four SQLite DBs, offline compaction  | conditional     |
-| Claude         | sessions, worktrees, recoverable old debug-log quarantine | conditional     |
+| Claude         | sessions, caches, native retention, exact file quarantine | conditional     |
 | Cursor         | workspace state, global state, logs                       | all             |
 | GitHub Copilot | CLI sessions and logs                                     | all             |
 | Zed            | user-data root                                            | all             |
@@ -56,6 +57,16 @@ descriptors.
 Transcripts, prompt history, checkpoint files, task state, settings,
 credentials, plugins, undocumented caches, and native orphaned-worktree
 cleanup stay provider-owned.
+
+AgentRinse reports Claude's native startup retention for project sessions,
+debug data, managed worktrees, `paste-cache`, and `image-cache`. It reads only
+the direct user `settings.json`, with a 1 MiB limit and stable-file check. A
+valid user `cleanupPeriodDays` value is reported alongside Claude's documented
+30-day default, but never presented as globally effective because
+higher-precedence settings are not resolved. Missing settings preserve the
+documented default signal. Malformed, unreadable, changing, symlinked,
+oversized, or invalid settings make native cleanup uncertain and emit no
+action.
 
 Direct regular files matching `debug/*.txt` may produce
 `provider.file-quarantine` after 30 days. The action is `recoverable`, excluded

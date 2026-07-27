@@ -28,6 +28,9 @@ The project follows semantic versioning after its first supported release.
   days, with a seven-day undo window before purge
 - recoverable quarantine for the exact Claude `cache/changelog.md` file after
   30 days, without matching neighboring or undocumented cache files
+- report-only Claude native retention findings for sessions, debug data,
+  managed worktrees, paste cache, and image cache, including the documented
+  default and any valid user `cleanupPeriodDays`
 
 ### Fixed
 
@@ -45,6 +48,9 @@ The project follows semantic versioning after its first supported release.
 - Claude cleanup excludes JSONL, nested paths, recent files, undocumented
   caches, active Claude processes, open descriptors, and incomplete directory
   enumeration
+- malformed, unreadable, changing, symlinked, oversized, and invalid Claude
+  settings make native retention uncertain instead of assuming the default or
+  emitting an action
 
 ## [0.4.0] - 2026-07-25
 
