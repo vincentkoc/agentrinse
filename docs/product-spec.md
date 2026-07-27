@@ -760,15 +760,18 @@ Resource IDs must be deterministic across unchanged audits.
 export type ResourceKind =
   | "git-worktree"
   | "build-artifact"
-  | "agent-session"
+  | "agent-home"
+  | "agent-session-store"
   | "agent-log-store"
+  | "agent-cache"
+  | "agent-database"
+  | "agent-snapshot-store"
   | "agent-runtime"
   | "docker-container"
   | "docker-image"
   | "docker-network"
   | "docker-volume"
-  | "docker-build-cache"
-  | "external-cleaner";
+  | "docker-build-cache";
 
 export type ResourceRef = {
   id: string;
