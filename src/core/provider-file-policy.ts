@@ -16,6 +16,9 @@ export type ProviderFilePolicy = {
 export const CLAUDE_DEBUG_LOG_POLICY_ID = "claude.debug-log";
 export const CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES = 30 * 24 * 60;
 export const CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
+export const CLAUDE_CHANGELOG_CACHE_POLICY_ID = "claude.changelog-cache";
+export const CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES = 30 * 24 * 60;
+export const CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
 
 export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
   const components = relativePath.split(/[\\/]/u);
@@ -27,22 +30,57 @@ export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
   );
 }
 
+export function isClaudeChangelogCacheRelativePath(relativePath: string): boolean {
+  const components = relativePath.split(/[\\/]/u);
+  return components.length === 2 && components[0] === "cache" && components[1] === "changelog.md";
+}
+
+function validateAgeAndRecoveryWindow(
+  action: ProviderFileQuarantineAction,
+  now: Date,
+  label: string,
+  minimumAgeMinutes: number,
+  minimumTtlMinutes: number,
+): string | undefined {
+  if (action.pendingQuarantineBytes !== action.target.measuredBytes) {
+    return "pending quarantine bytes must match the exact file identity";
+  }
+  if (action.quarantineTtlMinutes < minimumTtlMinutes) {
+    return `${label} require at least seven days of recoverable quarantine`;
+  }
+  if (now.getTime() - action.target.mtimeMs < minimumAgeMinutes * 60_000) {
+    return `${label} must be at least 30 days old`;
+  }
+  return undefined;
+}
+
 export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [
   {
     id: CLAUDE_DEBUG_LOG_POLICY_ID,
     provider: "claude",
     matchesRelativePath: isClaudeDebugLogRelativePath,
     validateAction(action, now) {
-      if (action.pendingQuarantineBytes !== action.target.measuredBytes) {
-        return "pending quarantine bytes must match the exact file identity";
-      }
-      if (action.quarantineTtlMinutes < CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES) {
-        return "Claude debug logs require at least seven days of recoverable quarantine";
-      }
-      if (now.getTime() - action.target.mtimeMs < CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES * 60_000) {
-        return "Claude debug logs must be at least 30 days old";
-      }
-      return undefined;
+      return validateAgeAndRecoveryWindow(
+        action,
+        now,
+        "Claude debug logs",
+        CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
+        CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
+      );
+    },
+  },
+  {
+    id: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+    provider: "claude",
+    matchesRelativePath: isClaudeChangelogCacheRelativePath,
+    validateAction(action, now) {
+      return validateAgeAndRecoveryWindow(
+        action,
+        now,
+        "Claude changelog caches",
+        CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
+        CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES,
+      );
     },
   },
 ];

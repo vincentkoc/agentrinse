@@ -15,9 +15,13 @@ import {
 import { sha256 } from "../core/digest.js";
 import { measurePath } from "../core/measure.js";
 import {
+  CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
+  CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+  CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES,
   CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
   CLAUDE_DEBUG_LOG_POLICY_ID,
   CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
+  isClaudeChangelogCacheRelativePath,
   isClaudeDebugLogRelativePath,
 } from "../core/provider-file-policy.js";
 import type { ReachabilityIndex } from "../core/reachability.js";
@@ -29,6 +33,7 @@ import {
   type CodexDatabaseDependencies,
   type CodexDatabaseInspection,
 } from "./codex-database.js";
+import { collectClaudeChangelogCache } from "./claude-cache.js";
 import { collectClaudeDebugLogs } from "./claude-debug.js";
 import { collectProviderReachability } from "./provider-reachability.js";
 import { resolveProviderRoot } from "./provider-root.js";
@@ -38,6 +43,42 @@ type ClaudeProviderFileQuarantineAction = Extract<
   ProviderFileQuarantineAction,
   { adapter: "claude" }
 >;
+
+type ClaudeProviderFileContract = {
+  policyId: string;
+  minAgeMinutes: number;
+  quarantineTtlMinutes: number;
+  matchesRelativePath(relativePath: string): boolean;
+  description: string;
+  rootCode: string;
+  rootDetail: string;
+  tooRecentDetail: string;
+};
+
+const CLAUDE_PROVIDER_FILE_CONTRACTS: readonly ClaudeProviderFileContract[] = [
+  {
+    policyId: CLAUDE_DEBUG_LOG_POLICY_ID,
+    minAgeMinutes: CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
+    quarantineTtlMinutes: CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
+    matchesRelativePath: isClaudeDebugLogRelativePath,
+    description: "Quarantine a Claude debug log older than 30 days",
+    rootCode: "claude-debug-log-owner-contract",
+    rootDetail:
+      "Claude documents direct debug logs as disposable application data with no user-facing loss.",
+    tooRecentDetail: "The debug log is newer than the 30-day cleanup threshold.",
+  },
+  {
+    policyId: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+    minAgeMinutes: CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
+    quarantineTtlMinutes: CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES,
+    matchesRelativePath: isClaudeChangelogCacheRelativePath,
+    description: "Quarantine the Claude changelog cache after 30 days",
+    rootCode: "claude-changelog-cache-owner-contract",
+    rootDetail:
+      "Claude documents cache/changelog.md as a rebuildable release-notes cache refreshed in the background.",
+    tooRecentDetail: "The changelog cache is newer than the 30-day cleanup threshold.",
+  },
+];
 
 export type ProviderAdapterOptions = {
   root?: string;
@@ -302,8 +343,11 @@ export class ProviderAuditAdapter implements AuditAdapter {
 
     if (this.spec.id === "claude") {
       const debugLogs = await collectClaudeDebugLogs(context, probe.root, this.options.maxEntries);
+      const changelogCache = await collectClaudeChangelogCache(context, probe.root);
       resources.push(...debugLogs.resources);
+      resources.push(...changelogCache.resources);
       diagnostics.push(...debugLogs.diagnostics);
+      diagnostics.push(...changelogCache.diagnostics);
     }
 
     return { resources, diagnostics };
@@ -314,34 +358,43 @@ export class ProviderAuditAdapter implements AuditAdapter {
     const providerFileIdentity = providerFileIdentitySchema.safeParse(
       resource.facts.providerFileIdentity,
     );
+    const claudeProviderFileContract =
+      typeof resource.facts.policyId === "string"
+        ? CLAUDE_PROVIDER_FILE_CONTRACTS.find(
+            (contract) =>
+              contract.policyId === resource.facts.policyId &&
+              providerFileIdentity.success &&
+              contract.matchesRelativePath(providerFileIdentity.data.relativePath),
+          )
+        : undefined;
     if (
       this.spec.id === "claude" &&
       providerFileIdentity.success &&
       providerFileIdentity.data.provider === "claude" &&
-      resource.facts.policyId === CLAUDE_DEBUG_LOG_POLICY_ID &&
-      isClaudeDebugLogRelativePath(providerFileIdentity.data.relativePath)
+      claudeProviderFileContract !== undefined
     ) {
       const claudeIdentity = {
         ...providerFileIdentity.data,
         provider: "claude" as const,
       };
       const oldEnough =
-        context.now.getTime() - claudeIdentity.mtimeMs >= CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES * 60_000;
+        context.now.getTime() - claudeIdentity.mtimeMs >=
+        claudeProviderFileContract.minAgeMinutes * 60_000;
       const candidateActions: ClaudeProviderFileQuarantineAction[] = oldEnough
         ? [
             {
               actionId: `provider.file-quarantine:${sha256(
-                `${CLAUDE_DEBUG_LOG_POLICY_ID}:${claudeIdentity.fingerprint}`,
+                `${claudeProviderFileContract.policyId}:${claudeIdentity.fingerprint}`,
               )}`,
               type: "provider.file-quarantine",
               adapter: "claude",
               resourceId: resource.resource.id,
-              policyId: CLAUDE_DEBUG_LOG_POLICY_ID,
+              policyId: claudeProviderFileContract.policyId,
               risk: "recoverable",
-              description: "Quarantine a Claude debug log older than 30 days",
+              description: claudeProviderFileContract.description,
               expectedReclaimBytes: 0,
               pendingQuarantineBytes: claudeIdentity.measuredBytes,
-              quarantineTtlMinutes: CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
+              quarantineTtlMinutes: claudeProviderFileContract.quarantineTtlMinutes,
               target: claudeIdentity,
             },
           ]
@@ -356,11 +409,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
         confidence: "certain",
         roots: [
           {
-            code: "claude-debug-log-owner-contract",
+            code: claudeProviderFileContract.rootCode,
             source: this.id,
             observedAt,
-            detail:
-              "Claude documents direct debug logs as disposable application data with no user-facing loss.",
+            detail: claudeProviderFileContract.rootDetail,
           },
           ...(oldEnough
             ? []
@@ -369,7 +421,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
                   code: "provider-file-too-recent",
                   source: this.id,
                   observedAt,
-                  detail: "The debug log is newer than the 30-day cleanup threshold.",
+                  detail: claudeProviderFileContract.tooRecentDetail,
                 },
               ]),
         ],
