@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, realpath, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,12 +25,17 @@ const worktreeAuditPath = join(root, "worktree-audit.json");
 const worktreePlanPath = join(root, "worktree-plan.json");
 const worktreeAuditPath2 = join(root, "worktree-audit-2.json");
 const worktreePlanPath2 = join(root, "worktree-plan-2.json");
+const zedConfigPath = join(root, "zed-config.json");
+const zedAuditPath = join(root, "zed-audit.json");
+const zedPlanPath = join(root, "zed-plan.json");
 const statePath = join(root, "state");
 const project = join(home, "project");
 const artifact = join(project, "node_modules");
 const worktreeMain = join(home, "worktree-repo");
 const worktreeLinked = join(home, "worktree-task");
 const worktreeRemote = join(home, "worktree-remote.git");
+const zedRoot = join(home, "zed-data");
+const zedLogs = join(zedRoot, "logs");
 
 for (const [command, option] of [
   ["audit", "--allow-offline-vacuum"],
@@ -126,6 +131,58 @@ try {
   if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
     throw error;
   }
+}
+
+await mkdir(zedLogs, { recursive: true });
+const zedRotatedLog = join(zedLogs, "Zed.log.old");
+await writeFile(zedRotatedLog, "synthetic rotated Zed log\n");
+await utimes(
+  zedRotatedLog,
+  new Date("2026-06-01T00:00:00.000Z"),
+  new Date("2026-06-01T00:00:00.000Z"),
+);
+await writeFile(join(zedLogs, "Zed.log"), "synthetic active Zed log\n");
+await writeFile(
+  zedConfigPath,
+  `${JSON.stringify(
+    {
+      schemaVersion: 1,
+      adapters: {
+        codex: { enabled: false },
+        claude: { enabled: false },
+        cursor: { enabled: false },
+        copilot: { enabled: false },
+        zed: { enabled: true, root: zedRoot },
+        opencode: { enabled: false },
+        grok: { enabled: false },
+        runtime: { enabled: false },
+        git: { enabled: false },
+        docker: { enabled: false },
+      },
+      plan: {
+        ttlMinutes: 30,
+        maxRisk: "recoverable",
+      },
+    },
+    null,
+    2,
+  )}\n`,
+);
+await runCli(["audit", "--home", home, "--config", zedConfigPath, "--output", zedAuditPath]);
+await runCli(["plan", "--audit", zedAuditPath, "--config", zedConfigPath, "--output", zedPlanPath]);
+const zedAudit = JSON.parse(await readFile(zedAuditPath, "utf8"));
+const zedPlan = JSON.parse(await readFile(zedPlanPath, "utf8"));
+const zedFindings = zedAudit.findings.filter(
+  (finding) => finding.facts?.policyId === "zed.rotated-log",
+);
+if (
+  zedFindings.length !== 1 ||
+  zedFindings[0]?.state !== "eligible" ||
+  zedPlan.actions?.length !== 1 ||
+  zedPlan.actions[0]?.type !== "provider.file-quarantine" ||
+  zedPlan.actions[0]?.adapter !== "zed"
+) {
+  throw new Error("smoke Zed audit did not produce one recoverable rotated-log action");
 }
 
 await execFileAsync("git", ["init", "-b", "main"], { cwd: project });
@@ -356,6 +413,7 @@ process.stdout.write(
     applied: 1,
     closeoutWorktrees: closeout.data.worktrees,
     reclaimedBytes: run.reclaimedBytes,
+    zedPlanActions: zedPlan.actions.length,
     quarantinedBytes: worktreeApply.quarantinedBytes,
     worktreeUndo: undo.length,
     worktreePurgedBytes: purge.reclaimedBytes,
