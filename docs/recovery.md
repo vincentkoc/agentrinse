@@ -49,6 +49,9 @@ They record the exact owner root, relative path, provider, policy ID, inode,
 single-link count, mode, size, mtime, and streamed content digest. Provider
 adapters must opt into this primitive with their own registered disposal
 policy; the recovery layer never discovers or widens provider targets.
+For Zed's native macOS default, the recorded owner root is the external
+`$HOME/Library/Logs/Zed` directory rather than its user-data root. The same
+pinned-root, identity, undo, and purge checks apply.
 
 ## Restore a Quarantined Worktree
 

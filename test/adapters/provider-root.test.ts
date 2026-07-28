@@ -69,4 +69,34 @@ describe("resolveProviderRoot", () => {
       }),
     ).toThrow("COPILOT_HOME must be an absolute path");
   });
+
+  it("uses FLATPAK_XDG_DATA_HOME for Zed before XDG_DATA_HOME", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.zed, "/fixture/home", {
+        platform: "linux",
+        environment: {
+          FLATPAK_XDG_DATA_HOME: "/fixture/flatpak-data",
+          XDG_DATA_HOME: "/fixture/xdg-data",
+        },
+      }),
+    ).toBe("/fixture/flatpak-data/zed");
+  });
+
+  it("uses XDG_DATA_HOME for Zed on Linux", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.zed, "/fixture/home", {
+        platform: "linux",
+        environment: { XDG_DATA_HOME: "/fixture/xdg-data" },
+      }),
+    ).toBe("/fixture/xdg-data/zed");
+  });
+
+  it("rejects a relative Zed XDG data root", () => {
+    expect(() =>
+      resolveProviderRoot(PROVIDER_SPECS.zed, "/fixture/home", {
+        platform: "linux",
+        environment: { XDG_DATA_HOME: "relative/zed-data" },
+      }),
+    ).toThrow("XDG_DATA_HOME must be an absolute path");
+  });
 });

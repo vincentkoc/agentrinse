@@ -35,6 +35,9 @@ macOS is Tier 1 for `0.5.0`.
 Mole remains external. AgentRinse does not embed, invoke, or parse Mole
 cleanup.
 
+Current main after `0.5.0` also supports recoverable quarantine for the exact
+native Zed `$HOME/Library/Logs/Zed/Zed.log.old` file after 30 days.
+
 ## Linux
 
 Linux is Tier 2 for `0.5.0`.
@@ -48,6 +51,9 @@ Linux is Tier 2 for `0.5.0`.
 - experimental recoverable offline Codex database compaction
 
 If neither `/proc` nor `lsof` can prove a target idle, apply skips it.
+
+Current main after `0.5.0` also supports recoverable quarantine for the exact
+`Zed.log.old` file under the resolved Zed data root's `logs` directory.
 
 Stale-lock recovery uses the kernel-held `lockf` utility on macOS and `flock`
 from `util-linux` on Linux. A crashed recovery process releases the mutex

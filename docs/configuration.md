@@ -104,13 +104,20 @@ resolves its root from the explicit adapter `root`, then an absolute
 degrades the Claude adapter rather than auditing the wrong directory. Copilot
 uses the same explicit-root precedence with absolute `$COPILOT_HOME`, then
 `$HOME/.copilot`; a relative value degrades only the Copilot adapter. The same
-resolution is repeated before any provider-file action is authorized. Claude
-debug-log quarantine requires `plan --max-risk recoverable` and matching apply
-authorization. Missing default roots mean the provider is absent, not broken.
-Codex can propose offline database maintenance only with
+resolution is repeated before any provider-file action is authorized.
+
+Zed uses `$HOME/Library/Logs/Zed` as the native macOS log root. An explicit
+Zed adapter `root` uses its `logs` child. Linux and other Unix-like defaults
+use `FLATPAK_XDG_DATA_HOME/zed/logs`, then `XDG_DATA_HOME/zed/logs`, then the
+platform default; environment paths must be absolute. Only the exact stale
+`Zed.log.old` file can produce an action.
+
+Claude and Zed provider-file quarantine require
+`plan --max-risk recoverable` and matching apply authorization. Missing
+default roots mean the provider is absent, not broken. Codex can propose
+offline database maintenance only with
 `audit --allow-offline-vacuum`; the flag is intentionally not persisted in
-configuration. A
-missing explicit root is a doctor warning.
+configuration. A missing explicit root is a doctor warning.
 
 Git is disabled by default and requires an explicit repository root. When
 enabled, eligible linked worktrees may produce `recoverable` quarantine

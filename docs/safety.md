@@ -83,6 +83,15 @@ quarantine. JSONL, nested paths, neighboring or undocumented cache files,
 recent files, incomplete directory enumeration, active Claude processes, and
 open descriptors remain protected.
 
+The registered Zed owner contract is the single exact `Zed.log.old` regular
+file. Its owner root is `$HOME/Library/Logs/Zed` for the native macOS default
+or `logs` beneath an explicit or non-macOS Zed data root. It also requires a
+minimum age of 30 days and seven days of recoverable quarantine. AgentRinse
+does not enumerate the log directory. The active `Zed.log`, ACP logs,
+neighboring files, databases, threads, crash reports, settings, credentials,
+extensions, recent files, active Zed processes, and open descriptors remain
+protected.
+
 ## Native Provider Retention Reporting
 
 Claude native retention is report-only. AgentRinse inventories project

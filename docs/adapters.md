@@ -1,10 +1,10 @@
 # Adapter Matrix
 
 Provider and Docker adapters are read-only except for versioned Codex database
-maintenance and exact Claude debug-log and changelog-cache quarantine. Artifact
-cleanup is scoped to explicitly configured rebuildable directories. The Git
-adapter can emit one recoverable whole-worktree action when every safety gate
-is proven.
+maintenance, exact Claude debug-log and changelog-cache quarantine, and the
+exact stale Zed rotated application log. Artifact cleanup is scoped to
+explicitly configured rebuildable directories. The Git adapter can emit one
+recoverable whole-worktree action when every safety gate is proven.
 
 | Adapter        | Current capability                                        | Protected state |
 | -------------- | --------------------------------------------------------- | --------------- |
@@ -12,7 +12,7 @@ is proven.
 | Claude         | sessions, caches, native retention, exact file quarantine | conditional     |
 | Cursor         | workspace state, global state, logs                       | all             |
 | GitHub Copilot | CLI sessions, logs, native maintenance guidance           | all             |
-| Zed            | user-data root                                            | all             |
+| Zed            | user-data root and exact rotated-log quarantine           | conditional     |
 | OpenCode       | database, logs, snapshots                                 | all             |
 | Grok Build     | version-gated data root                                   | all             |
 | Runtime        | opt-in selected executable and Claude native versions     | all             |
@@ -102,8 +102,21 @@ version, so both findings stay unknown-confidence and emit no action.
 
 ### Zed
 
-The user-data directory may be overridden. If the active directory cannot be
-resolved, discovery is incomplete and cleanup must fail closed.
+Zed keeps its native macOS application logs under
+`$HOME/Library/Logs/Zed`. Other platforms and explicit user-data roots keep
+logs under the resolved data root's `logs` directory. Linux data-root
+resolution honors absolute `FLATPAK_XDG_DATA_HOME` and `XDG_DATA_HOME` values.
+Relative environment paths make discovery incomplete.
+
+AgentRinse checks only the exact regular file `Zed.log.old`; it does not
+enumerate the log directory. The file may produce
+`provider.file-quarantine` after 30 days, with a seven-day undo window. The
+action is `recoverable`, requires an explicit recoverable risk ceiling, and
+requires all Zed and headless Zed processes stopped with no open descriptor.
+
+The active `Zed.log`, ACP logs, neighboring files, databases, threads, crash
+reports, settings, credentials, extensions, and every unknown Zed path remain
+protected.
 
 ### OpenCode
 

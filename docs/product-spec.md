@@ -2,7 +2,7 @@
 
 Status: active implementation
 
-Target version: 0.5.0
+Target version: 0.6.0
 
 Created: 2026-07-23
 
@@ -186,8 +186,10 @@ Current upstream behavior affects the product boundary:
   deleting a workspace database can make agent history inaccessible.
 - GitHub Copilot CLI keeps configuration, local sessions, logs, and
   customizations under its configurable Copilot directory.
-- Zed exposes a configurable user-data directory containing its database,
-  extensions, and logs.
+- Zed exposes a configurable user-data directory containing its database and
+  extensions. Native macOS logs live under `$HOME/Library/Logs/Zed`; other
+  supported layouts use a `logs` directory beneath the resolved data root.
+  Zed maintains one active `Zed.log` and one rotated `Zed.log.old`.
 - OpenCode stores session data and snapshots under its data directory; its
   snapshot Git repositories can become a major disk consumer and also carry
   user-visible undo state.
@@ -205,7 +207,8 @@ Consequences:
 - AgentRinse must not raw-delete Codex or Claude transcripts in its first
   releases.
 - AgentRinse must not raw-delete Cursor, Copilot, Zed, OpenCode, or Grok Build
-  sessions in its first releases.
+  sessions in its first releases. Zed cleanup is limited to the exact rotated
+  application log under a registered recoverable policy.
 - AgentRinse must cooperate with provider-native lifecycle behavior.
 - AgentRinse must treat a session-linked worktree as reachable even if its
   filesystem timestamps appear old.
@@ -2076,15 +2079,17 @@ paths over inspecting undocumented editor database keys.
 ### Ownership boundary
 
 Zed owns its user-data database, agent threads, ACP state, extensions,
-settings, authentication, and editor logs.
+settings, authentication, crash reports, and editor logs.
 
 ### Discovery
 
 Resolve the user-data directory from the running command/configuration when
 available. Platform defaults:
 
-- macOS: `$HOME/Library/Application Support/Zed`
-- Linux: `$XDG_DATA_HOME/zed`, normally `$HOME/.local/share/zed`
+- macOS data: `$HOME/Library/Application Support/Zed`
+- macOS logs: `$HOME/Library/Logs/Zed`
+- Linux data: `$FLATPAK_XDG_DATA_HOME/zed` or `$XDG_DATA_HOME/zed`, normally
+  `$HOME/.local/share/zed`
 - Windows: `%LOCALAPPDATA%\Zed`
 
 The `zed --user-data-dir <DIR>` option means the default location is not
@@ -2105,7 +2110,13 @@ Inventory:
 - extensions are package-manager-owned and not arbitrary cache candidates
 - ACP logs may contain tool messages or sensitive context and are never parsed
   for cleanup intent
-- log cleanup is disabled until a tested retention boundary exists
+- the exact regular `Zed.log.old` file may be quarantined after 30 days with a
+  seven-day undo window
+- the active `Zed.log`, ACP logs, neighboring files, crash reports, databases,
+  threads, settings, credentials, extensions, and unknown paths remain
+  protected
+- provider-file mutation requires exact owner-root authorization, stopped Zed
+  and headless Zed processes, and no open descriptor
 - no database compaction while Zed or a Zed headless server is running
 
 ## OpenCode Adapter
@@ -2751,6 +2762,8 @@ Tests cover:
 - Cursor workspace-path mapping and missing-project protection
 - Copilot CLI local-session and log separation
 - Zed custom user-data directories
+- Zed native macOS and XDG log roots
+- exact old, recent, active, neighboring, and symlinked Zed log cases
 - OpenCode snapshot growth and self-capture detection
 - Grok Build version-gated path discovery
 - no transcript content in output or run manifests
@@ -3059,6 +3072,33 @@ Exit criteria:
 - active provider processes block mutation
 - exact Docker context and object identity are revalidated before mutation
 
+### `0.5.0`: exact provider files
+
+Deliver:
+
+- shared recoverable provider-file quarantine, undo, purge, and recovery
+- exact Claude debug-log and changelog-cache policies
+- provider-native retention reporting
+
+Exit criteria:
+
+- exact owner root, policy, path, process, descriptor, inode, content, and age
+  checks fail closed
+- packaged recovery proof covers apply, undo, and purge
+
+### `0.6.0`: additional provider policies
+
+Deliver:
+
+- exact stale Zed `Zed.log.old` quarantine
+- native macOS, explicit-root, Flatpak, and XDG log-root resolution
+
+Exit criteria:
+
+- no active log, ACP log, database, thread, configuration, credential,
+  extension, crash report, neighboring file, or symlink can match
+- active Zed processes and open descriptors block mutation
+
 ### `1.0.0`: stable contracts
 
 Deliver:
@@ -3161,6 +3201,7 @@ Exit criteria:
 | Cursor workspace/global state  |         any | report only          | n/a         | editor-owned    |
 | GitHub Copilot sessions        |         any | report only          | n/a         | provider-owned  |
 | Zed database/agent state       |         any | report only          | n/a         | editor-owned    |
+| Zed `Zed.log.old`              |         30d | quarantine           | recoverable | 7d undo         |
 | OpenCode database/snapshots    |         any | report only          | n/a         | provider-owned  |
 | Grok Build sessions/task state |         any | report only          | n/a         | provider-owned  |
 | Codex logs DB free pages       |   threshold | report only          | n/a         | phase 4         |
@@ -3356,6 +3397,10 @@ reachability without expanding mutation. Release `0.3.0` adds recoverable
 worktree quarantine and undo. Release `0.4.0` adds recoverable offline Codex
 database compaction.
 
+Release `0.5.0` adds recoverable exact provider-file cleanup and the first
+Claude policies. Release `0.6.0` expands that owner-registered boundary to the
+single rotated Zed application log.
+
 ### 2026-07-25: provider cleanup uses exact recoverable files
 
 Provider-specific cleanup is built on `provider.file-quarantine`, not generic
@@ -3378,6 +3423,19 @@ The shared executor does not decide retention. Each provider adapter needs a
 separate evidence-backed policy for its known log or cache files before it may
 emit the action. Claude transcript retention and OpenCode snapshot compaction
 therefore remain separate provider-owned designs.
+
+### 2026-07-28: Zed cleanup is one rotated log
+
+Zed cleanup is limited to the exact `Zed.log.old` regular file that Zed's
+source defines beside the active `Zed.log`. AgentRinse checks no wildcard and
+does not enumerate the log directory. The policy requires 30 days of age,
+seven days of recoverable quarantine, the exact native or configured log root,
+stopped Zed processes, and no open descriptor.
+
+The active log, ACP logs, databases, threads, crash reports, settings,
+credentials, extensions, neighboring files, symlinks, and unknown paths remain
+protected. This policy does not authorize Zed database compaction or session
+cleanup.
 
 ### 2026-07-24: operational UX precedes mutation growth
 
@@ -3602,6 +3660,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] exact provider-file quarantine, undo, purge, and recovery foundation
 - [x] recoverable Claude debug-log quarantine
 - [x] recoverable Claude changelog-cache quarantine
+- [x] recoverable Zed rotated-log quarantine
 - [x] Claude native retention and cache inventory reporting
 
 ### Documentation and release

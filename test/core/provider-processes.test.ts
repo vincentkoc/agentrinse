@@ -34,6 +34,18 @@ describe("provider process inspection", () => {
     ).resolves.toEqual({ status: "busy", pids: [201, 202] });
   });
 
+  it("detects Zed application and headless processes", async () => {
+    await expect(
+      inspectProviderProcesses("zed", {
+        runPs: async () =>
+          [
+            "  211 /Applications/Zed.app/Contents/MacOS/zed",
+            "  212 /usr/local/bin/zed-editor --headless",
+          ].join("\n"),
+      }),
+    ).resolves.toEqual({ status: "busy", pids: [211, 212] });
+  });
+
   it("fails closed on incomplete process evidence", async () => {
     await expect(
       inspectProviderProcesses("opencode", {
