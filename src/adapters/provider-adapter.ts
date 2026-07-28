@@ -38,6 +38,7 @@ import {
 import { collectProviderReachability } from "./provider-reachability.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
+import { collectZedRotatedLog } from "./zed-logs.js";
 
 export type ProviderAdapterOptions = {
   root?: string;
@@ -183,6 +184,19 @@ export class ProviderAuditAdapter implements AuditAdapter {
           detail: `${this.spec.displayName} ownership metadata could not be inspected.`,
         });
       }
+      if (
+        this.spec.id === "zed" &&
+        probe.status === "absent" &&
+        this.options.inventoryResources !== false
+      ) {
+        return collectZedRotatedLog(context, {
+          ...(this.options.root === undefined ? {} : { root: this.options.root }),
+          ...(this.options.platform === undefined ? {} : { platform: this.options.platform }),
+          ...(this.options.environment === undefined
+            ? {}
+            : { environment: this.options.environment }),
+        });
+      }
       return { resources: [], diagnostics: [] };
     }
 
@@ -324,6 +338,17 @@ export class ProviderAuditAdapter implements AuditAdapter {
       resources.push(...changelogCache.resources);
       diagnostics.push(...debugLogs.diagnostics);
       diagnostics.push(...changelogCache.diagnostics);
+    }
+    if (this.spec.id === "zed") {
+      const rotatedLog = await collectZedRotatedLog(context, {
+        ...(this.options.root === undefined ? {} : { root: this.options.root }),
+        ...(this.options.platform === undefined ? {} : { platform: this.options.platform }),
+        ...(this.options.environment === undefined
+          ? {}
+          : { environment: this.options.environment }),
+      });
+      resources.push(...rotatedLog.resources);
+      diagnostics.push(...rotatedLog.diagnostics);
     }
 
     return { resources, diagnostics };

@@ -29,6 +29,9 @@ export const CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
 export const CLAUDE_CHANGELOG_CACHE_POLICY_ID = "claude.changelog-cache";
 export const CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES = 30 * 24 * 60;
 export const CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
+export const ZED_ROTATED_LOG_POLICY_ID = "zed.rotated-log";
+export const ZED_ROTATED_LOG_MIN_AGE_MINUTES = 30 * 24 * 60;
+export const ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
 
 export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
   const components = relativePath.split(sep);
@@ -43,6 +46,11 @@ export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
 export function isClaudeChangelogCacheRelativePath(relativePath: string): boolean {
   const components = relativePath.split(sep);
   return components.length === 2 && components[0] === "cache" && components[1] === "changelog.md";
+}
+
+export function isZedRotatedLogRelativePath(relativePath: string): boolean {
+  const components = relativePath.split(sep);
+  return components.length === 1 && components[0] === "Zed.log.old";
 }
 
 export type ProviderFileOwnerRootOptions = {
@@ -138,6 +146,30 @@ export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [
         "Claude changelog caches",
         CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
         CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES,
+      );
+    },
+  },
+  {
+    id: ZED_ROTATED_LOG_POLICY_ID,
+    provider: "zed",
+    ownerRoot: "zed-log-root",
+    resourceKind: "agent-log-store",
+    displayName: "Zed rotated log",
+    minAgeMinutes: ZED_ROTATED_LOG_MIN_AGE_MINUTES,
+    quarantineTtlMinutes: ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES,
+    description: "Quarantine Zed.log.old after 30 days",
+    rootCode: "zed-rotated-log-owner-contract",
+    rootDetail:
+      "Zed defines Zed.log.old as the single rotated application log beside the active Zed.log.",
+    tooRecentDetail: "The rotated Zed log is newer than the 30-day cleanup threshold.",
+    matchesRelativePath: isZedRotatedLogRelativePath,
+    validateAction(action, now) {
+      return validateAgeAndRecoveryWindow(
+        action,
+        now,
+        "Zed rotated logs",
+        ZED_ROTATED_LOG_MIN_AGE_MINUTES,
+        ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES,
       );
     },
   },
