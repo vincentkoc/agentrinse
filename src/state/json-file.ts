@@ -12,7 +12,8 @@ $directory = [System.IO.DirectoryInfo]::new([Environment]::GetEnvironmentVariabl
 $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $system = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18')
 $administrators = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
-$allowedSids = @($currentUser.Value, $system.Value, $administrators.Value)
+$identities = @($currentUser, $system, $administrators) | Group-Object Value | ForEach-Object { $_.Group[0] }
+$allowedSids = @($identities | ForEach-Object { $_.Value })
 $acl = $directory.GetAccessControl()
 $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
 if (-not $owner.Equals($currentUser)) { throw "private state directory is not owned by the current user: $($directory.FullName)" }
@@ -22,7 +23,7 @@ $inheritance = [System.Security.AccessControl.InheritanceFlags]::ObjectInherit -
 $propagation = [System.Security.AccessControl.PropagationFlags]::None
 $allow = [System.Security.AccessControl.AccessControlType]::Allow
 $full = [System.Security.AccessControl.FileSystemRights]::FullControl
-foreach ($sid in @($currentUser, $system, $administrators)) { $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid, $full, $inheritance, $propagation, $allow)) }
+foreach ($sid in $identities) { $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid, $full, $inheritance, $propagation, $allow)) }
 $directory.SetAccessControl($acl)
 $verified = $directory.GetAccessControl()
 $verifiedOwner = $verified.GetOwner([System.Security.Principal.SecurityIdentifier])
