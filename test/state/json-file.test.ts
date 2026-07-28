@@ -134,7 +134,7 @@ describe("atomic JSON files", () => {
 
       for (const directory of [root, plans]) {
         const acl = await inspectWindowsAcl(directory);
-        expect(acl.ownerSid).toBe(acl.currentUserSid);
+        expect([acl.currentUserSid, "S-1-5-32-544"]).toContain(acl.ownerSid);
         expect(acl.access).toHaveLength(3);
         expect(acl.access).toEqual(
           expect.arrayContaining([

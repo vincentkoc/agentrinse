@@ -16,7 +16,7 @@ $identities = @($currentUser, $system, $administrators) | Group-Object Value | F
 $allowedSids = @($identities | ForEach-Object { $_.Value })
 $acl = $directory.GetAccessControl()
 $owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
-if (-not $owner.Equals($currentUser)) { throw "private state directory is not owned by the current user: $($directory.FullName)" }
+if (-not ($owner.Equals($currentUser) -or $owner.Equals($administrators))) { throw "private state directory is not owned by the current user or local Administrators: $($directory.FullName)" }
 $acl.SetAccessRuleProtection($true, $false)
 foreach ($rule in @($acl.Access)) { [void] $acl.RemoveAccessRuleAll($rule) }
 $inheritance = [System.Security.AccessControl.InheritanceFlags]::ObjectInherit -bor [System.Security.AccessControl.InheritanceFlags]::ContainerInherit
@@ -27,7 +27,7 @@ foreach ($sid in $identities) { $acl.AddAccessRule([System.Security.AccessContro
 $directory.SetAccessControl($acl)
 $verified = $directory.GetAccessControl()
 $verifiedOwner = $verified.GetOwner([System.Security.Principal.SecurityIdentifier])
-if (-not $verifiedOwner.Equals($currentUser)) { throw "private state directory is not owned by the current user after ACL update: $($directory.FullName)" }
+if (-not ($verifiedOwner.Equals($currentUser) -or $verifiedOwner.Equals($administrators))) { throw "private state directory has an unexpected owner after ACL update: $($directory.FullName)" }
 $rules = @($verified.Access)
 if ($rules.Count -ne $allowedSids.Count) { throw "private state directory has unexpected access rules after ACL update: $($directory.FullName)" }
 foreach ($rule in $rules) {
