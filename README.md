@@ -15,11 +15,13 @@ protected or eligible, creates a content-addressed plan, and revalidates the
 same facts immediately before mutation.
 
 agentrinse is not audit-only. audit establishes the evidence; apply performs
-the approved filesystem, Git metadata, and offline database changes. `0.4.0`
-removes exact configured rebuildable artifacts, quarantines proven inactive linked
-worktrees, repairs and locks their Git registrations, restores quarantined
-worktrees, permanently purges explicitly selected quarantine entries, and
-compacts supported Codex SQLite state with a retained rollback copy.
+the approved filesystem, Git metadata, and offline database changes. `0.5.0`
+removes exact configured rebuildable artifacts, quarantines proven inactive
+linked worktrees, repairs and locks their Git registrations, restores
+quarantined worktrees, permanently purges explicitly selected quarantine
+entries, and compacts supported Codex SQLite state with a retained rollback
+copy. It also quarantines exact stale Claude debug logs and changelog cache
+files with a seven-day undo window.
 
 the point is confidence: make real cleanup changes without deleting the
 session, branch, worktree, database content, or cache that another agent still
@@ -33,22 +35,24 @@ optional external handoff for broader macOS and project debris.
 
 ## cleanup actions
 
-| Action                 | Risk         | What changes                                                                  | Recovery                                |
-| ---------------------- | ------------ | ----------------------------------------------------------------------------- | --------------------------------------- |
-| 🧹 artifact removal    | safe         | atomically isolates and removes an exact configured rebuildable directory     | rebuild from the project                |
-| 🌿 worktree quarantine | recoverable  | moves a linked worktree, creates a recovery ref, and repairs Git registration | `agentrinse undo <run-id>`              |
-| 🗜️ Codex DB vacuum     | experimental | builds and verifies a compacted SQLite copy, then retains the original file   | `agentrinse undo <run-id>` before reuse |
-| ↩️ worktree undo       | recoverable  | restores the worktree path and Git registration                               | original quarantine remains journaled   |
-| 🗑️ recovery purge      | destructive  | permanently removes an explicitly selected worktree or DB rollback copy       | none                                    |
-| ⚙️ config init         | operational  | creates the default config without overwriting an existing file               | edit or remove the generated config     |
-| 🔒 lock recovery       | operational  | removes only a stale AgentRinse lock after proving its process is gone        | rerun the interrupted command           |
+| Action                 | Risk         | What changes                                                                   | Recovery                                |
+| ---------------------- | ------------ | ------------------------------------------------------------------------------ | --------------------------------------- |
+| 🧹 artifact removal    | safe         | atomically isolates and removes an exact configured rebuildable directory      | rebuild from the project                |
+| 🌿 worktree quarantine | recoverable  | moves a linked worktree, creates a recovery ref, and repairs Git registration  | `agentrinse undo <run-id>`              |
+| 🧾 provider quarantine | recoverable  | moves an exact provider-owned disposable file into private recovery storage    | `agentrinse undo <run-id>`              |
+| 🗜️ Codex DB vacuum     | experimental | builds and verifies a compacted SQLite copy, then retains the original file    | `agentrinse undo <run-id>` before reuse |
+| ↩️ recovery undo       | recoverable  | restores a quarantined worktree, provider file, or database original           | recovery remains journaled              |
+| 🗑️ recovery purge      | destructive  | permanently removes an explicitly selected worktree, provider file, or DB copy | none                                    |
+| ⚙️ config init         | operational  | creates the default config without overwriting an existing file                | edit or remove the generated config     |
+| 🔒 lock recovery       | operational  | removes only a stale AgentRinse lock after proving its process is gone         | rerun the interrupted command           |
 
-Codex sessions and every other provider store remain report-only. `0.4.0`
-adds one narrow exception: explicit offline compaction for the exact current
-Codex `state_5`, `logs_2`, `goals_1`, and `memories_1` SQLite contracts. Claude
-cleanup is limited to exact old debug text files and its rebuildable changelog
-cache. AgentRinse also reports Claude's native retention policy for sessions,
-debug data, paste cache, and image cache. Docker remains audit-only.
+provider sessions, transcripts, credentials, configuration, and logical
+database records remain report-only. `0.5.0` supports explicit offline
+compaction for the exact current Codex `state_5`, `logs_2`, `goals_1`, and
+`memories_1` SQLite contracts. Claude cleanup is limited to exact old debug
+text files and its rebuildable changelog cache. AgentRinse also reports
+Claude's native retention policy and Copilot's native session and process-log
+maintenance. Docker remains audit-only.
 
 ## agent integrations
 
@@ -97,7 +101,7 @@ brew install vincentkoc/tap/agentrinse
 one-off use:
 
 ```bash
-npx agentrinse@0.4.0 doctor
+npx agentrinse@0.5.0 doctor
 ```
 
 then:
@@ -217,7 +221,7 @@ agentrinse is built around refusal:
 
 there is no generic `--force` escape hatch.
 
-agentrinse `0.4.0` never removes:
+agentrinse `0.5.0` never removes:
 
 - provider sessions, transcripts, logical database rows, credentials, or configuration
 - unsupported provider databases or Codex databases with unknown migrations
@@ -327,12 +331,12 @@ it can be verified before apply.
 
 ## platform support
 
-| Platform       | `0.4.0` support                                                |
-| -------------- | -------------------------------------------------------------- |
-| macOS          | audit, artifact/worktree cleanup, Codex DB vacuum, undo, purge |
-| Linux          | audit, artifact/worktree cleanup, Codex DB vacuum, undo, purge |
-| WSL            | Linux contract inside the WSL filesystem                       |
-| native Windows | audit-only; mutation remains blocked before `1.0.0`            |
+| Platform       | `0.5.0` support                                                 |
+| -------------- | --------------------------------------------------------------- |
+| macOS          | audit, artifact/worktree/Claude cleanup, DB vacuum, undo, purge |
+| Linux          | audit, artifact/worktree/Claude cleanup, DB vacuum, undo, purge |
+| WSL            | Linux contract inside the WSL filesystem                        |
+| native Windows | audit-only; mutation remains blocked before `1.0.0`             |
 
 Git and `lsof` are required for the complete diagnostic and process-ownership
 contract. Codex DB maintenance additionally requires `sqlite3`. Docker is
@@ -367,9 +371,9 @@ unreleased build at real developer state.
 
 ## status
 
-`0.4.0` ships the complete audit → plan → revalidate → apply loop, safe
-configured artifact cleanup, recoverable Git worktree quarantine, and
-recoverable offline Codex database compaction. Docker and non-Codex provider
-state remain report-only.
+`0.5.0` ships the complete audit → plan → revalidate → apply loop, safe
+configured artifact cleanup, recoverable Git worktree and Claude file
+quarantine, and recoverable offline Codex database compaction. Cursor, Zed,
+OpenCode, Grok Build, and Docker remain report-only.
 
 MIT licensed. built by [Vincent Koc](https://github.com/vincentkoc).

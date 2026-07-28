@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-28
+
 ### Added
 
 - `agent-cache` resource identity for provider-owned disposable cache artifacts
