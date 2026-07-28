@@ -53,6 +53,23 @@ Shipped:
 - `VACUUM INTO`, full integrity proof, locked atomic exchange, undo, and expiry
   purge
 
+## 0.5: Exact Provider Files
+
+Shipped:
+
+- shared recoverable provider-file quarantine, undo, purge, and recovery
+- exact stale Claude debug-log quarantine
+- exact Claude changelog-cache quarantine
+- Claude native retention and Copilot native maintenance reporting
+
+## 0.6: Additional Provider Policies
+
+Current:
+
+- exact stale Zed `Zed.log.old` quarantine
+- native macOS, explicit-root, Flatpak, and XDG log-root resolution
+- active Zed, descriptor, symlink, age, and exact-path refusal
+
 Remaining:
 
 - Cursor database diagnostics and optional compaction

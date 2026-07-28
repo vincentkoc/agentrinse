@@ -6,6 +6,20 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- recoverable quarantine for the exact Zed `Zed.log.old` rotated application
+  log after 30 days, with a seven-day undo window before purge
+- Zed log-root discovery for the native macOS log directory, explicit
+  user-data roots, and absolute Flatpak/XDG data roots on Linux
+
+### Safety
+
+- Zed cleanup never enumerates the log directory and excludes the active
+  `Zed.log`, ACP logs, neighboring files, databases, threads, crash reports,
+  settings, credentials, extensions, active Zed processes, and open
+  descriptors
+
 ## [0.5.0] - 2026-07-28
 
 ### Added
