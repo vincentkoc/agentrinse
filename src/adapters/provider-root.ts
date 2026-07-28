@@ -1,4 +1,4 @@
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import type { ProviderSpec } from "./provider-specs.js";
 
@@ -18,6 +18,20 @@ function providerRootEnvironment(spec: ProviderSpec): string | undefined {
   return undefined;
 }
 
+function resolveAbsoluteEnvironmentPath(
+  environment: NodeJS.ProcessEnv,
+  name: string,
+): string | undefined {
+  const value = environment[name];
+  if (value === undefined || value === "") {
+    return undefined;
+  }
+  if (!isAbsolute(value)) {
+    throw new Error(`${name} must be an absolute path`);
+  }
+  return resolve(value);
+}
+
 export function resolveProviderRoot(
   spec: ProviderSpec,
   home: string,
@@ -25,6 +39,19 @@ export function resolveProviderRoot(
 ): string {
   if (options.root !== undefined) {
     return resolve(options.root);
+  }
+  if (
+    spec.id === "zed" &&
+    (options.platform ?? process.platform) !== "darwin" &&
+    (options.platform ?? process.platform) !== "win32"
+  ) {
+    const environment = options.environment ?? process.env;
+    const dataHome =
+      resolveAbsoluteEnvironmentPath(environment, "FLATPAK_XDG_DATA_HOME") ??
+      resolveAbsoluteEnvironmentPath(environment, "XDG_DATA_HOME");
+    if (dataHome !== undefined) {
+      return join(dataHome, "zed");
+    }
   }
   const environmentVariable = providerRootEnvironment(spec);
   if (environmentVariable !== undefined) {
