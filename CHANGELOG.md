@@ -36,6 +36,9 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- native Windows audit and plan commands can persist private state without
+  attempting unsupported directory-handle sync, while enforcing and verifying
+  explicit owner, `SYSTEM`, and Administrators ACLs
 - Claude discovery and provider-file authorization now share explicit root,
   absolute `CLAUDE_CONFIG_DIR`, and `$HOME/.claude` precedence and fail closed
   on relative environment values
