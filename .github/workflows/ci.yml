@@ -45,3 +45,29 @@ jobs:
 
       - name: Smoke installed package
         run: pnpm smoke:package
+
+  windows-audit-state:
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check Windows build
+        run: pnpm typecheck
+
+      - name: Test private audit state
+        run: pnpm vitest run test/state/json-file.test.ts

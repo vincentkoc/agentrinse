@@ -1,12 +1,61 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { chmod, lstat, mkdir, open, readFile, rename, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, win32 as windowsPath } from "node:path";
 import { randomUUID } from "node:crypto";
+
+const execFileAsync = promisify(execFile);
+const windowsPrivateDirectoryPathEnvironmentVariable = "AGENTRINSE_PRIVATE_DIRECTORY";
+
+const secureWindowsPrivateDirectoryCommand = `
+$directory = [System.IO.DirectoryInfo]::new([Environment]::GetEnvironmentVariable('${windowsPrivateDirectoryPathEnvironmentVariable}'))
+$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$system = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18')
+$administrators = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+$identities = @($currentUser, $system, $administrators) | Group-Object Value | ForEach-Object { $_.Group[0] }
+$allowedSids = @($identities | ForEach-Object { $_.Value })
+$acl = $directory.GetAccessControl()
+$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
+if (-not ($owner.Equals($currentUser) -or $owner.Equals($administrators))) { throw "private state directory is not owned by the current user or local Administrators: $($directory.FullName)" }
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($rule in @($acl.Access)) { [void] $acl.RemoveAccessRuleAll($rule) }
+$inheritance = [System.Security.AccessControl.InheritanceFlags]::ObjectInherit -bor [System.Security.AccessControl.InheritanceFlags]::ContainerInherit
+$propagation = [System.Security.AccessControl.PropagationFlags]::None
+$allow = [System.Security.AccessControl.AccessControlType]::Allow
+$full = [System.Security.AccessControl.FileSystemRights]::FullControl
+foreach ($sid in $identities) { $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid, $full, $inheritance, $propagation, $allow)) }
+$directory.SetAccessControl($acl)
+$verified = $directory.GetAccessControl()
+$verifiedOwner = $verified.GetOwner([System.Security.Principal.SecurityIdentifier])
+if (-not ($verifiedOwner.Equals($currentUser) -or $verifiedOwner.Equals($administrators))) { throw "private state directory has an unexpected owner after ACL update: $($directory.FullName)" }
+$rules = @($verified.Access)
+if ($rules.Count -ne $allowedSids.Count) { throw "private state directory has unexpected access rules after ACL update: $($directory.FullName)" }
+foreach ($rule in $rules) {
+  $sid = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier])
+  if ($rule.AccessControlType -ne $allow -or $allowedSids -notcontains $sid.Value -or $rule.FileSystemRights -ne $full -or $rule.InheritanceFlags -ne $inheritance -or $rule.PropagationFlags -ne $propagation -or $rule.IsInherited) { throw "private state directory ACL verification failed: $($directory.FullName)" }
+}
+`;
+
+export function windowsPowerShellExecutable(systemRoot = process.env.SystemRoot): string {
+  if (systemRoot === undefined || !windowsPath.isAbsolute(systemRoot)) {
+    throw new Error("Windows SystemRoot is unavailable or not absolute");
+  }
+  return windowsPath.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+}
 
 export async function readJsonFile(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, "utf8")) as unknown;
 }
 
-export async function syncDirectory(path: string): Promise<void> {
+export async function syncDirectory(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  // Windows does not support fsync on directory handles. State-file handles
+  // are still synced before rename, and mutation remains blocked on Windows.
+  if (platform === "win32") {
+    return;
+  }
   const handle = await open(path, "r");
   try {
     await handle.sync();
@@ -19,6 +68,21 @@ export type JsonWriteOptions = {
   privateDirectories?: string[];
 };
 
+async function secureWindowsPrivateDirectory(directory: string): Promise<void> {
+  await execFileAsync(
+    windowsPowerShellExecutable(),
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", secureWindowsPrivateDirectoryCommand],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        [windowsPrivateDirectoryPathEnvironmentVariable]: directory,
+      },
+      windowsHide: true,
+    },
+  );
+}
+
 export async function ensurePrivateDirectory(directory: string): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const stats = await lstat(directory);
@@ -28,6 +92,10 @@ export async function ensurePrivateDirectory(directory: string): Promise<void> {
   const uid = process.getuid?.();
   if (uid !== undefined && stats.uid !== uid) {
     throw new Error(`private state directory is not owned by the current user: ${directory}`);
+  }
+  if (process.platform === "win32") {
+    await secureWindowsPrivateDirectory(directory);
+    return;
   }
   await chmod(directory, 0o700);
 }
