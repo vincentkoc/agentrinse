@@ -20,13 +20,14 @@ Run `agentrinse doctor` to verify the current machine without mutating it.
 
 ## macOS
 
-macOS is Tier 1 for `0.5.0`.
+macOS is Tier 1 for `0.6.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - `lsof` process ownership proof
 - safe configured artifact apply
 - recoverable linked-worktree quarantine, undo, and purge
 - recoverable exact Claude debug-log and changelog-cache quarantine
+- recoverable exact Zed `Zed.log.old` quarantine after 30 days
 - experimental recoverable offline Codex database compaction
 - optional Mole detection through `mo --version`
 - external `mo purge --dry-run` and `mo clean --dry-run` suggestions from the
@@ -35,12 +36,9 @@ macOS is Tier 1 for `0.5.0`.
 Mole remains external. AgentRinse does not embed, invoke, or parse Mole
 cleanup.
 
-Current main after `0.5.0` also supports recoverable quarantine for the exact
-native Zed `$HOME/Library/Logs/Zed/Zed.log.old` file after 30 days.
-
 ## Linux
 
-Linux is Tier 2 for `0.5.0`.
+Linux is Tier 2 for `0.6.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - same-user `/proc` process ownership inspection
@@ -48,12 +46,10 @@ Linux is Tier 2 for `0.5.0`.
 - safe configured artifact apply
 - recoverable linked-worktree quarantine, undo, and purge
 - recoverable exact Claude debug-log and changelog-cache quarantine
+- recoverable exact Zed `Zed.log.old` quarantine after 30 days
 - experimental recoverable offline Codex database compaction
 
 If neither `/proc` nor `lsof` can prove a target idle, apply skips it.
-
-Current main after `0.5.0` also supports recoverable quarantine for the exact
-`Zed.log.old` file under the resolved Zed data root's `logs` directory.
 
 Stale-lock recovery uses the kernel-held `lockf` utility on macOS and `flock`
 from `util-linux` on Linux. A crashed recovery process releases the mutex
@@ -62,7 +58,7 @@ automatically.
 ## WSL
 
 WSL follows the Linux contract for paths and processes inside the WSL
-filesystem. Do not use `0.5.0` to mutate Windows-mounted project trees unless
+filesystem. Do not use `0.6.0` to mutate Windows-mounted project trees unless
 doctor and a disposable canary prove path identity, ownership, rename, and
 mount behavior for that exact setup.
 

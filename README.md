@@ -15,18 +15,15 @@ protected or eligible, creates a content-addressed plan, and revalidates the
 same facts immediately before mutation.
 
 agentrinse is not audit-only. audit establishes the evidence; apply performs
-the approved filesystem, Git metadata, and offline database changes. `0.5.0`
+the approved filesystem, Git metadata, and offline database changes. `0.6.0`
 removes exact configured rebuildable artifacts, quarantines proven inactive
 linked worktrees, repairs and locks their Git registrations, restores
 quarantined worktrees, permanently purges explicitly selected quarantine
 entries, and compacts supported Codex SQLite state with a retained rollback
 copy. It also quarantines exact stale Claude debug logs and changelog cache
-files with a seven-day undo window.
-
-current main extends that recoverable boundary to Zed's exact stale
-`Zed.log.old` rotated application log. it also reports OpenCode, Cursor,
-version-gated Docker Buildx, and version-gated Grok owner-maintenance facts.
-the latest published release remains `0.5.0`.
+files plus Zed's exact stale `Zed.log.old` rotated application log with a
+seven-day undo window. OpenCode, Cursor, version-gated Docker Buildx, and
+version-gated Grok owner maintenance remain report-only.
 
 the point is confidence: make real cleanup changes without deleting the
 session, branch, worktree, database content, or cache that another agent still
@@ -52,7 +49,7 @@ optional external handoff for broader macOS and project debris.
 | 🔒 lock recovery       | operational  | removes only a stale AgentRinse lock after proving its process is gone         | rerun the interrupted command           |
 
 provider sessions, transcripts, credentials, configuration, and logical
-database records remain report-only. `0.5.0` supports explicit offline
+database records remain report-only. `0.6.0` supports explicit offline
 compaction for the exact current Codex `state_5`, `logs_2`, `goals_1`, and
 `memories_1` SQLite contracts. Claude cleanup is limited to exact old debug
 text files and its rebuildable changelog cache. AgentRinse also reports
@@ -115,7 +112,7 @@ brew install vincentkoc/tap/agentrinse
 one-off use:
 
 ```bash
-npx agentrinse@0.5.0 doctor
+npx agentrinse@0.6.0 doctor
 ```
 
 then:
@@ -235,7 +232,7 @@ agentrinse is built around refusal:
 
 there is no generic `--force` escape hatch.
 
-agentrinse `0.5.0` never removes:
+agentrinse `0.6.0` never removes:
 
 - provider sessions, transcripts, logical database rows, credentials, or configuration
 - unsupported provider databases or Codex databases with unknown migrations
@@ -345,12 +342,12 @@ it can be verified before apply.
 
 ## platform support
 
-| Platform       | `0.5.0` support                                                 |
-| -------------- | --------------------------------------------------------------- |
-| macOS          | audit, artifact/worktree/Claude cleanup, DB vacuum, undo, purge |
-| Linux          | audit, artifact/worktree/Claude cleanup, DB vacuum, undo, purge |
-| WSL            | Linux contract inside the WSL filesystem                        |
-| native Windows | audit-only; mutation remains blocked before `1.0.0`             |
+| Platform       | `0.6.0` support                                                     |
+| -------------- | ------------------------------------------------------------------- |
+| macOS          | audit, artifact/worktree/Claude/Zed cleanup, DB vacuum, undo, purge |
+| Linux          | audit, artifact/worktree/Claude/Zed cleanup, DB vacuum, undo, purge |
+| WSL            | Linux contract inside the WSL filesystem                            |
+| native Windows | audit-only; mutation remains blocked before `1.0.0`                 |
 
 Git and `lsof` are required for the complete diagnostic and process-ownership
 contract. Codex DB maintenance additionally requires `sqlite3`. Docker is
@@ -385,12 +382,12 @@ unreleased build at real developer state.
 
 ## status
 
-`0.5.0` ships the complete audit → plan → revalidate → apply loop, safe
-configured artifact cleanup, recoverable Git worktree and Claude file
-quarantine, and recoverable offline Codex database compaction. Current main
-also quarantines the exact stale Zed `Zed.log.old` file and reports OpenCode's
-native maintenance contract, Cursor's owner database commands, Docker Buildx
-cache facts, and Grok's version-gated session-start memory GC. Grok Build,
-Docker, and all other Cursor, Zed, and OpenCode state remain non-mutating.
+`0.6.0` ships the complete audit → plan → revalidate → apply loop, safe
+configured artifact cleanup, recoverable Git worktree, Claude file, and exact
+Zed rotated-log quarantine, plus recoverable offline Codex database
+compaction. It reports OpenCode's native maintenance contract, Cursor's owner
+database commands, Docker Buildx cache facts, and Grok's version-gated
+session-start memory GC. Grok Build, Docker, and all other Cursor, Zed, and
+OpenCode state remain non-mutating.
 
 MIT licensed. built by [Vincent Koc](https://github.com/vincentkoc).
