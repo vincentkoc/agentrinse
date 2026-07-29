@@ -195,6 +195,11 @@ structured CLI output. It also inventories cache records from the selected
 healthy builder when the installed Buildx version is within the inspected
 `0.33.0` through `0.35.99` contract.
 
+When `DOCKER_HOST` selects an engine without `DOCKER_CONTEXT`, AgentRinse
+preserves that host selection instead of adding `--context default`. It samples
+the effective daemon and builder identity before and after collection and
+discards results if either owner changes.
+
 The cache facts include the context endpoint, daemon ID and version, selected
 builder driver, stable worker IDs, record identity, type, size, mutability,
 reclaimability, sharing, and conservative age evidence. Unsupported humanized

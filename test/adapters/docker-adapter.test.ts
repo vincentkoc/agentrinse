@@ -115,6 +115,27 @@ describe("DockerAuditAdapter", () => {
     ]);
   });
 
+  it("discards daemon inventory when owner identity changes during collection", async () => {
+    let infoCalls = 0;
+    const baseRunner = dockerRunner({ buildxError: new Error("buildx missing") });
+    const adapter = new DockerAuditAdapter(async (args) => {
+      if (args.join(" ") === "--context fixture info --format {{json .}}") {
+        infoCalls += 1;
+        return JSON.stringify({
+          ID: infoCalls >= 4 ? "replacement-daemon" : "daemon-fixture",
+          ServerVersion: "29.0.0",
+        });
+      }
+      return baseRunner(args);
+    });
+
+    const probe = await adapter.probe(CONTEXT);
+    const collection = await adapter.collect(CONTEXT, probe);
+
+    expect(collection.resources).toEqual([]);
+    expect(collection.diagnostics[0]?.code).toBe("DOCKER_OWNER_CHANGED");
+  });
+
   it("inventories Buildx cache with pinned owner facts but emits no action", async () => {
     const adapter = new DockerAuditAdapter(dockerRunner());
 
@@ -186,5 +207,33 @@ describe("DockerAuditAdapter", () => {
 
     expect(finding.estimatedReclaimBytes).toBe(0);
     expect(finding.warnings[0]?.code).toBe("DOCKER_BUILD_CACHE_SHARED");
+  });
+
+  it("discards cache records when the selected builder changes during collection", async () => {
+    let builderCalls = 0;
+    const baseRunner = dockerRunner();
+    const adapter = new DockerAuditAdapter(async (args) => {
+      if (args.join(" ") === "--context fixture buildx ls --format=json") {
+        builderCalls += 1;
+        const output = await baseRunner(args);
+        if (builderCalls >= 3) {
+          return output.replace("worker-fixture", "replacement-worker");
+        }
+        return output;
+      }
+      return baseRunner(args);
+    });
+
+    const probe = await adapter.probe(CONTEXT);
+    const collection = await adapter.collect(CONTEXT, probe);
+
+    expect(
+      collection.resources.some((resource) => resource.resource.kind === "docker-build-cache"),
+    ).toBe(false);
+    expect(collection.diagnostics[0]?.code).toBe("DOCKER_BUILD_CACHE_COLLECTION_FAILED");
+    expect(collection.resources.map((resource) => resource.resource.kind)).toEqual([
+      "docker-image",
+      "docker-container",
+    ]);
   });
 });

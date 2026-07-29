@@ -28,6 +28,10 @@ process would re-resolve mutable context and builder names and cannot require
 those identities to match. Revalidation followed by an unbound owner command
 would leave a deletion race, so AgentRinse refuses it.
 
+Read-only collection also samples the effective owner before and after each
+inventory window. This preserves `DOCKER_HOST` selection and discards image,
+container, or cache results when the daemon or builder identity changes.
+
 ## Recoverable Provider File Boundary
 
 `provider.file-quarantine` is a reusable `recoverable` executor for one exact

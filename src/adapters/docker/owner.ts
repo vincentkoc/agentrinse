@@ -18,6 +18,7 @@ export type DockerContextIdentity = {
   endpoint: string;
   daemonId: string;
   serverVersion: string;
+  commandPrefix: string[];
 };
 
 export type DockerBuilderNodeIdentity = {
@@ -74,12 +75,19 @@ export class DockerOwnerContractError extends Error {
 }
 
 export async function defaultDockerRunner(args: string[]): Promise<string> {
-  const result = await execFileAsync("docker", args, {
-    encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024,
-    timeout: 20_000,
-  });
-  return result.stdout;
+  return createDockerRunner()(args);
+}
+
+export function createDockerRunner(environment: NodeJS.ProcessEnv = process.env): DockerRunner {
+  return async (args) => {
+    const result = await execFileAsync("docker", args, {
+      encoding: "utf8",
+      env: environment,
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: 20_000,
+    });
+    return result.stdout;
+  };
 }
 
 function parseJsonLines(input: string): Record<string, unknown>[] {
@@ -315,39 +323,54 @@ function parseBuilder(
 
 export async function inspectDockerContext(
   runDocker: DockerRunner = defaultDockerRunner,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<DockerContextIdentity> {
   const contextName = (await runDocker(["context", "show"])).trim();
   if (contextName === "") {
     throw new DockerOwnerContractError("Docker context is missing");
   }
-  const endpointOutput = await runDocker([
-    "context",
-    "inspect",
-    contextName,
-    "--format",
-    "{{json .Endpoints.docker.Host}}",
-  ]);
-  const endpoint = JSON.parse(endpointOutput.trim()) as unknown;
-  if (typeof endpoint !== "string" || endpoint.trim() === "") {
-    throw new DockerOwnerContractError("Docker context endpoint is missing");
+  const dockerContext = environment["DOCKER_CONTEXT"]?.trim();
+  const dockerHost = environment["DOCKER_HOST"]?.trim();
+  const usesEnvironmentHost =
+    (dockerContext === undefined || dockerContext === "") &&
+    dockerHost !== undefined &&
+    dockerHost !== "";
+  const commandPrefix = usesEnvironmentHost ? [] : ["--context", contextName];
+  let endpoint = dockerHost;
+  if (!usesEnvironmentHost) {
+    const endpointOutput = await runDocker([
+      "context",
+      "inspect",
+      contextName,
+      "--format",
+      "{{json .Endpoints.docker.Host}}",
+    ]);
+    const inspectedEndpoint = JSON.parse(endpointOutput.trim()) as unknown;
+    if (typeof inspectedEndpoint !== "string" || inspectedEndpoint.trim() === "") {
+      throw new DockerOwnerContractError("Docker context endpoint is missing");
+    }
+    endpoint = inspectedEndpoint.trim();
   }
 
   const daemon = JSON.parse(
-    await runDocker(["--context", contextName, "info", "--format", "{{json .}}"]),
+    await runDocker([...commandPrefix, "info", "--format", "{{json .}}"]),
   ) as Record<string, unknown>;
   return {
     name: contextName,
-    endpoint: endpoint.trim(),
+    endpoint: endpoint!,
     daemonId: requireString(daemon, "ID", "daemon ID"),
     serverVersion: requireString(daemon, "ServerVersion", "server version"),
+    commandPrefix,
   };
 }
 
 export async function inspectDockerScope(
   runDocker: DockerRunner = defaultDockerRunner,
   builderOverride?: string,
+  environment: NodeJS.ProcessEnv = process.env,
 ): Promise<DockerScopeIdentity> {
-  const context = await inspectDockerContext(runDocker);
+  const context = await inspectDockerContext(runDocker, environment);
+  const selectedBuilder = builderOverride?.trim() || undefined;
   const buildxVersion = parseBuildxVersion(await runDocker(["buildx", "version"]));
   if (!supportsDockerBuildxContract(buildxVersion)) {
     throw new DockerOwnerContractError(
@@ -355,13 +378,13 @@ export async function inspectDockerScope(
     );
   }
   const builders = parseJsonLines(
-    await runDocker(["--context", context.name, "buildx", "ls", "--format=json"]),
+    await runDocker([...context.commandPrefix, "buildx", "ls", "--format=json"]),
   );
 
   return {
     buildxVersion,
     context,
-    builder: parseBuilder(builders, builderOverride),
+    builder: parseBuilder(builders, selectedBuilder),
   };
 }
 
@@ -399,8 +422,7 @@ export async function inspectDockerBuildCache(
 ): Promise<DockerBuildCacheRecord[]> {
   return parseJsonLines(
     await runDocker([
-      "--context",
-      scope.context.name,
+      ...scope.context.commandPrefix,
       "buildx",
       "du",
       "--builder",

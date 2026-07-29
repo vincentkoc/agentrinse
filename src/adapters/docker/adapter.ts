@@ -5,7 +5,7 @@ import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceKind, ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
 import {
-  defaultDockerRunner,
+  createDockerRunner,
   dockerBuildCacheIsOldEnough,
   inspectDockerBuildCache,
   inspectDockerContext,
@@ -18,6 +18,7 @@ import {
 
 export type DockerAuditAdapterOptions = {
   builderOverride?: string | undefined;
+  environment?: NodeJS.ProcessEnv | undefined;
 };
 
 function parseJsonLines(input: string): Record<string, unknown>[] {
@@ -38,7 +39,16 @@ function dockerContextMatches(left: DockerContextIdentity, right: DockerContextI
     left.name === right.name &&
     left.endpoint === right.endpoint &&
     left.daemonId === right.daemonId &&
-    left.serverVersion === right.serverVersion
+    left.serverVersion === right.serverVersion &&
+    left.commandPrefix.join("\0") === right.commandPrefix.join("\0")
+  );
+}
+
+function dockerScopeMatches(left: DockerScopeIdentity, right: DockerScopeIdentity): boolean {
+  return (
+    left.buildxVersion === right.buildxVersion &&
+    dockerContextMatches(left.context, right.context) &&
+    left.builder.fingerprint === right.builder.fingerprint
   );
 }
 
@@ -55,17 +65,23 @@ export class DockerAuditAdapter implements AuditAdapter {
   private dockerContext: DockerContextIdentity | undefined;
   private buildxScope: DockerScopeIdentity | undefined;
 
-  constructor(
-    private readonly runDocker: DockerRunner = defaultDockerRunner,
-    private readonly options: DockerAuditAdapterOptions = {},
-  ) {}
+  private readonly runDocker: DockerRunner;
+  private readonly options: DockerAuditAdapterOptions;
+
+  constructor(runDocker?: DockerRunner, options: DockerAuditAdapterOptions = {}) {
+    this.options = options;
+    this.runDocker = runDocker ?? createDockerRunner(this.options.environment ?? process.env);
+  }
 
   async probe(_context: AuditContext): Promise<AdapterProbe> {
     this.dockerContext = undefined;
     this.buildxScope = undefined;
 
     try {
-      this.dockerContext = await inspectDockerContext(this.runDocker);
+      this.dockerContext = await inspectDockerContext(
+        this.runDocker,
+        this.options.environment ?? process.env,
+      );
     } catch (error) {
       return {
         adapter: this.id,
@@ -84,7 +100,11 @@ export class DockerAuditAdapter implements AuditAdapter {
 
     const diagnostics: Diagnostic[] = [];
     try {
-      const scope = await inspectDockerScope(this.runDocker, this.options.builderOverride);
+      const scope = await inspectDockerScope(
+        this.runDocker,
+        this.options.builderOverride,
+        this.options.environment ?? process.env,
+      );
       if (!dockerContextMatches(this.dockerContext, scope.context)) {
         throw new Error("Docker context or daemon changed during Buildx inspection");
       }
@@ -117,10 +137,27 @@ export class DockerAuditAdapter implements AuditAdapter {
       return { resources: [], diagnostics: [] };
     }
 
+    const collectedContext = await inspectDockerContext(
+      this.runDocker,
+      this.options.environment ?? process.env,
+    );
+    if (!dockerContextMatches(this.dockerContext, collectedContext)) {
+      return {
+        resources: [],
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "DOCKER_OWNER_CHANGED",
+            message: "Docker context or daemon changed after probing; inventory was discarded.",
+            adapter: this.id,
+          },
+        ],
+      };
+    }
+    this.dockerContext = collectedContext;
     const images = parseJsonLines(
       await this.runDocker([
-        "--context",
-        this.dockerContext.name,
+        ...this.dockerContext.commandPrefix,
         "image",
         "ls",
         "--no-trunc",
@@ -130,8 +167,7 @@ export class DockerAuditAdapter implements AuditAdapter {
     );
     const containers = parseJsonLines(
       await this.runDocker([
-        "--context",
-        this.dockerContext.name,
+        ...this.dockerContext.commandPrefix,
         "container",
         "ls",
         "-a",
@@ -140,6 +176,23 @@ export class DockerAuditAdapter implements AuditAdapter {
         "{{json .}}",
       ]),
     );
+    const verifiedContext = await inspectDockerContext(
+      this.runDocker,
+      this.options.environment ?? process.env,
+    );
+    if (!dockerContextMatches(this.dockerContext, verifiedContext)) {
+      return {
+        resources: [],
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "DOCKER_OWNER_CHANGED",
+            message: "Docker context or daemon changed during collection; inventory was discarded.",
+            adapter: this.id,
+          },
+        ],
+      };
+    }
     const resources = [
       ...images.flatMap((image) =>
         this.toDockerResource(context, "docker-image", image, "ID", "Repository"),
@@ -152,7 +205,27 @@ export class DockerAuditAdapter implements AuditAdapter {
 
     if (this.buildxScope !== undefined) {
       try {
-        const cache = await inspectDockerBuildCache(this.buildxScope, this.runDocker);
+        const collectedScope = await inspectDockerScope(
+          this.runDocker,
+          this.options.builderOverride,
+          this.options.environment ?? process.env,
+        );
+        if (
+          !dockerContextMatches(verifiedContext, collectedScope.context) ||
+          !dockerScopeMatches(this.buildxScope, collectedScope)
+        ) {
+          throw new Error("Docker context, daemon, or builder changed before cache collection");
+        }
+        const cache = await inspectDockerBuildCache(collectedScope, this.runDocker);
+        const verifiedScope = await inspectDockerScope(
+          this.runDocker,
+          this.options.builderOverride,
+          this.options.environment ?? process.env,
+        );
+        if (!dockerScopeMatches(collectedScope, verifiedScope)) {
+          throw new Error("Docker context, daemon, or builder changed during cache collection");
+        }
+        this.buildxScope = verifiedScope;
         resources.push(...cache.map((record) => this.toBuildCacheResource(context, record)));
       } catch (error) {
         diagnostics.push({

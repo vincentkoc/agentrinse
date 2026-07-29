@@ -55,7 +55,36 @@ describe("Docker owner contract", () => {
       endpoint: "unix:///fixture/docker.sock",
       daemonId: "daemon-fixture",
       serverVersion: "29.0.0",
+      commandPrefix: ["--context", "fixture"],
     });
+  });
+
+  it("preserves DOCKER_HOST instead of overriding it with the default context", async () => {
+    const calls: string[] = [];
+    const runner: DockerRunner = async (args) => {
+      const command = args.join(" ");
+      calls.push(command);
+      if (command === "context show") {
+        return "default\n";
+      }
+      if (command === "info --format {{json .}}") {
+        return JSON.stringify({ ID: "remote-daemon", ServerVersion: "29.0.0" });
+      }
+      throw new Error(`unexpected Docker command: ${command}`);
+    };
+
+    const context = await inspectDockerContext(runner, {
+      DOCKER_HOST: "tcp://docker.example.invalid:2376",
+    });
+
+    expect(context).toEqual({
+      name: "default",
+      endpoint: "tcp://docker.example.invalid:2376",
+      daemonId: "remote-daemon",
+      serverVersion: "29.0.0",
+      commandPrefix: [],
+    });
+    expect(calls).not.toContain("context inspect default --format {{json .Endpoints.docker.Host}}");
   });
 
   it("pins the context, daemon, selected builder, and stable worker identity", async () => {
@@ -124,6 +153,12 @@ describe("Docker owner contract", () => {
       name: "environment-builder",
       driver: "remote",
     });
+  });
+
+  it("treats an empty Buildx builder override as unset", async () => {
+    const scope = await inspectDockerScope(scopeRunner(), "");
+
+    expect(scope.builder.name).toBe("fixture-builder");
   });
 
   it("fails closed for uninspected Buildx versions and unhealthy builders", async () => {

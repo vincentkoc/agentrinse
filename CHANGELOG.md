@@ -22,6 +22,8 @@ The project follows semantic versioning after its first supported release.
   builder, worker, size, type, sharing, and conservative age facts
 - isolated Buildx diagnostics that preserve image and container inventory when
   the cache capability is missing, unsupported, or unhealthy
+- effective `DOCKER_HOST` selection and before/after owner checks that discard
+  inventory when the daemon or selected builder changes
 
 ### Safety
 
