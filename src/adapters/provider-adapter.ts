@@ -35,6 +35,10 @@ import {
   copilotNativeMaintenanceFactsSchema,
   copilotNativeMaintenanceFor,
 } from "./copilot-maintenance.js";
+import {
+  opencodeNativeMaintenanceFactsSchema,
+  opencodeNativeMaintenanceFor,
+} from "./opencode-maintenance.js";
 import { collectProviderReachability } from "./provider-reachability.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
@@ -232,6 +236,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
         this.spec.id === "copilot"
           ? copilotNativeMaintenanceFor(candidate.relativePath)
           : undefined;
+      const opencodeNativeMaintenance =
+        this.spec.id === "opencode"
+          ? opencodeNativeMaintenanceFor(candidate.relativePath)
+          : undefined;
 
       try {
         const stats = await lstat(path);
@@ -300,6 +308,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
             ...(copilotNativeMaintenance === undefined
               ? {}
               : { nativeMaintenance: copilotNativeMaintenance }),
+            ...(opencodeNativeMaintenance === undefined
+              ? {}
+              : { nativeMaintenance: opencodeNativeMaintenance }),
             ...(databaseInspection === undefined
               ? {}
               : {
@@ -363,6 +374,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
       resource.facts.nativeRetention,
     );
     const copilotNativeMaintenance = copilotNativeMaintenanceFactsSchema.safeParse(
+      resource.facts.nativeMaintenance,
+    );
+    const opencodeNativeMaintenance = opencodeNativeMaintenanceFactsSchema.safeParse(
       resource.facts.nativeMaintenance,
     );
     const providerFilePolicy =
@@ -615,6 +629,42 @@ export class ProviderAuditAdapter implements AuditAdapter {
             source: this.id,
             observedAt,
             detail: "Copilot owns this maintenance path; AgentRinse does not mutate the resource.",
+          },
+        ],
+        facts: resource.facts,
+        candidateActions: [],
+        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
+        warnings: [],
+      };
+    }
+    if (this.spec.id === "opencode" && opencodeNativeMaintenance.success) {
+      const detail =
+        opencodeNativeMaintenance.data.kind === "snapshot-gc"
+          ? "OpenCode 1.18.9 schedules snapshot Git garbage collection after one minute and hourly, pruning objects older than seven days; AgentRinse did not probe the installed version."
+          : "OpenCode 1.18.9 appends server logs to opencode.log without a server-log retention sweep; the desktop application's separate seven-day log cleanup does not cover this directory.";
+      return {
+        schemaVersion: 1,
+        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
+        auditId: context.auditId,
+        observedAt,
+        resource: resource.resource,
+        state: "protected",
+        confidence: "unknown",
+        roots: [
+          {
+            code:
+              opencodeNativeMaintenance.data.kind === "snapshot-gc"
+                ? "opencode-native-snapshot-gc-version-unverified"
+                : "opencode-server-log-retention-version-unverified",
+            source: this.id,
+            observedAt,
+            detail,
+          },
+          {
+            code: "provider-owned-report-only",
+            source: this.id,
+            observedAt,
+            detail: "OpenCode owns this maintenance path; AgentRinse does not mutate the resource.",
           },
         ],
         facts: resource.facts,
