@@ -24,6 +24,8 @@ The project follows semantic versioning after its first supported release.
   the cache capability is missing, unsupported, or unhealthy
 - effective `DOCKER_HOST` selection and before/after owner checks that discard
   inventory when the daemon or selected builder changes
+- conservative unknown last-use handling and per-record diagnostics that keep
+  malformed Buildx output from suppressing valid sibling records
 
 ### Safety
 

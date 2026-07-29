@@ -53,7 +53,7 @@ export type DockerBuildCacheAgeEvidence =
       lowerBoundHours: number;
     }
   | {
-      kind: "never-used";
+      kind: "unknown";
     };
 
 export type DockerBuildCacheRecord = {
@@ -243,7 +243,7 @@ function relativeAgeLowerBoundHours(value: string): number | undefined {
 
 function parseAgeEvidence(value: unknown): DockerBuildCacheAgeEvidence {
   if (value === undefined || value === null || value === "") {
-    return { kind: "never-used" };
+    return { kind: "unknown" };
   }
   if (typeof value !== "string") {
     throw new DockerOwnerContractError("Docker cache last-used value is unsupported");
@@ -421,17 +421,37 @@ function parseCacheRecord(value: Record<string, unknown>): DockerBuildCacheRecor
 export async function inspectDockerBuildCache(
   scope: DockerScopeIdentity,
   runDocker: DockerRunner = defaultDockerRunner,
+  onUnsupportedRecord?: (index: number, error: DockerOwnerContractError) => void,
 ): Promise<DockerBuildCacheRecord[]> {
-  return parseJsonLines(
-    await runDocker([
-      ...scope.context.commandPrefix,
-      "buildx",
-      "du",
-      "--builder",
-      scope.builder.name,
-      "--format=json",
-    ]),
-  ).map(parseCacheRecord);
+  const output = await runDocker([
+    ...scope.context.commandPrefix,
+    "buildx",
+    "du",
+    "--builder",
+    scope.builder.name,
+    "--format=json",
+  ]);
+  const records: DockerBuildCacheRecord[] = [];
+  for (const [index, line] of output
+    .split("\n")
+    .map((value) => value.trim())
+    .filter((value) => value !== "")
+    .entries()) {
+    try {
+      records.push(parseCacheRecord(JSON.parse(line) as Record<string, unknown>));
+    } catch (error) {
+      const ownerError =
+        error instanceof DockerOwnerContractError
+          ? error
+          : new DockerOwnerContractError(
+              `Docker build-cache record is malformed: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+      onUnsupportedRecord?.(index, ownerError);
+    }
+  }
+  return records;
 }
 
 export function dockerBuildCacheIsOldEnough(
@@ -442,9 +462,9 @@ export function dockerBuildCacheIsOldEnough(
   if (record.ageEvidence.kind === "relative") {
     return record.ageEvidence.lowerBoundHours >= minimumAgeHours;
   }
-  const relevantTimestamp =
-    record.ageEvidence.kind === "timestamp"
-      ? Date.parse(record.ageEvidence.lastUsedAt)
-      : Date.parse(record.createdAt);
+  if (record.ageEvidence.kind === "unknown") {
+    return false;
+  }
+  const relevantTimestamp = Date.parse(record.ageEvidence.lastUsedAt);
   return now.getTime() - relevantTimestamp >= minimumAgeHours * 60 * 60 * 1000;
 }

@@ -307,22 +307,60 @@ describe("Docker owner contract", () => {
     ).toBe(true);
   });
 
-  it("rejects malformed cache IDs without suppressing valid record parsing", async () => {
+  it("treats a missing last-use value as unknown instead of inferring age", async () => {
     const scope = await inspectDockerScope(scopeRunner());
-    await expect(
-      inspectDockerBuildCache(scope, async () =>
-        JSON.stringify({
-          CreatedAt: "2026-06-01T00:00:00Z",
-          ID: "cache.*",
-          LastUsedAt: "8 days ago",
-          Mutable: false,
-          Reclaimable: true,
-          Shared: false,
-          Size: 100,
-          Type: "regular",
-          UsageCount: 0,
-        }),
-      ),
-    ).rejects.toThrow("unsupported");
+    const [record] = await inspectDockerBuildCache(scope, async () =>
+      JSON.stringify({
+        CreatedAt: "2026-06-01T00:00:00Z",
+        ID: "abcdefghijklmnopqrstuvwx",
+        Mutable: false,
+        Reclaimable: true,
+        Shared: false,
+        Size: 100,
+        Type: "regular",
+        UsageCount: 0,
+      }),
+    );
+
+    expect(record?.ageEvidence).toEqual({ kind: "unknown" });
+    expect(dockerBuildCacheIsOldEnough(record!, new Date("2026-07-29"))).toBe(false);
+  });
+
+  it("skips malformed cache records without suppressing valid records", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+    const problems: Array<{ index: number; message: string }> = [];
+    const records = await inspectDockerBuildCache(
+      scope,
+      async () =>
+        [
+          JSON.stringify({
+            CreatedAt: "2026-06-01T00:00:00Z",
+            ID: "cache.*",
+            LastUsedAt: "8 days ago",
+            Mutable: false,
+            Reclaimable: true,
+            Shared: false,
+            Size: 100,
+            Type: "regular",
+            UsageCount: 0,
+          }),
+          JSON.stringify({
+            CreatedAt: "2026-06-01T00:00:00Z",
+            ID: "abcdefghijklmnopqrstuvwx",
+            LastUsedAt: "8 days ago",
+            Mutable: false,
+            Reclaimable: true,
+            Shared: false,
+            Size: 200,
+            Type: "regular",
+            UsageCount: 0,
+          }),
+        ].join("\n"),
+      (index, error) => problems.push({ index, message: error.message }),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.id).toBe("abcdefghijklmnopqrstuvwx");
+    expect(problems).toEqual([{ index: 0, message: "Docker build-cache ID is unsupported" }]);
   });
 });

@@ -216,7 +216,14 @@ export class DockerAuditAdapter implements AuditAdapter {
         ) {
           throw new Error("Docker context, daemon, or builder changed before cache collection");
         }
-        const cache = await inspectDockerBuildCache(collectedScope, this.runDocker);
+        const unsupportedRecords: Array<{ index: number; message: string }> = [];
+        const cache = await inspectDockerBuildCache(
+          collectedScope,
+          this.runDocker,
+          (index, error) => {
+            unsupportedRecords.push({ index, message: error.message });
+          },
+        );
         const verifiedScope = await inspectDockerScope(
           this.runDocker,
           this.options.builderOverride,
@@ -227,6 +234,14 @@ export class DockerAuditAdapter implements AuditAdapter {
         }
         this.buildxScope = verifiedScope;
         resources.push(...cache.map((record) => this.toBuildCacheResource(context, record)));
+        diagnostics.push(
+          ...unsupportedRecords.map(({ index, message }) => ({
+            severity: "warning" as const,
+            code: "DOCKER_BUILD_CACHE_RECORD_UNSUPPORTED",
+            message: `Buildx cache record ${index + 1} was skipped: ${message}`,
+            adapter: this.id,
+          })),
+        );
       } catch (error) {
         diagnostics.push({
           severity: "warning",

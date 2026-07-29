@@ -27,6 +27,7 @@ function dockerRunner(
   options: {
     buildxError?: Error;
     cache?: Record<string, unknown>;
+    cacheOutput?: string;
   } = {},
 ): DockerRunner {
   return async (args) => {
@@ -77,7 +78,7 @@ function dockerRunner(
       })}\n`;
     }
     if (command === "--context fixture buildx du --builder fixture-builder --format=json") {
-      return `${JSON.stringify(options.cache ?? BASE_CACHE)}\n`;
+      return options.cacheOutput ?? `${JSON.stringify(options.cache ?? BASE_CACHE)}\n`;
     }
     throw new Error(`unexpected Docker command: ${command}`);
   };
@@ -171,6 +172,25 @@ describe("DockerAuditAdapter", () => {
       roots: [{ code: "docker-build-cache-mutation-unbound" }],
       candidateActions: [],
     });
+  });
+
+  it("keeps valid cache records when a sibling record is unsupported", async () => {
+    const adapter = new DockerAuditAdapter(
+      dockerRunner({
+        cacheOutput: [
+          JSON.stringify({ ...BASE_CACHE, ID: "cache.*" }),
+          JSON.stringify(BASE_CACHE),
+        ].join("\n"),
+      }),
+    );
+
+    const probe = await adapter.probe(CONTEXT);
+    const collection = await adapter.collect(CONTEXT, probe);
+
+    expect(
+      collection.resources.filter((resource) => resource.resource.kind === "docker-build-cache"),
+    ).toHaveLength(1);
+    expect(collection.diagnostics[0]?.code).toBe("DOCKER_BUILD_CACHE_RECORD_UNSUPPORTED");
   });
 
   it.each([
