@@ -12,6 +12,8 @@ The project follows semantic versioning after its first supported release.
   log after 30 days, with a seven-day undo window before purge
 - Zed log-root discovery for the native macOS log directory, explicit
   user-data roots, and absolute Flatpak/XDG data roots on Linux
+- report-only OpenCode maintenance findings for the native snapshot Git
+  garbage-collection schedule and the separate append-only server log
 
 ### Safety
 
@@ -19,6 +21,9 @@ The project follows semantic versioning after its first supported release.
   `Zed.log`, ACP logs, neighboring files, databases, threads, crash reports,
   settings, credentials, extensions, active Zed processes, and open
   descriptors
+- OpenCode findings are pinned to the inspected `1.18.9` source contract,
+  remain unknown-confidence until the installed version is proven, and never
+  invoke Git or remove logs
 
 ## [0.5.0] - 2026-07-28
 
