@@ -317,6 +317,29 @@ describe("Docker owner contract", () => {
     });
   });
 
+  it("accepts petabyte humanized sizes while preserving approximate precision", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+    const [record] = await inspectDockerBuildCache(scope, async () =>
+      JSON.stringify({
+        CreatedAt: "2026-06-01T00:00:00Z",
+        ID: "abcdefghijklmnopqrstuvwx",
+        LastUsedAt: "8 days ago",
+        Mutable: false,
+        Reclaimable: true,
+        Shared: false,
+        Size: "1PB",
+        Type: "regular",
+        UsageCount: 0,
+      }),
+    );
+
+    expect(record?.sizeEvidence).toEqual({
+      kind: "humanized",
+      observed: "1PB",
+      approximateBytes: 1_000_000_000_000_000,
+    });
+  });
+
   it("treats approximate and unknown human ages as recent evidence", async () => {
     const scope = await inspectDockerScope(scopeRunner());
     const records = await inspectDockerBuildCache(scope, async () =>
@@ -370,6 +393,26 @@ describe("Docker owner contract", () => {
 
     expect(record?.ageEvidence).toEqual({ kind: "unknown" });
     expect(dockerBuildCacheIsOldEnough(record!, new Date("2026-07-29"))).toBe(false);
+  });
+
+  it("preserves a cache record whose optional type is absent", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+    const [record] = await inspectDockerBuildCache(scope, async () =>
+      JSON.stringify({
+        CreatedAt: "2026-06-01T00:00:00Z",
+        ID: "abcdefghijklmnopqrstuvwx",
+        LastUsedAt: "8 days ago",
+        Mutable: false,
+        Reclaimable: true,
+        Shared: false,
+        Size: 100,
+        Type: "",
+        UsageCount: 0,
+      }),
+    );
+
+    expect(record).toBeDefined();
+    expect(record?.recordType).toBeUndefined();
   });
 
   it("skips malformed cache records without suppressing valid records", async () => {

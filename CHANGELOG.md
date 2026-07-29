@@ -31,6 +31,8 @@ The project follows semantic versioning after its first supported release.
 - fail-closed rejection for dynamic Buildx builders whose separate inventory
   commands cannot be bound to the same worker
 - fail-closed rejection for builder nodes that expose no stable worker ID
+- protected unknown-type cache findings and complete Docker human-size suffix
+  parsing without promoting rounded values to exact measurements
 
 ### Safety
 

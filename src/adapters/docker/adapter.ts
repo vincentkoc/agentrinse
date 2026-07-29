@@ -391,6 +391,14 @@ export class DockerAuditAdapter implements AuditAdapter {
         detail: "Docker reports this build-cache record as not reclaimable.",
       };
     }
+    if (cache.recordType === undefined) {
+      return {
+        code: "docker-build-cache-type-unknown",
+        source: "docker",
+        observedAt,
+        detail: "Buildx did not expose this cache record's type.",
+      };
+    }
     if (cache.recordType === "internal" || cache.recordType === "frontend") {
       return {
         code: "docker-build-cache-internal",

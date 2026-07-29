@@ -210,6 +210,7 @@ age text is retained but treated as recent evidence.
 Numeric byte values remain exact measurements. Buildx humanized sizes are
 rounded upstream, so AgentRinse preserves the displayed value and an
 approximation in facts but omits exact measured and reclaimable-byte totals.
+Missing optional record types remain inventoried and protected as unknown.
 
 Daemon failure degrades only Docker. Missing, unsupported, or unhealthy Buildx
 degrades only cache inventory; image and container inventory continues. Every

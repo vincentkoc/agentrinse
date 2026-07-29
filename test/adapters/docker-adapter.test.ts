@@ -197,6 +197,7 @@ describe("DockerAuditAdapter", () => {
     [{ Mutable: true }, "docker-build-cache-mutable"],
     [{ Reclaimable: false }, "docker-build-cache-in-use"],
     [{ Type: "internal" }, "docker-build-cache-internal"],
+    [{ Type: "" }, "docker-build-cache-type-unknown"],
     [{ LastUsedAt: "About an hour ago" }, "docker-build-cache-recent"],
   ])("protects cache evidence %# with its specific root", async (override, expectedCode) => {
     const adapter = new DockerAuditAdapter(dockerRunner({ cache: { ...BASE_CACHE, ...override } }));

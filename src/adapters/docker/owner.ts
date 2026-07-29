@@ -74,7 +74,7 @@ export type DockerBuildCacheRecord = {
       };
   usageCount: number;
   parents: string[];
-  recordType: string;
+  recordType?: string;
   ageEvidence: DockerBuildCacheAgeEvidence;
   fingerprint: string;
 };
@@ -197,11 +197,13 @@ function parseSizeEvidence(value: unknown): DockerBuildCacheRecord["sizeEvidence
       return { kind: "exact", bytes };
     }
   }
-  const match = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)$/iu.exec(trimmed);
+  const match = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB|PB|EB|ZB|YB)$/iu.exec(trimmed);
   if (match === null) {
     throw new DockerOwnerContractError("Docker cache size is not a supported byte value");
   }
-  const exponent = ["B", "KB", "MB", "GB", "TB"].indexOf(match[2]!.toUpperCase());
+  const exponent = ["B", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"].indexOf(
+    match[2]!.toUpperCase(),
+  );
   const bytes = Math.round(Number(match[1]) * 1000 ** exponent);
   if (!Number.isSafeInteger(bytes) || bytes < 0) {
     throw new DockerOwnerContractError("Docker cache size exceeds the supported range");
@@ -418,6 +420,7 @@ function parseCacheRecord(value: Record<string, unknown>): DockerBuildCacheRecor
   if (!CACHE_ID_PATTERN.test(id)) {
     throw new DockerOwnerContractError("Docker build-cache ID is unsupported");
   }
+  const recordType = optionalString(value, "Type");
   const stable = {
     id,
     createdAt: parseDate(requireString(value, "CreatedAt"), "cache creation time"),
@@ -427,7 +430,7 @@ function parseCacheRecord(value: Record<string, unknown>): DockerBuildCacheRecor
     sizeEvidence: parseSizeEvidence(value["Size"]),
     usageCount: requireNonnegativeInteger(value, "UsageCount"),
     parents: parseStringArray(value["Parents"] ?? [], "cache parents"),
-    recordType: requireString(value, "Type", "cache record type"),
+    ...(recordType === undefined ? {} : { recordType }),
   };
   const ageEvidence = parseAgeEvidence(value["LastUsedAt"]);
   const fingerprintFacts = {
