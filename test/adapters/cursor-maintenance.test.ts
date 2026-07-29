@@ -79,4 +79,8 @@ describe("Cursor native database maintenance reporting", () => {
       { suffix: "-shm", status: "missing" },
     ]);
   });
+
+  it("recognizes the Windows global database path", () => {
+    expect(cursorNativeMaintenanceFor("User\\globalStorage\\state.vscdb")).toBeDefined();
+  });
 });

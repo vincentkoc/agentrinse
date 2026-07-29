@@ -47,7 +47,7 @@ export type CursorDatabaseCompanions = z.infer<typeof cursorDatabaseCompanionsSc
 export function cursorNativeMaintenanceFor(
   relativePath: string,
 ): CursorNativeMaintenanceFacts | undefined {
-  if (relativePath !== "User/globalStorage/state.vscdb") {
+  if (relativePath.split(/[\\/]+/u).join("/") !== "User/globalStorage/state.vscdb") {
     return undefined;
   }
   return {
