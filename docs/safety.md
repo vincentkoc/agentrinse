@@ -22,6 +22,12 @@ Only `artifacts.remove` mutates:
 Provider state and Docker resources remain report-only except for the explicit
 offline Codex database and exact provider-file boundaries below.
 
+Docker Buildx cache findings pin the inspected context endpoint, daemon ID,
+builder, and worker IDs. They still emit no action: the later `buildx prune`
+process would re-resolve mutable context and builder names and cannot require
+those identities to match. Revalidation followed by an unbound owner command
+would leave a deletion race, so AgentRinse refuses it.
+
 ## Recoverable Provider File Boundary
 
 `provider.file-quarantine` is a reusable `recoverable` executor for one exact

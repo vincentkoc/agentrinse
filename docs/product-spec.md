@@ -571,11 +571,12 @@ These are hard product requirements.
 
 ### Docker invariants
 
-1. Docker volumes are report-only by default.
+1. Every Docker resource is report-only until its owner command can bind
+   mutation to the exact revalidated daemon and worker identity.
 2. Running containers are never removed.
 3. Images referenced by any container are protected.
 4. Build cache marked in-use is protected.
-5. Docker cleanup is scoped to the active configured context.
+5. Docker inventory is scoped to the selected context and builder.
 6. An unavailable daemon produces a finding and does not fail other adapters.
 7. AgentRinse never runs unfiltered `docker system prune -a --volumes`.
 
@@ -878,19 +879,15 @@ export type ActionDescriptor = {
 };
 ```
 
-Action type names are public machine contracts. Examples:
+Implemented action type names are public machine contracts:
 
 - `artifacts.remove`
 - `worktree.quarantine`
 - `provider.file-quarantine`
-- `worktree.prune-registration`
-- `docker.image.remove`
-- `docker.container.remove`
-- `docker.network.remove`
-- `docker.build-cache.prune`
-- `codex.logs.compact-offline`
-- `runtime.remove-old-version`
-- `mole.handoff`
+- `database.vacuum`
+
+Future action names are not reserved contracts until they enter the validated
+action schema.
 
 ### Adapter interface
 
@@ -2268,6 +2265,7 @@ Probe independently:
 - daemon availability
 - server version
 - builder availability
+- Buildx version and inspected contract range
 
 An unavailable daemon returns a degraded adapter record with the exact failed
 capability.
@@ -2278,13 +2276,11 @@ Collect:
 
 - running and stopped containers
 - images and tags
-- networks
-- volumes
 - build cache
-- labels
 - creation and last-use facts exposed by Docker
-- reference relationships
 - estimated reclaimable size
+- context endpoint and daemon identity
+- selected builder, driver, node endpoints, and worker IDs
 
 Prefer Docker JSON formats or APIs. Never scrape tables.
 
@@ -2292,24 +2288,16 @@ Prefer Docker JSON formats or APIs. Never scrape tables.
 
 #### Images
 
-Eligible:
-
-- dangling
-- older than 14 days
-- not referenced by any container
-- not pinned by label
-
-Non-dangling unused images remain report-only until a user opts in.
+All images remain report-only. The inventory records the exact daemon identity
+so equal image IDs from different engines do not collapse into one resource.
 
 #### Build cache
 
-Eligible:
-
-- not in use
-- older than 7 days
-- filtered through Docker's supported prune filters
-
-Default risk: `safe`.
+All build cache remains report-only. The current adapter distinguishes mutable,
+in-use, internal/frontend, recent, shared, and cleanup-shaped records. It emits
+no action even for an old reclaimable record because `buildx prune` re-resolves
+the selected context and builder names after AgentRinse's revalidation. The
+owner command exposes no conditional daemon or worker identity check.
 
 #### Containers
 
@@ -3093,13 +3081,15 @@ Deliver:
 - old agent runtime removal
 - a decision and proof for labeled stopped-container cleanup; keep it
   report-only if reliable recreation cannot be demonstrated
-- filtered Docker build-cache cleanup only after current owner-contract proof
+- a decision and proof for Docker build-cache cleanup; keep it report-only
+  until the owner command can bind mutation to revalidated identity
 
 Exit criteria:
 
 - database compaction retains verified rollback
 - active provider processes block mutation
-- exact Docker context and object identity are revalidated before mutation
+- Docker inventory records exact context, daemon, builder, and worker identity
+- Docker emits no action while prune can re-resolve those owners
 
 ### `0.5.0`: exact provider files
 
@@ -3198,8 +3188,8 @@ Exit criteria:
 - Never removes running containers.
 - Never removes referenced images.
 - Never mutates volumes by default.
-- Uses exact IDs or reviewed filters.
-- Detects context changes before apply.
+- Records context, daemon, builder, and worker identity.
+- Refuses mutation while the owner command cannot bind to that identity.
 
 ### Provider maintenance
 
@@ -3234,11 +3224,11 @@ Exit criteria:
 | OpenCode database/log/snapshots |         any | report + native facts | n/a         | provider-owned  |
 | Grok Build sessions/task state  |         any | report only           | n/a         | provider-owned  |
 | Codex logs DB free pages        |   threshold | report only           | n/a         | phase 4         |
-| dangling Docker image           |         14d | remove exact image    | safe        | rebuild/pull    |
-| Docker build cache              |          7d | filtered prune        | safe        | rebuild         |
+| dangling Docker image           |         any | report only           | n/a         | protected       |
+| Docker build cache              |          7d | report + owner facts  | n/a         | protected       |
 | unlabeled stopped container     |         any | report only           | n/a         | owner decision  |
 | labeled stopped container       |         14d | report only           | n/a         | future design   |
-| Docker network                  |         14d | narrow removal        | safe        | recreate        |
+| Docker network                  |         any | report only           | n/a         | protected       |
 | Docker volume                   |         any | report only           | n/a         | protected       |
 | old agent runtime               |         14d | report, later remove  | safe        | package manager |
 | Mole cleanup                    |         any | handoff               | external    | Mole-owned      |
@@ -3688,6 +3678,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] initial Codex inventory
 - [x] initial Claude inventory
 - [x] initial Docker inventory
+- [x] versioned Docker Buildx cache inventory and owner-binding decision
 - [x] Cursor, Copilot CLI, Zed, OpenCode, and Grok inventory
 - [x] runtime audit
 - [x] Mole probe
@@ -3695,7 +3686,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] Git dirty, staged, untracked, operation, detached, and push-state proof
 - [x] Codex and Claude session-to-worktree roots
 - [x] provider-managed worktree and pin roots
-- [ ] Docker safe cleanup
+- [ ] Docker mutation after conditional owner identity binding exists
 - [x] worktree quarantine
 - [x] worktree undo
 - [x] offline Codex database compaction

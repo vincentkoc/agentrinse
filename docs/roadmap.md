@@ -72,11 +72,16 @@ Current:
 - report-only OpenCode snapshot GC and server-log retention contracts
 - exact Cursor global database and companion diagnostics
 - report-only Cursor orphan KV GC and old-chat maintenance commands
+- version-gated Docker Buildx cache inventory with context, daemon, builder,
+  worker, age, and reclaimability evidence
+- explicit Docker mutation refusal while Buildx cannot condition prune on the
+  revalidated owner identity
 
 Remaining:
 
-- filtered Docker build-cache cleanup
 - owner-managed old agent runtime removal
+- Docker mutation only after the owner command exposes conditional daemon and
+  worker identity binding
 
 Every owner-specific mutation remains disabled until its current upstream
 contract, offline requirements, and recovery behavior are proven.
