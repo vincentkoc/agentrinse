@@ -70,10 +70,11 @@ Current:
 - native macOS, explicit-root, Flatpak, and XDG log-root resolution
 - active Zed, descriptor, symlink, age, and exact-path refusal
 - report-only OpenCode snapshot GC and server-log retention contracts
+- exact Cursor global database and companion diagnostics
+- report-only Cursor orphan KV GC and old-chat maintenance commands
 
 Remaining:
 
-- Cursor database diagnostics and optional compaction
 - filtered Docker build-cache cleanup
 - owner-managed old agent runtime removal
 
