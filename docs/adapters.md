@@ -164,7 +164,10 @@ The pinned source contract is Grok `0.2.112` at
 `2a818575225183d8ca915f5632a09b8067b5156a`. AgentRinse executes only Grok's
 canonical executable at `$GROK_HOME/bin/grok` (`grok.exe` on Windows), and its
 resolved target must remain inside the audited owner root. It never substitutes
-an unrelated `grok` from `PATH`.
+an unrelated `grok` from `PATH`. The child receives a sanitized environment
+with `GROK_HOME` rebound to the audited root. In pinned source `0.2.112`,
+`--version` returns before memory tracing, user-guide extraction, crash
+handling, crashed-session collection, or the agent runtime starts.
 
 AgentRinse parses both the semantic version and build revision from
 `grok --version`; the revision must match the public source commit or upstream

@@ -87,8 +87,9 @@ describe("Grok owner contract reporting", () => {
       platform: "linux",
       measureBytes: true,
       maxEntries: 100,
-      runGrokVersion: async (selectedExecutable) => {
+      runGrokVersion: async (selectedExecutable, selectedEnvironment) => {
         expect(selectedExecutable).toBe(executable);
+        expect(selectedEnvironment).toEqual({ GROK_HOME: await realpath(root) });
         return `grok ${GROK_SOURCE_CONTRACT.version} (${GROK_SOURCE_CONTRACT.sourceRevision.slice(0, 7)}) [stable]\n`;
       },
     });
@@ -103,6 +104,11 @@ describe("Grok owner contract reporting", () => {
       ownerExecutableStatus: "bound",
       installedVersionStatus: "exact",
       inventoryScope: "confirmed-subpaths",
+      versionProbeContract: {
+        executable: "canonical-owner-path",
+        environment: "sanitized-owner-root",
+        dispatch: "early-return-before-startup",
+      },
     });
     expect(collection.resources.map((resource) => resource.resource.displayName)).toEqual(
       expectedResources.map(([, displayName]) => displayName),

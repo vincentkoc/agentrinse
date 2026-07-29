@@ -129,8 +129,11 @@ Copilot configuration remain protected.
 Grok native maintenance is report-only. AgentRinse invokes `--version` only on
 the canonical executable beneath the audited `$GROK_HOME`; its resolved target
 must stay inside that root, so another `grok` on `PATH` cannot authorize
-inventory. The installed semantic version and build revision are compared with
-the pinned `0.2.112` source snapshot. Exact owner-bound
+inventory. The child environment is stripped to the audited `GROK_HOME` plus
+required Windows system roots. In pinned source `0.2.112`, version dispatch
+returns before memory tracing, documentation extraction, crash handling,
+crashed-session collection, or runtime startup. The installed semantic version
+and build revision are compared with the pinned source snapshot. Exact owner-bound
 version-and-revision matches expose separate confirmed owner roots and the
 native session-start memory GC facts. The alpha/stable label is recorded but is
 not treated as source identity. Missing, unsafe, non-executable, unreadable,

@@ -2239,13 +2239,18 @@ Resolve the canonical executable at `$GROK_HOME/bin/grok` or
 root, and it must be executable on Unix. Do not use a `grok` executable selected
 from `PATH`.
 
-Run that bound executable with `--version` without a shell. Parse its semantic
-version, build revision, and optional alpha/stable channel. The semantic version
-must match `0.2.112`, and the build revision must be a prefix of either the
-public source commit or upstream `SOURCE_REV`. The channel is recorded but is
-not source identity because Grok derives it from a local version cache. Only an
-exact owner-bound version-and-revision match inventories these source-confirmed
-owner roots:
+Run that bound executable with `--version` without a shell and with a sanitized
+environment containing the audited `GROK_HOME` plus required Windows system
+roots only. Pinned source `0.2.112` dispatches this version path before memory
+tracing, documentation extraction, crash handling, crashed-session collection,
+or runtime startup.
+
+Parse its semantic version, build revision, and optional alpha/stable channel.
+The semantic version must match `0.2.112`, and the build revision must be a
+prefix of either the public source commit or upstream `SOURCE_REV`. The channel
+is recorded but is not source identity because Grok derives it from a local
+version cache. Only an exact owner-bound version-and-revision match inventories
+these source-confirmed owner roots:
 
 - `sessions`
 - `logs`
@@ -2283,10 +2288,10 @@ This sweep has no tagged, user-invokable cleanup contract. AgentRinse reports
 the native behavior but does not invoke it, and every finding emits
 `grok-cleanup-owner-contract-unavailable`.
 
-Every finding exposes the owner-executable binding status, installed-version
-status, parsed installed version, build revision and channel when available,
-source version, source commit, upstream source revision, inventory scope,
-native memory-GC contract, and mutation refusal.
+Every finding exposes the version-probe contract, owner-executable binding
+status, installed-version status, parsed installed version, build revision and
+channel when available, source version, source commit, upstream source
+revision, inventory scope, native memory-GC contract, and mutation refusal.
 
 ## Docker Adapter
 

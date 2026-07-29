@@ -16,7 +16,10 @@ export const GROK_SOURCE_CONTRACT = {
   inspectedAt: "2026-07-29",
 } as const;
 
-export type GrokVersionRunner = (executable: string) => Promise<string>;
+export type GrokVersionRunner = (
+  executable: string,
+  environment: NodeJS.ProcessEnv,
+) => Promise<string>;
 
 export const grokOwnerContractFactsSchema = z.object({
   provider: z.literal("grok"),
@@ -27,6 +30,11 @@ export const grokOwnerContractFactsSchema = z.object({
   sourceVersion: z.literal(GROK_SOURCE_CONTRACT.version),
   sourceInspectedAt: z.literal(GROK_SOURCE_CONTRACT.inspectedAt),
   sourceReleaseTagged: z.literal(false),
+  versionProbeContract: z.object({
+    executable: z.literal("canonical-owner-path"),
+    environment: z.literal("sanitized-owner-root"),
+    dispatch: z.literal("early-return-before-startup"),
+  }),
   ownerExecutableStatus: z.enum(["bound", "missing", "unsafe", "unexecutable", "unreadable"]),
   installedVersionStatus: z.enum([
     "exact",
@@ -93,8 +101,24 @@ function matchesSourceRevision(revision: string): boolean {
   );
 }
 
+function versionProbeEnvironment(
+  ownerRoot: string,
+  environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv {
+  const probeEnvironment: NodeJS.ProcessEnv = { GROK_HOME: ownerRoot };
+  if (platform === "win32") {
+    for (const name of ["SystemRoot", "WINDIR"] as const) {
+      if (environment[name] !== undefined) {
+        probeEnvironment[name] = environment[name];
+      }
+    }
+  }
+  return probeEnvironment;
+}
+
 type GrokExecutableInspection =
-  | { status: "bound"; executable: string }
+  | { status: "bound"; executable: string; ownerRoot: string }
   | { status: "missing" | "unsafe" | "unexecutable" | "unreadable" };
 
 async function inspectOwnerExecutable(
@@ -132,7 +156,7 @@ async function inspectOwnerExecutable(
         return { status: "unexecutable" };
       }
     }
-    return { status: "bound", executable };
+    return { status: "bound", executable, ownerRoot: root };
   } catch (error) {
     if (
       error instanceof Error &&
@@ -158,10 +182,17 @@ export async function inspectGrokOwnerContract(
     installedVersionStatus = "unavailable";
   } else {
     try {
+      const probeEnvironment = versionProbeEnvironment(
+        ownerExecutable.ownerRoot,
+        environment,
+        platform,
+      );
       parsedVersion = parseGrokVersion(
-        await (runVersion ?? ((executable) => defaultRunGrokVersion(executable, environment)))(
-          ownerExecutable.executable,
-        ),
+        await (
+          runVersion ??
+          ((executable, selectedEnvironment) =>
+            defaultRunGrokVersion(executable, selectedEnvironment))
+        )(ownerExecutable.executable, probeEnvironment),
       );
       installedVersionStatus =
         parsedVersion === undefined
@@ -185,6 +216,11 @@ export async function inspectGrokOwnerContract(
     sourceVersion: GROK_SOURCE_CONTRACT.version,
     sourceInspectedAt: GROK_SOURCE_CONTRACT.inspectedAt,
     sourceReleaseTagged: false,
+    versionProbeContract: {
+      executable: "canonical-owner-path",
+      environment: "sanitized-owner-root",
+      dispatch: "early-return-before-startup",
+    },
     ownerExecutableStatus: ownerExecutable.status,
     installedVersionStatus,
     ...(parsedVersion === undefined
