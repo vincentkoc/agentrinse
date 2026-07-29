@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-29
+
 ### Added
 
 - recoverable quarantine for the exact Zed `Zed.log.old` rotated application
