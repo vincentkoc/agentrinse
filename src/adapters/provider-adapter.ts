@@ -36,6 +36,12 @@ import {
   copilotNativeMaintenanceFor,
 } from "./copilot-maintenance.js";
 import {
+  cursorNativeMaintenanceFactsSchema,
+  cursorNativeMaintenanceFor,
+  inspectCursorDatabaseCompanions,
+  inspectCursorDatabaseParents,
+} from "./cursor-maintenance.js";
+import {
   opencodeNativeMaintenanceFactsSchema,
   opencodeNativeMaintenanceFor,
 } from "./opencode-maintenance.js";
@@ -240,6 +246,31 @@ export class ProviderAuditAdapter implements AuditAdapter {
         this.spec.id === "opencode"
           ? opencodeNativeMaintenanceFor(candidate.relativePath)
           : undefined;
+      const cursorNativeMaintenance =
+        this.spec.id === "cursor" ? cursorNativeMaintenanceFor(candidate.relativePath) : undefined;
+      const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
+      const resourceId = `${this.id}:${candidate.kind}:${sha256(canonicalKey)}`;
+      if (cursorNativeMaintenance !== undefined) {
+        const parentInspection = await inspectCursorDatabaseParents(
+          probe.root,
+          candidate.relativePath,
+        );
+        if (parentInspection.status === "missing") {
+          continue;
+        }
+        if (parentInspection.status === "blocked") {
+          diagnostics.push({
+            severity: "warning",
+            code:
+              parentInspection.code === "symlink"
+                ? "RESOURCE_PARENT_SYMLINK_SKIPPED"
+                : "RESOURCE_PARENT_INSPECTION_FAILED",
+            message: parentInspection.reason,
+            adapter: this.id,
+          });
+          continue;
+        }
+      }
 
       try {
         const stats = await lstat(path);
@@ -278,8 +309,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
           databaseInspection === undefined
             ? undefined
             : await inspectCodexProcesses(this.options.databaseDependencies);
-        const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
-        const resourceId = `${this.id}:${candidate.kind}:${sha256(canonicalKey)}`;
+        const cursorDatabaseCompanions =
+          cursorNativeMaintenance === undefined
+            ? undefined
+            : await inspectCursorDatabaseCompanions(path, this.options.measureBytes);
 
         resources.push({
           resource: {
@@ -311,6 +344,12 @@ export class ProviderAuditAdapter implements AuditAdapter {
             ...(opencodeNativeMaintenance === undefined
               ? {}
               : { nativeMaintenance: opencodeNativeMaintenance }),
+            ...(cursorNativeMaintenance === undefined
+              ? {}
+              : {
+                  nativeMaintenance: cursorNativeMaintenance,
+                  databaseCompanions: cursorDatabaseCompanions,
+                }),
             ...(databaseInspection === undefined
               ? {}
               : {
@@ -330,6 +369,32 @@ export class ProviderAuditAdapter implements AuditAdapter {
         });
       } catch (error) {
         if (isMissing(error)) {
+          if (cursorNativeMaintenance !== undefined) {
+            const cursorDatabaseCompanions = await inspectCursorDatabaseCompanions(
+              path,
+              this.options.measureBytes,
+            );
+            if (cursorDatabaseCompanions.some((companion) => companion.status !== "missing")) {
+              resources.push({
+                resource: {
+                  id: resourceId,
+                  adapter: this.id,
+                  kind: candidate.kind,
+                  canonicalKey,
+                  displayName: candidate.displayName,
+                  path: resolve(path),
+                },
+                observedAt: context.now.toISOString(),
+                exists: false,
+                facts: {
+                  reportOnly: true,
+                  primaryDatabaseStatus: "missing",
+                  nativeMaintenance: cursorNativeMaintenance,
+                  databaseCompanions: cursorDatabaseCompanions,
+                },
+              });
+            }
+          }
           continue;
         }
 
@@ -377,6 +442,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
       resource.facts.nativeMaintenance,
     );
     const opencodeNativeMaintenance = opencodeNativeMaintenanceFactsSchema.safeParse(
+      resource.facts.nativeMaintenance,
+    );
+    const cursorNativeMaintenance = cursorNativeMaintenanceFactsSchema.safeParse(
       resource.facts.nativeMaintenance,
     );
     const providerFilePolicy =
@@ -665,6 +733,37 @@ export class ProviderAuditAdapter implements AuditAdapter {
             source: this.id,
             observedAt,
             detail: "OpenCode owns this maintenance path; AgentRinse does not mutate the resource.",
+          },
+        ],
+        facts: resource.facts,
+        candidateActions: [],
+        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
+        warnings: [],
+      };
+    }
+    if (this.spec.id === "cursor" && cursorNativeMaintenance.success) {
+      return {
+        schemaVersion: 1,
+        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
+        auditId: context.auditId,
+        observedAt,
+        resource: resource.resource,
+        state: "protected",
+        confidence: "unknown",
+        roots: [
+          {
+            code: "cursor-native-database-maintenance-version-unverified",
+            source: this.id,
+            observedAt,
+            detail:
+              "Current Cursor guidance exposes command-palette operations for orphaned agent KV cleanup or user-selected chat deletion, both followed by VACUUM; AgentRinse did not prove the installed Cursor version.",
+          },
+          {
+            code: "provider-owned-report-only",
+            source: this.id,
+            observedAt,
+            detail:
+              "Cursor owns its database schema and maintenance commands; AgentRinse does not open or mutate the database.",
           },
         ],
         facts: resource.facts,

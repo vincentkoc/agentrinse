@@ -2000,7 +2000,7 @@ Initial platform defaults:
 Inventory:
 
 - `User/workspaceStorage`
-- `User/globalStorage`
+- `User/globalStorage/state.vscdb`
 - editor logs
 - `state.vscdb`, backup, WAL, and SHM companions
 - workspace metadata that maps a storage hash to a project path
@@ -2021,9 +2021,11 @@ AgentRinse may report:
 - total bytes by workspace
 - missing workspace paths
 - old log directories
-- SQLite free-page estimates using read-only access
+- exact global database bytes
+- backup, WAL, and SHM companion status and bytes without following symlinks
 - active Cursor processes and open descriptors
 - database backup duplication
+- provider-owned database maintenance commands
 
 It must not:
 
@@ -2032,8 +2034,22 @@ It must not:
 - compact a database while Cursor or Cursor helpers are running
 - treat a missing workspace path as proof that its chat history is disposable
 
-Future log cleanup may become `safe` after versioned retention tests. Future
-offline compaction remains `experimental` and requires a rollback copy.
+Cursor staff guidance current on 2026-07-13 exposes two owner operations in the
+command palette:
+
+1. `Developer: GC Agent KV Blobs` removes orphaned agent KV blob data while
+   preserving existing chats, then runs SQLite `VACUUM`.
+2. `Developer: Delete Old Chats...` deletes chat history older than a
+   user-selected cutoff, then runs SQLite `VACUUM`.
+
+AgentRinse reports the commands but never invokes them. The installed Cursor
+version is not probed, so the finding remains unknown-confidence. The old-chat
+operation is destructive logical deletion, not cache cleanup, and stays
+entirely user-owned.
+
+Future log cleanup may become `safe` after versioned retention tests. Direct
+offline compaction remains excluded while Cursor provides its own maintenance
+path and the editor-internal schema remains version-sensitive.
 
 ## GitHub Copilot Adapter
 
@@ -3211,7 +3227,7 @@ Exit criteria:
 | inactive worktree artifacts     |          3d | remove artifacts      | safe        | rebuild         |
 | clean unreachable worktree      |         14d | quarantine            | recoverable | 7d undo         |
 | Codex/Claude sessions           |         any | report only           | n/a         | provider-owned  |
-| Cursor workspace/global state   |         any | report only           | n/a         | editor-owned    |
+| Cursor workspace/global state   |         any | report + native facts | n/a         | editor-owned    |
 | GitHub Copilot sessions         |         any | report only           | n/a         | provider-owned  |
 | Zed database/agent state        |         any | report only           | n/a         | editor-owned    |
 | Zed `Zed.log.old`               |         30d | quarantine            | recoverable | 7d undo         |
@@ -3741,6 +3757,10 @@ Primary references current as of 2026-07-27:
   `https://code.claude.com/docs/en/claude-directory`
 - Cursor documentation:
   `https://cursor.com/docs`
+- Cursor owner database maintenance:
+  `https://forum.cursor.com/t/cursor-2-6-repeated-vacuum-operations-over-3-hours/157387/40`
+- Cursor chat retention command:
+  `https://forum.cursor.com/t/where-are-agent-transcripts-stored/168976/2`
 - GitHub Copilot CLI configuration directory:
   `https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference`
 - GitHub Copilot CLI session data:

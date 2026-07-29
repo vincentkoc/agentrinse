@@ -10,7 +10,7 @@ recoverable whole-worktree action when every safety gate is proven.
 | -------------- | --------------------------------------------------------- | --------------- |
 | Codex          | sessions, worktrees, four SQLite DBs, offline compaction  | conditional     |
 | Claude         | sessions, caches, native retention, exact file quarantine | conditional     |
-| Cursor         | workspace state, global state, logs                       | all             |
+| Cursor         | workspace state, exact global DB, native maintenance      | all             |
 | GitHub Copilot | CLI sessions, logs, native maintenance guidance           | all             |
 | Zed            | user-data root and exact rotated-log quarantine           | conditional     |
 | OpenCode       | database, logs, snapshots, native maintenance guidance    | all             |
@@ -86,6 +86,25 @@ enumerate or mutate neighboring cache files, `paste-cache`, `image-cache`,
 
 Workspace and global databases can carry chat history. A missing project path
 does not make workspace storage disposable.
+
+AgentRinse inventories the exact global
+`User/globalStorage/state.vscdb` file and reports the byte size and file type
+of its `.backup`, `-wal`, and `-shm` companions without following symlinks or
+opening SQLite. Workspace storage and editor logs remain directory-level
+report-only resources.
+
+Cursor staff guidance current on 2026-07-13 documents two command-palette
+operations:
+
+- `Developer: GC Agent KV Blobs` removes orphaned agent KV blob data, preserves
+  existing chats, then runs SQLite `VACUUM`
+- `Developer: Delete Old Chats...` deletes chats older than a user-selected
+  cutoff, then runs `VACUUM`
+
+AgentRinse reports both commands with unknown confidence because it does not
+probe the installed Cursor version. It never invokes either operation. The
+second command is destructive logical history deletion and remains entirely
+user-owned.
 
 ### GitHub Copilot
 

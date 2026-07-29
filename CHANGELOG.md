@@ -14,6 +14,10 @@ The project follows semantic versioning after its first supported release.
   user-data roots, and absolute Flatpak/XDG data roots on Linux
 - report-only OpenCode maintenance findings for the native snapshot Git
   garbage-collection schedule and the separate append-only server log
+- exact Cursor global `state.vscdb` inventory with backup, WAL, and SHM
+  companion diagnostics
+- report-only Cursor owner-command findings for orphaned agent KV garbage
+  collection and user-selected old-chat deletion
 
 ### Safety
 
@@ -24,6 +28,8 @@ The project follows semantic versioning after its first supported release.
 - OpenCode findings are pinned to the inspected `1.18.9` source contract,
   remain unknown-confidence until the installed version is proven, and never
   invoke Git or remove logs
+- Cursor databases, chat history, workspace state, backups, and companions
+  remain protected; AgentRinse never invokes either command-palette operation
 
 ## [0.5.0] - 2026-07-28
 
