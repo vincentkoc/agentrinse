@@ -18,6 +18,8 @@ The project follows semantic versioning after its first supported release.
   companion diagnostics
 - report-only Cursor owner-command findings for orphaned agent KV garbage
   collection and user-selected old-chat deletion
+- version-gated Grok `0.2.112` owner-root inventory with installed/source
+  version evidence and native session-start memory-GC guidance
 - version-gated Docker Buildx cache inventory with selected context, daemon,
   builder, worker, size, type, sharing, and conservative age facts
 - isolated Buildx diagnostics that preserve image and container inventory when
@@ -45,6 +47,9 @@ The project follows semantic versioning after its first supported release.
   invoke Git or remove logs
 - Cursor databases, chat history, workspace state, backups, and companions
   remain protected; AgentRinse never invokes either command-palette operation
+- Grok sessions, memory, logs, worktrees, configuration, credentials, plugins,
+  skills, caches, and runtime assets remain protected; AgentRinse falls back to
+  one owner-root finding on version mismatch and never invokes the native sweep
 - Docker images, containers, networks, volumes, and build cache remain
   protected because Buildx prune cannot condition mutation on the revalidated
   daemon and worker identity

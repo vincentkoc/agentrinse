@@ -14,7 +14,7 @@ recoverable whole-worktree action when every safety gate is proven.
 | GitHub Copilot | CLI sessions, logs, native maintenance guidance           | all             |
 | Zed            | user-data root and exact rotated-log quarantine           | conditional     |
 | OpenCode       | database, logs, snapshots, native maintenance guidance    | all             |
-| Grok Build     | version-gated data root                                   | all             |
+| Grok Build     | version-gated owner root and native memory GC guidance    | all             |
 | Runtime        | opt-in selected executable and Claude native versions     | all             |
 | Git            | worktree audit and recoverable linked-worktree quarantine | conditional     |
 | Docker         | opt-in structured image/container/Buildx cache inventory  | all             |
@@ -155,8 +155,30 @@ distinction and emits no action for either log surface.
 
 ### Grok Build
 
-The storage contract is new and version-sensitive. Unknown versions degrade to
-directory-level size reporting.
+AgentRinse resolves an explicit adapter root first, then an absolute
+`GROK_HOME`, then `$HOME/.grok`. A relative `GROK_HOME` degrades only the Grok
+adapter.
+
+The pinned source contract is Grok `0.2.112` at
+`5da6962e4adb9c857f3def762542b52b4ec3e522`, with upstream `SOURCE_REV`
+`2a818575225183d8ca915f5632a09b8067b5156a`. When `grok --version` matches that
+contract, AgentRinse inventories the confirmed `sessions`, `logs`, `memory`,
+`worktrees`, `marketplace-cache`, and `downloads` roots separately. A missing,
+unparseable, or different version falls back to one directory-level owner-root
+finding.
+
+The inspected source runs memory garbage collection during session
+initialization. It removes empty temporary workspace-memory directories
+immediately, non-empty temporary directories after seven days, and other
+workspace-memory directories without session files after
+`memory.gc.max_age_days`, which defaults to 30. Non-empty workspace memory is
+preserved.
+
+This native sweep is not a tagged, user-invokable cleanup command. AgentRinse
+therefore emits `grok-cleanup-owner-contract-unavailable`, reports the source
+and installed version in every finding, and creates no action. Sessions,
+logical memory, configuration, authentication, plugins, skills, MCP
+credentials, worktrees, logs, caches, and downloaded runtimes remain protected.
 
 ### Git
 

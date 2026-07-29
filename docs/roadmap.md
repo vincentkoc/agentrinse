@@ -72,6 +72,10 @@ Current:
 - report-only OpenCode snapshot GC and server-log retention contracts
 - exact Cursor global database and companion diagnostics
 - report-only Cursor orphan KV GC and old-chat maintenance commands
+- version-gated Grok `0.2.112` owner-root inventory and native session-start
+  memory GC guidance
+- explicit Grok mutation refusal while no tagged, user-invokable cleanup
+  contract exists
 - version-gated Docker Buildx cache inventory with context, daemon, builder,
   worker, age, and reclaimability evidence
 - explicit Docker mutation refusal while Buildx cannot condition prune on the
