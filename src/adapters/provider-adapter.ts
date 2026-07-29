@@ -290,7 +290,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
         const cursorDatabaseCompanions =
           cursorNativeMaintenance === undefined
             ? undefined
-            : await inspectCursorDatabaseCompanions(path);
+            : await inspectCursorDatabaseCompanions(path, this.options.measureBytes);
 
         resources.push({
           resource: {

@@ -73,8 +73,21 @@ describe("Cursor native database maintenance reporting", () => {
     const database = join(root, "state.vscdb");
     await writeFile(database, "database");
 
-    await expect(inspectCursorDatabaseCompanions(database)).resolves.toEqual([
+    await expect(inspectCursorDatabaseCompanions(database, true)).resolves.toEqual([
       { suffix: ".backup", status: "missing" },
+      { suffix: "-wal", status: "missing" },
+      { suffix: "-shm", status: "missing" },
+    ]);
+  });
+
+  it("omits companion byte counts when measurement is disabled", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-cursor-companions-"));
+    const database = join(root, "state.vscdb");
+    await writeFile(database, "database");
+    await writeFile(`${database}.backup`, "backup-copy");
+
+    await expect(inspectCursorDatabaseCompanions(database, false)).resolves.toEqual([
+      { suffix: ".backup", status: "regular" },
       { suffix: "-wal", status: "missing" },
       { suffix: "-shm", status: "missing" },
     ]);

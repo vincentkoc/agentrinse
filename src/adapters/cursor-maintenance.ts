@@ -79,6 +79,7 @@ export function cursorNativeMaintenanceFor(
 
 export async function inspectCursorDatabaseCompanions(
   databasePath: string,
+  measureBytes: boolean,
 ): Promise<CursorDatabaseCompanions> {
   return Promise.all(
     ([".backup", "-wal", "-shm"] as const).map(async (suffix) => {
@@ -90,7 +91,11 @@ export async function inspectCursorDatabaseCompanions(
         if (!stats.isFile()) {
           return { suffix, status: "other" as const };
         }
-        return { suffix, status: "regular" as const, measuredBytes: stats.size };
+        return {
+          suffix,
+          status: "regular" as const,
+          ...(measureBytes ? { measuredBytes: stats.size } : {}),
+        };
       } catch (error) {
         if (
           error instanceof Error &&
