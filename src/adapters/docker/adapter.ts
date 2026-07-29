@@ -347,7 +347,9 @@ export class DockerAuditAdapter implements AuditAdapter {
       facts: resource.facts,
       candidateActions: [],
       ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-      ...(cache === undefined ? {} : { estimatedReclaimBytes: cache.shared ? 0 : cache.sizeBytes }),
+      ...(cache === undefined
+        ? {}
+        : { estimatedReclaimBytes: cache.reclaimable && !cache.shared ? cache.sizeBytes : 0 }),
       warnings,
     };
   }

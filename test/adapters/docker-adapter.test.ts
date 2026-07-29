@@ -190,6 +190,9 @@ describe("DockerAuditAdapter", () => {
 
     expect(finding.state).toBe("protected");
     expect(finding.roots[0]?.code).toBe(expectedCode);
+    if ("Reclaimable" in override && override.Reclaimable === false) {
+      expect(finding.estimatedReclaimBytes).toBe(0);
+    }
     expect(finding.candidateActions).toEqual([]);
   });
 
