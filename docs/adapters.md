@@ -175,8 +175,8 @@ initialization. Its machine facts distinguish empty temporary workspace-memory
 directories removed immediately, non-empty temporary directories removed after
 seven days, and other
 workspace-memory directories without session files after
-`memory.gc.max_age_days`, which defaults to 30. Non-empty workspace memory is
-preserved only when it is not temporary.
+`memory.gc.max_age_days`, which defaults to 30. Non-temporary workspace memory
+is preserved when its `sessions` directory contains at least one entry.
 
 This native sweep is not a tagged, user-invokable cleanup command. AgentRinse
 therefore emits `grok-cleanup-owner-contract-unavailable`, reports the source

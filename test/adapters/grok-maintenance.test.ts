@@ -87,6 +87,15 @@ describe("Grok owner contract reporting", () => {
       expectedResources.map(([, displayName]) => displayName),
     );
     expect(collection.resources.every((resource) => resource.measuredBytes === 10)).toBe(true);
+    expect(collection.resources[0]?.facts.ownerContract).toMatchObject({
+      nativeMemoryGc: {
+        trigger: "session-init",
+        temporaryEmptyRemoval: "immediate",
+        temporaryNonEmptyAgeDays: 7,
+        defaultOrphanAgeDays: 30,
+        preservesWorkspacesWithSessionEntries: true,
+      },
+    });
     expect(
       collection.resources.every(
         (resource) =>

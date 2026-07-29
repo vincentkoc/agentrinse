@@ -2269,7 +2269,8 @@ The inspected source runs memory GC during session initialization:
 - non-empty `tmp*` directories are removed after seven days
 - other workspace-memory directories without session files are removed after
   `memory.gc.max_age_days`, default 30
-- non-empty non-temporary workspace memory is preserved
+- non-temporary workspace memory with at least one `sessions` directory entry
+  is preserved
 
 This sweep has no tagged, user-invokable cleanup contract. AgentRinse reports
 the native behavior but does not invoke it, and every finding emits
