@@ -94,9 +94,9 @@ logical memory records.
 | <img width="48px" src="docs/client-opencode.png" alt="OpenCode" />          | OpenCode native maintenance          | report-only        | hourly snapshot GC and the append-only server-log contract              |
 | <img width="48px" src="docs/client-cursor.jpg" alt="Cursor" />              | Cursor database maintenance          | report-only        | exact DB companions, orphan KV GC, and destructive chat cleanup         |
 | <img width="48px" src="docs/client-grok-build.svg" alt="Grok Build" />      | Grok native memory GC                | report-only        | session-start orphan cleanup, source version, and explicit refusal      |
-| ⚡                                                                          | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                |
+| <img width="48px" src="docs/icon-terminal.svg" alt="Terminal runtime" />    | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                |
 | <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" />        | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images, containers, and versioned Buildx cache                          |
-| 🕳️                                                                          | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                         |
+| <img width="48px" src="docs/icon-search.svg" alt="Cleanup search" />        | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                         |
 
 ## install
 
