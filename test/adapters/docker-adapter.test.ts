@@ -232,6 +232,32 @@ describe("DockerAuditAdapter", () => {
     expect(finding.warnings[0]?.code).toBe("DOCKER_BUILD_CACHE_SHARED");
   });
 
+  it("does not publish humanized Buildx sizes as exact byte measurements", async () => {
+    const adapter = new DockerAuditAdapter(
+      dockerRunner({ cache: { ...BASE_CACHE, Size: "829.9MB" } }),
+    );
+    const probe = await adapter.probe(CONTEXT);
+    const collection = await adapter.collect(CONTEXT, probe);
+    const cache = collection.resources.find(
+      (resource) => resource.resource.kind === "docker-build-cache",
+    )!;
+
+    const finding = await adapter.classify(CONTEXT, cache);
+
+    expect(cache.measuredBytes).toBeUndefined();
+    expect(cache.facts).toMatchObject({
+      cache: {
+        sizeEvidence: {
+          kind: "humanized",
+          observed: "829.9MB",
+          approximateBytes: 829_900_000,
+        },
+      },
+    });
+    expect(finding.measuredBytes).toBeUndefined();
+    expect(finding.estimatedReclaimBytes).toBeUndefined();
+  });
+
   it("discards cache records when the selected builder changes during collection", async () => {
     let builderCalls = 0;
     const baseRunner = dockerRunner();

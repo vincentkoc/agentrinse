@@ -313,7 +313,7 @@ export class DockerAuditAdapter implements AuditAdapter {
       },
       observedAt: context.now.toISOString(),
       exists: true,
-      measuredBytes: cache.sizeBytes,
+      ...(cache.sizeEvidence.kind === "exact" ? { measuredBytes: cache.sizeEvidence.bytes } : {}),
       facts: {
         dockerScope: scope,
         cache,
@@ -364,7 +364,12 @@ export class DockerAuditAdapter implements AuditAdapter {
       ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
       ...(cache === undefined
         ? {}
-        : { estimatedReclaimBytes: cache.reclaimable && !cache.shared ? cache.sizeBytes : 0 }),
+        : cache.sizeEvidence.kind === "exact"
+          ? {
+              estimatedReclaimBytes:
+                cache.reclaimable && !cache.shared ? cache.sizeEvidence.bytes : 0,
+            }
+          : {}),
       warnings,
     };
   }

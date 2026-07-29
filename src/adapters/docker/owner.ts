@@ -62,7 +62,16 @@ export type DockerBuildCacheRecord = {
   mutable: boolean;
   reclaimable: boolean;
   shared: boolean;
-  sizeBytes: number;
+  sizeEvidence:
+    | {
+        kind: "exact";
+        bytes: number;
+      }
+    | {
+        kind: "humanized";
+        observed: string;
+        approximateBytes: number;
+      };
   usageCount: number;
   parents: string[];
   recordType: string;
@@ -174,9 +183,9 @@ function parseDate(value: string, description: string): string {
   return new Date(timestamp).toISOString();
 }
 
-function parseSizeBytes(value: unknown): number {
+function parseSizeEvidence(value: unknown): DockerBuildCacheRecord["sizeEvidence"] {
   if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
-    return value;
+    return { kind: "exact", bytes: value };
   }
   if (typeof value !== "string") {
     throw new DockerOwnerContractError("Docker cache size is not numeric");
@@ -185,7 +194,7 @@ function parseSizeBytes(value: unknown): number {
   if (/^\d+$/u.test(trimmed)) {
     const bytes = Number(trimmed);
     if (Number.isSafeInteger(bytes)) {
-      return bytes;
+      return { kind: "exact", bytes };
     }
   }
   const match = /^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)$/iu.exec(trimmed);
@@ -197,7 +206,11 @@ function parseSizeBytes(value: unknown): number {
   if (!Number.isSafeInteger(bytes) || bytes < 0) {
     throw new DockerOwnerContractError("Docker cache size exceeds the supported range");
   }
-  return bytes;
+  return {
+    kind: "humanized",
+    observed: trimmed,
+    approximateBytes: bytes,
+  };
 }
 
 function relativeAgeLowerBoundHours(value: string): number | undefined {
@@ -401,7 +414,7 @@ function parseCacheRecord(value: Record<string, unknown>): DockerBuildCacheRecor
     mutable: requireBoolean(value, "Mutable"),
     reclaimable: requireBoolean(value, "Reclaimable"),
     shared: requireBoolean(value, "Shared"),
-    sizeBytes: parseSizeBytes(value["Size"]),
+    sizeEvidence: parseSizeEvidence(value["Size"]),
     usageCount: requireNonnegativeInteger(value, "UsageCount"),
     parents: parseStringArray(value["Parents"] ?? [], "cache parents"),
     recordType: requireString(value, "Type", "cache record type"),

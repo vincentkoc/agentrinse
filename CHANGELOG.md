@@ -26,6 +26,8 @@ The project follows semantic versioning after its first supported release.
   inventory when the daemon or selected builder changes
 - conservative unknown last-use handling and per-record diagnostics that keep
   malformed Buildx output from suppressing valid sibling records
+- separate exact and humanized cache-size evidence so rounded Buildx output is
+  never published as an exact measured or reclaimable byte count
 
 ### Safety
 

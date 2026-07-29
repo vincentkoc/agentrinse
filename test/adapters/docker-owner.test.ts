@@ -233,7 +233,10 @@ describe("Docker owner contract", () => {
     expect(records[0]).toMatchObject({
       id: "abcdefghijklmnopqrstuvwx",
       createdAt: "2026-07-01T00:00:00.000Z",
-      sizeBytes: 829_889_526,
+      sizeEvidence: {
+        kind: "exact",
+        bytes: 829_889_526,
+      },
       parents: ["parent-a", "parent-b"],
       ageEvidence: {
         kind: "timestamp",
@@ -268,7 +271,11 @@ describe("Docker owner contract", () => {
 
     expect(dockerBuildCacheIsOldEnough(sevenDays, new Date("2026-07-29T00:00:00Z"))).toBe(false);
     expect(dockerBuildCacheIsOldEnough(eightDays, new Date("2026-07-29T00:00:00Z"))).toBe(true);
-    expect(eightDays.sizeBytes).toBe(1_653_000_000);
+    expect(eightDays.sizeEvidence).toEqual({
+      kind: "humanized",
+      observed: "1.653GB",
+      approximateBytes: 1_653_000_000,
+    });
   });
 
   it("treats approximate and unknown human ages as recent evidence", async () => {
