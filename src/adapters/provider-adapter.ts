@@ -247,6 +247,8 @@ export class ProviderAuditAdapter implements AuditAdapter {
           : undefined;
       const cursorNativeMaintenance =
         this.spec.id === "cursor" ? cursorNativeMaintenanceFor(candidate.relativePath) : undefined;
+      const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
+      const resourceId = `${this.id}:${candidate.kind}:${sha256(canonicalKey)}`;
 
       try {
         const stats = await lstat(path);
@@ -285,8 +287,6 @@ export class ProviderAuditAdapter implements AuditAdapter {
           databaseInspection === undefined
             ? undefined
             : await inspectCodexProcesses(this.options.databaseDependencies);
-        const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
-        const resourceId = `${this.id}:${candidate.kind}:${sha256(canonicalKey)}`;
         const cursorDatabaseCompanions =
           cursorNativeMaintenance === undefined
             ? undefined
@@ -347,6 +347,32 @@ export class ProviderAuditAdapter implements AuditAdapter {
         });
       } catch (error) {
         if (isMissing(error)) {
+          if (cursorNativeMaintenance !== undefined) {
+            const cursorDatabaseCompanions = await inspectCursorDatabaseCompanions(
+              path,
+              this.options.measureBytes,
+            );
+            if (cursorDatabaseCompanions.some((companion) => companion.status !== "missing")) {
+              resources.push({
+                resource: {
+                  id: resourceId,
+                  adapter: this.id,
+                  kind: candidate.kind,
+                  canonicalKey,
+                  displayName: candidate.displayName,
+                  path: resolve(path),
+                },
+                observedAt: context.now.toISOString(),
+                exists: false,
+                facts: {
+                  reportOnly: true,
+                  primaryDatabaseStatus: "missing",
+                  nativeMaintenance: cursorNativeMaintenance,
+                  databaseCompanions: cursorDatabaseCompanions,
+                },
+              });
+            }
+          }
           continue;
         }
 

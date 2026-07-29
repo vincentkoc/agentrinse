@@ -93,6 +93,37 @@ describe("Cursor native database maintenance reporting", () => {
     ]);
   });
 
+  it("reports backup-only recovery state when the primary database is missing", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "cursor-backup-only");
+    const database = join(root, "User", "globalStorage", "state.vscdb");
+    await mkdir(join(root, "User", "globalStorage"), { recursive: true });
+    await writeFile(`${database}.backup`, "backup-copy");
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.cursor, {
+      root,
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const databaseResource = collection.resources.find(
+      (resource) => resource.resource.displayName === "Cursor global state database",
+    );
+
+    expect(databaseResource).toMatchObject({
+      exists: false,
+      facts: {
+        primaryDatabaseStatus: "missing",
+        databaseCompanions: [
+          { suffix: ".backup", status: "regular", measuredBytes: 11 },
+          { suffix: "-wal", status: "missing" },
+          { suffix: "-shm", status: "missing" },
+        ],
+      },
+    });
+  });
+
   it("recognizes the Windows global database path", () => {
     expect(cursorNativeMaintenanceFor("User\\globalStorage\\state.vscdb")).toBeDefined();
   });
