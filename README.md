@@ -84,9 +84,9 @@ logical memory records.
 
 | Icon                                                                        | Surface                              | Mode               | What it understands                                                     |
 | --------------------------------------------------------------------------- | ------------------------------------ | ------------------ | ----------------------------------------------------------------------- |
-| 🌿                                                                          | Git worktrees                        | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots |
-| 🧹                                                                          | Build artifacts                      | safe-clean         | exact configured rebuildable directories                                |
-| 🗜️                                                                          | Codex SQLite state                   | experimental       | schema versions, free pages, sidecars, owner processes, and rollback    |
+| <img width="48px" src="docs/icon-git-branch.svg" alt="Git branch" />        | Git worktrees                        | audit + quarantine | linked worktrees, refs, dirtiness, locks, processes, and provider roots |
+| <img width="48px" src="docs/icon-file.svg" alt="Build artifact file" />     | Build artifacts                      | safe-clean         | exact configured rebuildable directories                                |
+| <img width="48px" src="docs/client-openai.jpg" alt="OpenAI Codex" />        | Codex SQLite state                   | experimental       | schema versions, free pages, sidecars, owner processes, and rollback    |
 | <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | Claude native retention              | report-only        | default or user retention, settings validity, and provider ownership    |
 | <img width="48px" src="docs/client-claude.jpg" alt="Claude Code" />         | Claude logs and changelog cache      | recoverable        | exact old files, provider liveness, seven-day undo, and explicit purge  |
 | <img width="48px" src="docs/client-copilot.png" alt="GitHub Copilot CLI" /> | Copilot native maintenance           | report-only        | local session pruning and versioned process-log retention               |
