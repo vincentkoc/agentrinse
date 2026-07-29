@@ -194,7 +194,8 @@ the selected Docker context and inventories images and containers through
 structured CLI output. It also inventories cache records from the selected
 healthy static builder when the installed Buildx version is within the
 inspected `0.33.0` through `0.35.99` contract. Dynamic builders are rejected
-because separate Buildx commands may select different workers.
+because separate Buildx commands may select different workers. Static nodes
+without stable worker IDs are also rejected.
 
 When `DOCKER_HOST` selects an engine without `DOCKER_CONTEXT`, AgentRinse
 preserves that host selection instead of adding `--context default`. It samples

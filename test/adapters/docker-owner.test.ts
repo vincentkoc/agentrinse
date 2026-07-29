@@ -224,6 +224,25 @@ describe("Docker owner contract", () => {
         }),
       ),
     ).rejects.toThrow("dynamic builders cannot bind");
+    await expect(
+      inspectDockerScope(
+        scopeRunner({
+          "--context fixture buildx ls --format=json": `${JSON.stringify({
+            Current: true,
+            Driver: "docker-container",
+            Dynamic: false,
+            Name: "fixture-builder",
+            Nodes: [
+              {
+                Endpoint: "fixture",
+                Name: "fixture-builder0",
+                Status: "running",
+              },
+            ],
+          })}\n`,
+        }),
+      ),
+    ).rejects.toThrow("no stable worker IDs");
   });
 
   it("parses exact cache facts from the selected builder", async () => {

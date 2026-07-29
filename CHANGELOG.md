@@ -30,6 +30,7 @@ The project follows semantic versioning after its first supported release.
   never published as an exact measured or reclaimable byte count
 - fail-closed rejection for dynamic Buildx builders whose separate inventory
   commands cannot be bound to the same worker
+- fail-closed rejection for builder nodes that expose no stable worker ID
 
 ### Safety
 

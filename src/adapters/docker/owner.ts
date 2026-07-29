@@ -294,11 +294,15 @@ function parseBuilderNode(value: unknown): DockerBuilderNodeIdentity {
     throw new DockerOwnerContractError("Docker Buildx node is not healthy and running");
   }
   const version = optionalString(record, "Version");
+  const workerIds = parseStringArray(record["IDs"] ?? [], "Buildx worker IDs");
+  if (workerIds.length === 0 || workerIds.some((id) => id.trim() === "")) {
+    throw new DockerOwnerContractError("Docker Buildx node has no stable worker IDs");
+  }
   return {
     name: requireString(record, "Name", "Buildx node name"),
     endpoint: requireString(record, "Endpoint", "Buildx node endpoint"),
     ...(version === undefined ? {} : { version }),
-    workerIds: parseStringArray(record["IDs"] ?? [], "Buildx worker IDs"),
+    workerIds,
   };
 }
 
