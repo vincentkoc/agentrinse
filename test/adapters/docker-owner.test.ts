@@ -1,0 +1,234 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  dockerBuildCacheIsOldEnough,
+  exactDockerBuildCacheFilter,
+  inspectDockerBuildCache,
+  inspectDockerScope,
+  supportsDockerBuildxContract,
+  type DockerRunner,
+} from "../../src/adapters/docker/owner.js";
+
+function scopeRunner(overrides: Record<string, string> = {}): DockerRunner {
+  const outputs: Record<string, string> = {
+    "context show": "fixture\n",
+    "context inspect fixture --format {{json .Endpoints.docker.Host}}":
+      '"unix:///fixture/docker.sock"\n',
+    "--context fixture info --format {{json .}}": JSON.stringify({
+      ID: "daemon-fixture",
+      ServerVersion: "29.0.0",
+    }),
+    "buildx version": "github.com/docker/buildx v0.35.0 fixture\n",
+    "--context fixture buildx ls --format=json": `${JSON.stringify({
+      Current: true,
+      Driver: "docker-container",
+      Dynamic: false,
+      Name: "fixture-builder",
+      Nodes: [
+        {
+          Endpoint: "fixture",
+          IDs: ["worker-b", "worker-a"],
+          Name: "fixture-builder0",
+          Status: "running",
+          Version: "v0.24.0",
+        },
+      ],
+    })}\n`,
+    ...overrides,
+  };
+  return async (args) => {
+    const key = args.join(" ");
+    const output = outputs[key];
+    if (output === undefined) {
+      throw new Error(`unexpected Docker command: ${key}`);
+    }
+    return output;
+  };
+}
+
+describe("Docker owner contract", () => {
+  it("pins the context, daemon, selected builder, and stable worker identity", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+
+    expect(scope).toMatchObject({
+      buildxVersion: "0.35.0",
+      context: {
+        name: "fixture",
+        endpoint: "unix:///fixture/docker.sock",
+        daemonId: "daemon-fixture",
+        serverVersion: "29.0.0",
+      },
+      builder: {
+        name: "fixture-builder",
+        driver: "docker-container",
+        nodes: [
+          {
+            name: "fixture-builder0",
+            endpoint: "fixture",
+            workerIds: ["worker-a", "worker-b"],
+          },
+        ],
+      },
+    });
+    expect(scope.builder.fingerprint).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it("honors an explicit Buildx builder override instead of the stored current builder", async () => {
+    const runner = scopeRunner({
+      "--context fixture buildx ls --format=json": [
+        JSON.stringify({
+          Current: true,
+          Driver: "docker",
+          Dynamic: false,
+          Name: "stored-current",
+          Nodes: [
+            {
+              Endpoint: "fixture",
+              IDs: ["stored-worker"],
+              Name: "stored-current0",
+              Status: "running",
+            },
+          ],
+        }),
+        JSON.stringify({
+          Current: false,
+          Driver: "remote",
+          Dynamic: false,
+          Name: "environment-builder",
+          Nodes: [
+            {
+              Endpoint: "tcp://builder.example.invalid:1234",
+              IDs: ["remote-worker"],
+              Name: "environment-builder0",
+              Status: "running",
+            },
+          ],
+        }),
+      ].join("\n"),
+    });
+
+    const scope = await inspectDockerScope(runner, "environment-builder");
+
+    expect(scope.builder).toMatchObject({
+      name: "environment-builder",
+      driver: "remote",
+    });
+  });
+
+  it("fails closed for uninspected Buildx versions and unhealthy builders", async () => {
+    expect(supportsDockerBuildxContract("0.32.1")).toBe(false);
+    expect(supportsDockerBuildxContract("0.33.0")).toBe(true);
+    expect(supportsDockerBuildxContract("0.35.0")).toBe(true);
+    expect(supportsDockerBuildxContract("0.36.0")).toBe(false);
+
+    await expect(
+      inspectDockerScope(
+        scopeRunner({
+          "buildx version": "github.com/docker/buildx v0.36.0 future\n",
+        }),
+      ),
+    ).rejects.toThrow("outside the inspected");
+    await expect(
+      inspectDockerScope(
+        scopeRunner({
+          "--context fixture buildx ls --format=json": `${JSON.stringify({
+            Current: true,
+            Driver: "docker-container",
+            Dynamic: false,
+            Name: "fixture-builder",
+            Nodes: [
+              {
+                Endpoint: "fixture",
+                Err: "connection failed",
+                Name: "fixture-builder0",
+                Status: "error",
+              },
+            ],
+          })}\n`,
+        }),
+      ),
+    ).rejects.toThrow("not healthy and running");
+  });
+
+  it("parses exact cache facts and uses an anchored ID filter", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+    const calls: string[][] = [];
+    const runner: DockerRunner = async (args) => {
+      calls.push(args);
+      return `${JSON.stringify({
+        CreatedAt: "2026-07-01T00:00:00Z",
+        ID: "abcdefghijklmnopqrstuvwx",
+        LastUsedAt: "2026-07-10T00:00:00Z",
+        Mutable: false,
+        Parents: ["parent-b", "parent-a"],
+        Reclaimable: true,
+        Shared: false,
+        Size: "829889526",
+        Type: "regular",
+        UsageCount: 1,
+      })}\n`;
+    };
+
+    const records = await inspectDockerBuildCache(scope, runner, "abcdefghijklmnopqrstuvwx");
+
+    expect(calls).toEqual([
+      [
+        "--context",
+        "fixture",
+        "buildx",
+        "du",
+        "--builder",
+        "fixture-builder",
+        "--format=json",
+        "--filter",
+        "id=^abcdefghijklmnopqrstuvwx$",
+      ],
+    ]);
+    expect(records[0]).toMatchObject({
+      id: "abcdefghijklmnopqrstuvwx",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      sizeBytes: 829_889_526,
+      parents: ["parent-a", "parent-b"],
+      ageEvidence: {
+        kind: "timestamp",
+        lastUsedAt: "2026-07-10T00:00:00.000Z",
+      },
+    });
+  });
+
+  it("accepts Docker's humanized JSON fields only with a conservative age bound", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+    const recordFor = async (lastUsedAt: string) =>
+      (
+        await inspectDockerBuildCache(scope, async () =>
+          [
+            JSON.stringify({
+              CreatedAt: "2026-06-01 00:00:00 +0000 UTC",
+              ID: "abcdefghijklmnopqrstuvwx",
+              LastUsedAt: lastUsedAt,
+              Mutable: false,
+              Reclaimable: true,
+              Shared: true,
+              Size: "1.653GB",
+              Type: "regular",
+              UsageCount: 2,
+            }),
+          ].join("\n"),
+        )
+      )[0]!;
+
+    const sevenDays = await recordFor("7 days ago");
+    const eightDays = await recordFor("8 days ago");
+
+    expect(dockerBuildCacheIsOldEnough(sevenDays, new Date("2026-07-29T00:00:00Z"))).toBe(false);
+    expect(dockerBuildCacheIsOldEnough(eightDays, new Date("2026-07-29T00:00:00Z"))).toBe(true);
+    expect(eightDays.sizeBytes).toBe(1_653_000_000);
+  });
+
+  it("rejects regex-capable or malformed cache IDs", () => {
+    expect(exactDockerBuildCacheFilter("abcdefghijklmnopqrstuvwx")).toBe(
+      "id=^abcdefghijklmnopqrstuvwx$",
+    );
+    expect(() => exactDockerBuildCacheFilter("cache.*")).toThrow("unsupported");
+  });
+});
