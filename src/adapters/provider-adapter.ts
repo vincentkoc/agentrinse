@@ -36,6 +36,11 @@ import {
   copilotNativeMaintenanceFor,
 } from "./copilot-maintenance.js";
 import {
+  cursorNativeMaintenanceFactsSchema,
+  cursorNativeMaintenanceFor,
+  inspectCursorDatabaseCompanions,
+} from "./cursor-maintenance.js";
+import {
   opencodeNativeMaintenanceFactsSchema,
   opencodeNativeMaintenanceFor,
 } from "./opencode-maintenance.js";
@@ -240,6 +245,8 @@ export class ProviderAuditAdapter implements AuditAdapter {
         this.spec.id === "opencode"
           ? opencodeNativeMaintenanceFor(candidate.relativePath)
           : undefined;
+      const cursorNativeMaintenance =
+        this.spec.id === "cursor" ? cursorNativeMaintenanceFor(candidate.relativePath) : undefined;
 
       try {
         const stats = await lstat(path);
@@ -280,6 +287,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
             : await inspectCodexProcesses(this.options.databaseDependencies);
         const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
         const resourceId = `${this.id}:${candidate.kind}:${sha256(canonicalKey)}`;
+        const cursorDatabaseCompanions =
+          cursorNativeMaintenance === undefined
+            ? undefined
+            : await inspectCursorDatabaseCompanions(path);
 
         resources.push({
           resource: {
@@ -311,6 +322,12 @@ export class ProviderAuditAdapter implements AuditAdapter {
             ...(opencodeNativeMaintenance === undefined
               ? {}
               : { nativeMaintenance: opencodeNativeMaintenance }),
+            ...(cursorNativeMaintenance === undefined
+              ? {}
+              : {
+                  nativeMaintenance: cursorNativeMaintenance,
+                  databaseCompanions: cursorDatabaseCompanions,
+                }),
             ...(databaseInspection === undefined
               ? {}
               : {
@@ -377,6 +394,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
       resource.facts.nativeMaintenance,
     );
     const opencodeNativeMaintenance = opencodeNativeMaintenanceFactsSchema.safeParse(
+      resource.facts.nativeMaintenance,
+    );
+    const cursorNativeMaintenance = cursorNativeMaintenanceFactsSchema.safeParse(
       resource.facts.nativeMaintenance,
     );
     const providerFilePolicy =
@@ -665,6 +685,37 @@ export class ProviderAuditAdapter implements AuditAdapter {
             source: this.id,
             observedAt,
             detail: "OpenCode owns this maintenance path; AgentRinse does not mutate the resource.",
+          },
+        ],
+        facts: resource.facts,
+        candidateActions: [],
+        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
+        warnings: [],
+      };
+    }
+    if (this.spec.id === "cursor" && cursorNativeMaintenance.success) {
+      return {
+        schemaVersion: 1,
+        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
+        auditId: context.auditId,
+        observedAt,
+        resource: resource.resource,
+        state: "protected",
+        confidence: "unknown",
+        roots: [
+          {
+            code: "cursor-native-database-maintenance-version-unverified",
+            source: this.id,
+            observedAt,
+            detail:
+              "Current Cursor guidance exposes command-palette operations for orphaned agent KV cleanup or user-selected chat deletion, both followed by VACUUM; AgentRinse did not prove the installed Cursor version.",
+          },
+          {
+            code: "provider-owned-report-only",
+            source: this.id,
+            observedAt,
+            detail:
+              "Cursor owns its database schema and maintenance commands; AgentRinse does not open or mutate the database.",
           },
         ],
         facts: resource.facts,

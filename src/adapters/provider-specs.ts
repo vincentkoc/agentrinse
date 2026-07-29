@@ -116,8 +116,8 @@ export const PROVIDER_SPECS: Record<ProviderAdapterId, ProviderSpec> = {
         kind: "agent-session-store",
       },
       {
-        relativePath: join("User", "globalStorage"),
-        displayName: "Cursor global state",
+        relativePath: join("User", "globalStorage", "state.vscdb"),
+        displayName: "Cursor global state database",
         kind: "agent-database",
       },
       {
