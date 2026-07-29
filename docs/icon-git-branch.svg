@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Git branch</title>
+  <rect width="96" height="96" rx="18" fill="#fff4f0"/>
+  <path d="M34 26v43" fill="none" stroke="#f05032" stroke-linecap="round" stroke-width="8"/>
+  <path d="M62 27c0 18-11 25-28 25" fill="none" stroke="#f05032" stroke-linecap="round" stroke-linejoin="round" stroke-width="8"/>
+  <circle cx="34" cy="22" r="8" fill="#fff4f0" stroke="#f05032" stroke-width="8"/>
+  <circle cx="34" cy="74" r="8" fill="#fff4f0" stroke="#f05032" stroke-width="8"/>
+  <circle cx="62" cy="22" r="8" fill="#fff4f0" stroke="#f05032" stroke-width="8"/>
+</svg>

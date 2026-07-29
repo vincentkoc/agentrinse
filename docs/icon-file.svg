@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-labelledby="title">
+  <title id="title">Build artifact file</title>
+  <rect width="96" height="96" rx="18" fill="#f4f7fb"/>
+  <path d="M29 18h25l16 16v44H29z" fill="none" stroke="#52606d" stroke-linecap="round" stroke-linejoin="round" stroke-width="7"/>
+  <path d="M54 18v16h16" fill="none" stroke="#52606d" stroke-linecap="round" stroke-linejoin="round" stroke-width="7"/>
+  <path d="M40 50h19" fill="none" stroke="#52606d" stroke-linecap="round" stroke-width="7"/>
+  <path d="M40 63h19" fill="none" stroke="#52606d" stroke-linecap="round" stroke-width="7"/>
+</svg>
