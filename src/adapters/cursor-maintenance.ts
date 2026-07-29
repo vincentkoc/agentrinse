@@ -1,4 +1,5 @@
 import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 
 import { z } from "zod";
 
@@ -44,10 +45,19 @@ export const cursorDatabaseCompanionsSchema = z.array(cursorDatabaseCompanionSch
 
 export type CursorDatabaseCompanions = z.infer<typeof cursorDatabaseCompanionsSchema>;
 
+export type CursorDatabaseParentInspection =
+  | { status: "safe" }
+  | { status: "missing" }
+  | { status: "blocked"; code: "symlink" | "not-directory" | "unreadable"; reason: string };
+
+function relativePathParts(relativePath: string): string[] {
+  return relativePath.split(/[\\/]+/u).filter(Boolean);
+}
+
 export function cursorNativeMaintenanceFor(
   relativePath: string,
 ): CursorNativeMaintenanceFacts | undefined {
-  if (relativePath.split(/[\\/]+/u).join("/") !== "User/globalStorage/state.vscdb") {
+  if (relativePathParts(relativePath).join("/") !== "User/globalStorage/state.vscdb") {
     return undefined;
   }
   return {
@@ -75,6 +85,48 @@ export function cursorNativeMaintenanceFor(
       },
     ],
   };
+}
+
+export async function inspectCursorDatabaseParents(
+  ownerRoot: string,
+  relativePath: string,
+): Promise<CursorDatabaseParentInspection> {
+  const parents = relativePathParts(relativePath).slice(0, -1);
+  let current = ownerRoot;
+  for (const part of parents) {
+    current = join(current, part);
+    try {
+      const stats = await lstat(current);
+      if (stats.isSymbolicLink()) {
+        return {
+          status: "blocked",
+          code: "symlink",
+          reason: "A Cursor database parent directory is a symlink.",
+        };
+      }
+      if (!stats.isDirectory()) {
+        return {
+          status: "blocked",
+          code: "not-directory",
+          reason: "A Cursor database parent path is not a directory.",
+        };
+      }
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return { status: "missing" };
+      }
+      return {
+        status: "blocked",
+        code: "unreadable",
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  return { status: "safe" };
 }
 
 export async function inspectCursorDatabaseCompanions(

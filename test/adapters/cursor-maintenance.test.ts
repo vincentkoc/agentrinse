@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   cursorNativeMaintenanceFor,
   inspectCursorDatabaseCompanions,
+  inspectCursorDatabaseParents,
 } from "../../src/adapters/cursor-maintenance.js";
 import { ProviderAuditAdapter } from "../../src/adapters/provider-adapter.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
@@ -121,6 +122,36 @@ describe("Cursor native database maintenance reporting", () => {
           { suffix: "-shm", status: "missing" },
         ],
       },
+    });
+  });
+
+  it("refuses a symlinked database parent without inspecting outside files", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "cursor-symlinked-parent");
+    const outside = await mkdtemp(join(tmpdir(), "agentrinse-cursor-outside-"));
+    await mkdir(join(root, "User"), { recursive: true });
+    await writeFile(join(outside, "state.vscdb"), "outside-database");
+    await writeFile(join(outside, "state.vscdb.backup"), "outside-backup");
+    await symlink(outside, join(root, "User", "globalStorage"));
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.cursor, {
+      root,
+      measureBytes: true,
+      maxEntries: 100,
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+
+    expect(collection.resources).toEqual([]);
+    expect(collection.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "RESOURCE_PARENT_SYMLINK_SKIPPED" }),
+    );
+    await expect(
+      inspectCursorDatabaseParents(root, "User/globalStorage/state.vscdb"),
+    ).resolves.toEqual({
+      status: "blocked",
+      code: "symlink",
+      reason: "A Cursor database parent directory is a symlink.",
     });
   });
 

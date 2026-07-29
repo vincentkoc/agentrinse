@@ -39,6 +39,7 @@ import {
   cursorNativeMaintenanceFactsSchema,
   cursorNativeMaintenanceFor,
   inspectCursorDatabaseCompanions,
+  inspectCursorDatabaseParents,
 } from "./cursor-maintenance.js";
 import {
   opencodeNativeMaintenanceFactsSchema,
@@ -249,6 +250,27 @@ export class ProviderAuditAdapter implements AuditAdapter {
         this.spec.id === "cursor" ? cursorNativeMaintenanceFor(candidate.relativePath) : undefined;
       const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
       const resourceId = `${this.id}:${candidate.kind}:${sha256(canonicalKey)}`;
+      if (cursorNativeMaintenance !== undefined) {
+        const parentInspection = await inspectCursorDatabaseParents(
+          probe.root,
+          candidate.relativePath,
+        );
+        if (parentInspection.status === "missing") {
+          continue;
+        }
+        if (parentInspection.status === "blocked") {
+          diagnostics.push({
+            severity: "warning",
+            code:
+              parentInspection.code === "symlink"
+                ? "RESOURCE_PARENT_SYMLINK_SKIPPED"
+                : "RESOURCE_PARENT_INSPECTION_FAILED",
+            message: parentInspection.reason,
+            adapter: this.id,
+          });
+          continue;
+        }
+      }
 
       try {
         const stats = await lstat(path);
