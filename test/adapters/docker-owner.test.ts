@@ -204,6 +204,26 @@ describe("Docker owner contract", () => {
         }),
       ),
     ).rejects.toThrow("not healthy and running");
+    await expect(
+      inspectDockerScope(
+        scopeRunner({
+          "--context fixture buildx ls --format=json": `${JSON.stringify({
+            Current: true,
+            Driver: "kubernetes",
+            Dynamic: true,
+            Name: "fixture-builder",
+            Nodes: [
+              {
+                Endpoint: "kubernetes:///fixture",
+                IDs: ["ephemeral-worker"],
+                Name: "fixture-builder0",
+                Status: "running",
+              },
+            ],
+          })}\n`,
+        }),
+      ),
+    ).rejects.toThrow("dynamic builders cannot bind");
   });
 
   it("parses exact cache facts from the selected builder", async () => {

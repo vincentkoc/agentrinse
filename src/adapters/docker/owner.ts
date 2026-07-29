@@ -322,10 +322,16 @@ function parseBuilder(
   if (!Array.isArray(nodesValue) || nodesValue.length === 0) {
     throw new DockerOwnerContractError("Docker Buildx builder has no nodes");
   }
+  const dynamic = requireBoolean(record, "Dynamic");
+  if (dynamic) {
+    throw new DockerOwnerContractError(
+      "Docker Buildx dynamic builders cannot bind cache records to an inspected worker",
+    );
+  }
   const identity = {
     name: requireString(record, "Name", "Buildx builder name"),
     driver: requireString(record, "Driver", "Buildx builder driver"),
-    dynamic: requireBoolean(record, "Dynamic"),
+    dynamic,
     nodes: nodesValue
       .map(parseBuilderNode)
       .sort((left, right) => left.name.localeCompare(right.name)),

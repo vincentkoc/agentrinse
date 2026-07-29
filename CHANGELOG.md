@@ -28,6 +28,8 @@ The project follows semantic versioning after its first supported release.
   malformed Buildx output from suppressing valid sibling records
 - separate exact and humanized cache-size evidence so rounded Buildx output is
   never published as an exact measured or reclaimable byte count
+- fail-closed rejection for dynamic Buildx builders whose separate inventory
+  commands cannot be bound to the same worker
 
 ### Safety
 

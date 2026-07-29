@@ -192,8 +192,9 @@ remove superseded versions.
 The Docker adapter is disabled by default. When explicitly enabled, it probes
 the selected Docker context and inventories images and containers through
 structured CLI output. It also inventories cache records from the selected
-healthy builder when the installed Buildx version is within the inspected
-`0.33.0` through `0.35.99` contract.
+healthy static builder when the installed Buildx version is within the
+inspected `0.33.0` through `0.35.99` contract. Dynamic builders are rejected
+because separate Buildx commands may select different workers.
 
 When `DOCKER_HOST` selects an engine without `DOCKER_CONTEXT`, AgentRinse
 preserves that host selection instead of adding `--context default`. It samples
