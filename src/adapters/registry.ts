@@ -107,7 +107,11 @@ export function createAuditAdapters(
   }
 
   if (config.adapters.docker?.enabled === true) {
-    adapters.push(new DockerAuditAdapter());
+    adapters.push(
+      new DockerAuditAdapter(undefined, {
+        builderOverride: (options.environment ?? process.env)["BUILDX_BUILDER"],
+      }),
+    );
   }
 
   return adapters;

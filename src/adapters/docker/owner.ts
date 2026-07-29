@@ -191,9 +191,19 @@ function parseSizeBytes(value: unknown): number {
 }
 
 function relativeAgeLowerBoundHours(value: string): number | undefined {
-  const normalized = value.trim().replace(/\s+ago$/u, "");
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "less than a second ago") {
+    return 0;
+  }
+  if (normalized === "about a minute ago") {
+    return 1 / 60;
+  }
+  if (normalized === "about an hour ago") {
+    return 1;
+  }
+  const withoutAgo = normalized.replace(/\s+ago$/u, "");
   const match = /^(\d+)\s+(seconds?|minutes?|hours?|days?|weeks?|months?|years?)$/u.exec(
-    normalized,
+    withoutAgo,
   );
   if (match === null) {
     return undefined;
@@ -236,13 +246,10 @@ function parseAgeEvidence(value: unknown): DockerBuildCacheAgeEvidence {
     };
   }
   const lowerBoundHours = relativeAgeLowerBoundHours(value);
-  if (lowerBoundHours === undefined) {
-    throw new DockerOwnerContractError("Docker cache last-used age is unsupported");
-  }
   return {
     kind: "relative",
     observed: value.trim(),
-    lowerBoundHours,
+    lowerBoundHours: lowerBoundHours ?? 0,
   };
 }
 
@@ -306,10 +313,9 @@ function parseBuilder(
   };
 }
 
-export async function inspectDockerScope(
+export async function inspectDockerContext(
   runDocker: DockerRunner = defaultDockerRunner,
-  builderOverride?: string,
-): Promise<DockerScopeIdentity> {
+): Promise<DockerContextIdentity> {
   const contextName = (await runDocker(["context", "show"])).trim();
   if (contextName === "") {
     throw new DockerOwnerContractError("Docker context is missing");
@@ -329,6 +335,19 @@ export async function inspectDockerScope(
   const daemon = JSON.parse(
     await runDocker(["--context", contextName, "info", "--format", "{{json .}}"]),
   ) as Record<string, unknown>;
+  return {
+    name: contextName,
+    endpoint: endpoint.trim(),
+    daemonId: requireString(daemon, "ID", "daemon ID"),
+    serverVersion: requireString(daemon, "ServerVersion", "server version"),
+  };
+}
+
+export async function inspectDockerScope(
+  runDocker: DockerRunner = defaultDockerRunner,
+  builderOverride?: string,
+): Promise<DockerScopeIdentity> {
+  const context = await inspectDockerContext(runDocker);
   const buildxVersion = parseBuildxVersion(await runDocker(["buildx", "version"]));
   if (!supportsDockerBuildxContract(buildxVersion)) {
     throw new DockerOwnerContractError(
@@ -336,31 +355,21 @@ export async function inspectDockerScope(
     );
   }
   const builders = parseJsonLines(
-    await runDocker(["--context", contextName, "buildx", "ls", "--format=json"]),
+    await runDocker(["--context", context.name, "buildx", "ls", "--format=json"]),
   );
 
   return {
     buildxVersion,
-    context: {
-      name: contextName,
-      endpoint: endpoint.trim(),
-      daemonId: requireString(daemon, "ID", "daemon ID"),
-      serverVersion: requireString(daemon, "ServerVersion", "server version"),
-    },
+    context,
     builder: parseBuilder(builders, builderOverride),
   };
 }
 
-export function exactDockerBuildCacheFilter(cacheId: string): string {
-  if (!CACHE_ID_PATTERN.test(cacheId)) {
-    throw new DockerOwnerContractError("Docker build-cache ID is unsupported");
-  }
-  return `id=^${cacheId}$`;
-}
-
 function parseCacheRecord(value: Record<string, unknown>): DockerBuildCacheRecord {
   const id = requireString(value, "ID", "cache ID");
-  exactDockerBuildCacheFilter(id);
+  if (!CACHE_ID_PATTERN.test(id)) {
+    throw new DockerOwnerContractError("Docker build-cache ID is unsupported");
+  }
   const stable = {
     id,
     createdAt: parseDate(requireString(value, "CreatedAt"), "cache creation time"),
@@ -371,32 +380,34 @@ function parseCacheRecord(value: Record<string, unknown>): DockerBuildCacheRecor
     usageCount: requireNonnegativeInteger(value, "UsageCount"),
     parents: parseStringArray(value["Parents"] ?? [], "cache parents"),
     recordType: requireString(value, "Type", "cache record type"),
-    ageEvidence: parseAgeEvidence(value["LastUsedAt"]),
+  };
+  const ageEvidence = parseAgeEvidence(value["LastUsedAt"]);
+  const fingerprintFacts = {
+    ...stable,
+    ...(ageEvidence.kind === "timestamp" ? { lastUsedAt: ageEvidence.lastUsedAt } : {}),
   };
   return {
     ...stable,
-    fingerprint: sha256Json(stable),
+    ageEvidence,
+    fingerprint: sha256Json(fingerprintFacts),
   };
 }
 
 export async function inspectDockerBuildCache(
   scope: DockerScopeIdentity,
   runDocker: DockerRunner = defaultDockerRunner,
-  cacheId?: string,
 ): Promise<DockerBuildCacheRecord[]> {
-  const args = [
-    "--context",
-    scope.context.name,
-    "buildx",
-    "du",
-    "--builder",
-    scope.builder.name,
-    "--format=json",
-  ];
-  if (cacheId !== undefined) {
-    args.push("--filter", exactDockerBuildCacheFilter(cacheId));
-  }
-  return parseJsonLines(await runDocker(args)).map(parseCacheRecord);
+  return parseJsonLines(
+    await runDocker([
+      "--context",
+      scope.context.name,
+      "buildx",
+      "du",
+      "--builder",
+      scope.builder.name,
+      "--format=json",
+    ]),
+  ).map(parseCacheRecord);
 }
 
 export function dockerBuildCacheIsOldEnough(

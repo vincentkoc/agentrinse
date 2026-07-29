@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   dockerBuildCacheIsOldEnough,
-  exactDockerBuildCacheFilter,
   inspectDockerBuildCache,
+  inspectDockerContext,
   inspectDockerScope,
   supportsDockerBuildxContract,
   type DockerRunner,
@@ -47,6 +47,17 @@ function scopeRunner(overrides: Record<string, string> = {}): DockerRunner {
 }
 
 describe("Docker owner contract", () => {
+  it("inspects the daemon without requiring Buildx", async () => {
+    const context = await inspectDockerContext(scopeRunner());
+
+    expect(context).toEqual({
+      name: "fixture",
+      endpoint: "unix:///fixture/docker.sock",
+      daemonId: "daemon-fixture",
+      serverVersion: "29.0.0",
+    });
+  });
+
   it("pins the context, daemon, selected builder, and stable worker identity", async () => {
     const scope = await inspectDockerScope(scopeRunner());
 
@@ -150,7 +161,7 @@ describe("Docker owner contract", () => {
     ).rejects.toThrow("not healthy and running");
   });
 
-  it("parses exact cache facts and uses an anchored ID filter", async () => {
+  it("parses exact cache facts from the selected builder", async () => {
     const scope = await inspectDockerScope(scopeRunner());
     const calls: string[][] = [];
     const runner: DockerRunner = async (args) => {
@@ -169,20 +180,10 @@ describe("Docker owner contract", () => {
       })}\n`;
     };
 
-    const records = await inspectDockerBuildCache(scope, runner, "abcdefghijklmnopqrstuvwx");
+    const records = await inspectDockerBuildCache(scope, runner);
 
     expect(calls).toEqual([
-      [
-        "--context",
-        "fixture",
-        "buildx",
-        "du",
-        "--builder",
-        "fixture-builder",
-        "--format=json",
-        "--filter",
-        "id=^abcdefghijklmnopqrstuvwx$",
-      ],
+      ["--context", "fixture", "buildx", "du", "--builder", "fixture-builder", "--format=json"],
     ]);
     expect(records[0]).toMatchObject({
       id: "abcdefghijklmnopqrstuvwx",
@@ -225,10 +226,58 @@ describe("Docker owner contract", () => {
     expect(eightDays.sizeBytes).toBe(1_653_000_000);
   });
 
-  it("rejects regex-capable or malformed cache IDs", () => {
-    expect(exactDockerBuildCacheFilter("abcdefghijklmnopqrstuvwx")).toBe(
-      "id=^abcdefghijklmnopqrstuvwx$",
+  it("treats approximate and unknown human ages as recent evidence", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+    const records = await inspectDockerBuildCache(scope, async () =>
+      [
+        ["abcdefghijklmnopqrstuvwx", "Less than a second ago"],
+        ["bcdefghijklmnopqrstuvwxy", "About a minute ago"],
+        ["cdefghijklmnopqrstuvwxyz", "About an hour ago"],
+        ["defghijklmnopqrstuvwxyz0", "localized age text"],
+      ]
+        .map(([ID, LastUsedAt]) =>
+          JSON.stringify({
+            CreatedAt: "2026-06-01 00:00:00 +0000 UTC",
+            ID,
+            LastUsedAt,
+            Mutable: false,
+            Reclaimable: true,
+            Shared: false,
+            Size: 100,
+            Type: "regular",
+            UsageCount: 0,
+          }),
+        )
+        .join("\n"),
     );
-    expect(() => exactDockerBuildCacheFilter("cache.*")).toThrow("unsupported");
+
+    expect(records.map((record) => record.ageEvidence)).toEqual([
+      { kind: "relative", observed: "Less than a second ago", lowerBoundHours: 0 },
+      { kind: "relative", observed: "About a minute ago", lowerBoundHours: 1 / 60 },
+      { kind: "relative", observed: "About an hour ago", lowerBoundHours: 1 },
+      { kind: "relative", observed: "localized age text", lowerBoundHours: 0 },
+    ]);
+    expect(
+      records.every((record) => !dockerBuildCacheIsOldEnough(record, new Date("2026-07-29"))),
+    ).toBe(true);
+  });
+
+  it("rejects malformed cache IDs without suppressing valid record parsing", async () => {
+    const scope = await inspectDockerScope(scopeRunner());
+    await expect(
+      inspectDockerBuildCache(scope, async () =>
+        JSON.stringify({
+          CreatedAt: "2026-06-01T00:00:00Z",
+          ID: "cache.*",
+          LastUsedAt: "8 days ago",
+          Mutable: false,
+          Reclaimable: true,
+          Shared: false,
+          Size: 100,
+          Type: "regular",
+          UsageCount: 0,
+        }),
+      ),
+    ).rejects.toThrow("unsupported");
   });
 });

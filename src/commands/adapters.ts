@@ -14,7 +14,7 @@ export function renderAdapters(): string {
     "",
     "git        audit-only  Git worktrees (explicit root)",
     "runtime    audit-only  Installed agent runtimes",
-    "docker     audit-only  Docker images and containers (opt-in)",
+    "docker     audit-only  Docker images, containers, and Buildx cache (opt-in)",
     "artifacts  safe-clean  Explicit rebuildable project directories",
     "",
   ];
