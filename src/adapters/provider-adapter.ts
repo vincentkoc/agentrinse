@@ -42,6 +42,11 @@ import {
   inspectCursorDatabaseParents,
 } from "./cursor-maintenance.js";
 import {
+  grokOwnerContractFactsSchema,
+  inspectGrokOwnerContract,
+  type GrokVersionRunner,
+} from "./grok-maintenance.js";
+import {
   opencodeNativeMaintenanceFactsSchema,
   opencodeNativeMaintenanceFor,
 } from "./opencode-maintenance.js";
@@ -64,6 +69,7 @@ export type ProviderAdapterOptions = {
     path: string,
     dependencies?: CodexDatabaseDependencies,
   ) => Promise<CodexDatabaseInspection>;
+  runGrokVersion?: GrokVersionRunner;
 };
 
 const DATABASE_RECLAIM_THRESHOLD_BYTES = 512 * 1024 * 1024;
@@ -233,8 +239,27 @@ export class ProviderAuditAdapter implements AuditAdapter {
     if (claudeRetention !== undefined) {
       diagnostics.push(...claudeRetention.diagnostics);
     }
+    const grokOwnerContract =
+      this.spec.id === "grok"
+        ? await inspectGrokOwnerContract(
+            probe.root,
+            this.options.environment ?? process.env,
+            this.options.platform ?? process.platform,
+            this.options.runGrokVersion,
+          )
+        : undefined;
+    const candidates =
+      grokOwnerContract !== undefined && grokOwnerContract.installedVersionStatus !== "exact"
+        ? [
+            {
+              relativePath: ".",
+              displayName: "Grok Build data",
+              kind: "agent-home" as const,
+            },
+          ]
+        : this.spec.resources;
 
-    for (const candidate of this.spec.resources) {
+    for (const candidate of candidates) {
       context.signal?.throwIfAborted();
       const path =
         candidate.relativePath === "." ? probe.root : join(probe.root, candidate.relativePath);
@@ -350,6 +375,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
                   nativeMaintenance: cursorNativeMaintenance,
                   databaseCompanions: cursorDatabaseCompanions,
                 }),
+            ...(grokOwnerContract === undefined ? {} : { ownerContract: grokOwnerContract }),
             ...(databaseInspection === undefined
               ? {}
               : {
@@ -447,6 +473,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
     const cursorNativeMaintenance = cursorNativeMaintenanceFactsSchema.safeParse(
       resource.facts.nativeMaintenance,
     );
+    const grokOwnerContract = grokOwnerContractFactsSchema.safeParse(resource.facts.ownerContract);
     const providerFilePolicy =
       typeof resource.facts.policyId === "string"
         ? PROVIDER_FILE_POLICIES.find(
@@ -764,6 +791,56 @@ export class ProviderAuditAdapter implements AuditAdapter {
             observedAt,
             detail:
               "Cursor owns its database schema and maintenance commands; AgentRinse does not open or mutate the database.",
+          },
+        ],
+        facts: resource.facts,
+        candidateActions: [],
+        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
+        warnings: [],
+      };
+    }
+    if (this.spec.id === "grok" && grokOwnerContract.success) {
+      const versionStatus = grokOwnerContract.data.installedVersionStatus;
+      const executableStatus = grokOwnerContract.data.ownerExecutableStatus;
+      const exact = versionStatus === "exact";
+      const detail = exact
+        ? "The installed Grok version and build revision match the inspected source snapshot. Grok runs its memory GC during session initialization, but exposes no tagged, user-invokable cleanup contract that AgentRinse can bind and revalidate."
+        : versionStatus === "version-mismatch"
+          ? `Installed Grok ${grokOwnerContract.data.installedVersion} does not match inspected source version ${grokOwnerContract.data.sourceVersion}; only the owner root was inventoried.`
+          : versionStatus === "revision-mismatch"
+            ? `Installed Grok build revision ${grokOwnerContract.data.installedRevision} does not match the inspected source revisions; only the owner root was inventoried.`
+            : versionStatus === "unparseable"
+              ? "The installed Grok version output did not match the documented format; only the owner root was inventoried."
+              : executableStatus === "unsafe"
+                ? "The canonical Grok executable escapes or does not resolve to a file inside the audited owner root; only the owner root was inventoried."
+                : executableStatus === "unexecutable"
+                  ? "The canonical Grok executable is not executable; only the owner root was inventoried."
+                  : executableStatus === "unreadable"
+                    ? "The canonical Grok executable could not be inspected; only the owner root was inventoried."
+                    : executableStatus === "missing"
+                      ? "The audited owner root has no canonical Grok executable; only the owner root was inventoried."
+                      : "The bound Grok executable version could not be inspected; only the owner root was inventoried.";
+      return {
+        schemaVersion: 1,
+        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
+        auditId: context.auditId,
+        observedAt,
+        resource: resource.resource,
+        state: "protected",
+        confidence: exact ? "high" : "unknown",
+        roots: [
+          {
+            code: "grok-cleanup-owner-contract-unavailable",
+            source: this.id,
+            observedAt,
+            detail,
+          },
+          {
+            code: "provider-owned-report-only",
+            source: this.id,
+            observedAt,
+            detail:
+              "Grok owns sessions, memory, logs, worktrees, plugins, credentials, configuration, and runtime assets; AgentRinse does not mutate them.",
           },
         ],
         facts: resource.facts,

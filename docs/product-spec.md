@@ -2218,8 +2218,11 @@ requirements as Codex and Cursor.
 Grok Build owns sessions, configuration, authentication, plugins, MCP/LSP
 state, ACP behavior, logs, and its internal task runtime.
 
-Grok Build is a newly open-sourced product. AgentRinse support must pin exact
-tested versions and inspect the public source before expanding beyond audit.
+Grok Build is a newly open-sourced product. AgentRinse support pins exact
+tested versions and inspects the public source before expanding beyond audit.
+The current contract is Grok `0.2.112` at source commit
+`5da6962e4adb9c857f3def762542b52b4ec3e522`, whose `SOURCE_REV` is
+`2a818575225183d8ca915f5632a09b8067b5156a`.
 
 ### Discovery
 
@@ -2231,14 +2234,36 @@ Known configuration:
 $GROK_HOME/config.toml
 ```
 
-Inventory only paths confirmed by the installed version or matching source:
+Resolve the canonical executable at `$GROK_HOME/bin/grok` or
+`$GROK_HOME/bin/grok.exe`. Its real path must stay inside the audited owner
+root, and it must be executable on Unix. Do not use a `grok` executable selected
+from `PATH`.
 
-- session/task state
-- logs
-- caches and downloaded runtime assets
-- plugin data
-- active `grok` and ACP processes
-- project/worktree references
+Run that bound executable with `--version` without a shell and with a sanitized
+environment containing the audited `GROK_HOME` plus required Windows system
+roots only. Pinned source `0.2.112` dispatches this version path before memory
+tracing, documentation extraction, crash handling, crashed-session collection,
+or runtime startup.
+
+Parse its semantic version, build revision, and optional alpha/stable channel.
+The semantic version must match `0.2.112`, and the build revision must be a
+prefix of either the public source commit or upstream `SOURCE_REV`. The channel
+is recorded but is not source identity because Grok derives it from a local
+version cache. Only an exact owner-bound version-and-revision match inventories
+these source-confirmed owner roots:
+
+- `sessions`
+- `logs`
+- `memory`
+- `worktrees`
+- `marketplace-cache`
+- `downloads`
+
+Do not enumerate configuration, authentication, skills, plugins, hooks, or MCP
+credential stores as cleanup candidates. When the canonical executable is
+missing, unsafe, non-executable, or unreadable, the version output is
+unparseable, or the installed version or revision differs, emit only one
+directory-level owner-root finding.
 
 ### Safety policy
 
@@ -2250,8 +2275,23 @@ Inventory only paths confirmed by the installed version or matching source:
 - version mismatch degrades the adapter to directory-level size reporting
 - no mutation in the initial adapter
 
-The adapter should expose the installed Grok Build version and the source
-contract version used for interpretation in every finding.
+The inspected source runs memory GC during session initialization:
+
+- empty `tmp*` workspace-memory directories are removed immediately
+- non-empty `tmp*` directories are removed after seven days
+- other workspace-memory directories without session files are removed after
+  `memory.gc.max_age_days`, default 30
+- non-temporary workspace memory with at least one `sessions` directory entry
+  is preserved
+
+This sweep has no tagged, user-invokable cleanup contract. AgentRinse reports
+the native behavior but does not invoke it, and every finding emits
+`grok-cleanup-owner-contract-unavailable`.
+
+Every finding exposes the version-probe contract, owner-executable binding
+status, installed-version status, parsed installed version, build revision and
+channel when available, source version, source commit, upstream source
+revision, inventory scope, native memory-GC contract, and mutation refusal.
 
 ## Docker Adapter
 
@@ -3680,6 +3720,7 @@ decision-log entry. They must not be smuggled in as adapter fixes.
 - [x] initial Docker inventory
 - [x] versioned Docker Buildx cache inventory and owner-binding decision
 - [x] Cursor, Copilot CLI, Zed, OpenCode, and Grok inventory
+- [x] Grok version-gated owner contract and native memory-GC guidance
 - [x] runtime audit
 - [x] Mole probe
 - [x] exact configured artifact removal

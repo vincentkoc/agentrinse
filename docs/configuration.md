@@ -103,8 +103,10 @@ resolves its root from the explicit adapter `root`, then an absolute
 `$CLAUDE_CONFIG_DIR`, then `$HOME/.claude`. A relative `$CLAUDE_CONFIG_DIR`
 degrades the Claude adapter rather than auditing the wrong directory. Copilot
 uses the same explicit-root precedence with absolute `$COPILOT_HOME`, then
-`$HOME/.copilot`; a relative value degrades only the Copilot adapter. The same
-resolution is repeated before any provider-file action is authorized.
+`$HOME/.copilot`; a relative value degrades only the Copilot adapter. Grok uses
+an explicit adapter `root`, then absolute `$GROK_HOME`, then `$HOME/.grok`; a
+relative value degrades only the Grok adapter. The same resolution is repeated
+before any provider-file action is authorized.
 
 Zed uses `$HOME/Library/Logs/Zed` as the native macOS log root. An explicit
 Zed adapter `root` uses its `logs` child. Linux and other Unix-like defaults

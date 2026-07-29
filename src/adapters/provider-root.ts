@@ -15,6 +15,9 @@ function providerRootEnvironment(spec: ProviderSpec): string | undefined {
   if (spec.id === "copilot") {
     return "COPILOT_HOME";
   }
+  if (spec.id === "grok") {
+    return "GROK_HOME";
+  }
   return undefined;
 }
 

@@ -126,6 +126,24 @@ prove support. These findings remain unknown-confidence and emit no action.
 Synced sessions, named sessions, the current session, extension logs, and
 Copilot configuration remain protected.
 
+Grok native maintenance is report-only. AgentRinse invokes `--version` only on
+the canonical executable beneath the audited `$GROK_HOME`; its resolved target
+must stay inside that root, so another `grok` on `PATH` cannot authorize
+inventory. The child environment is stripped to the audited `GROK_HOME` plus
+required Windows system roots. In pinned source `0.2.112`, version dispatch
+returns before memory tracing, documentation extraction, crash handling,
+crashed-session collection, or runtime startup. The installed semantic version
+and build revision are compared with the pinned source snapshot. Exact owner-bound
+version-and-revision matches expose separate confirmed owner roots and the
+native session-start memory GC facts. The alpha/stable label is recorded but is
+not treated as source identity. Missing, unsafe, non-executable, unreadable,
+malformed, or mismatched builds collapse to one owner-root finding.
+The upstream memory sweep is not exposed as a tagged, user-invokable command,
+so AgentRinse emits
+`grok-cleanup-owner-contract-unavailable` and never runs it. Grok sessions,
+logical memory, configuration, credentials, plugins, skills, logs, worktrees,
+caches, and runtime assets remain protected.
+
 ## Recoverable Codex Database Boundary
 
 `database.vacuum` is `experimental` and excluded by every lower risk ceiling.

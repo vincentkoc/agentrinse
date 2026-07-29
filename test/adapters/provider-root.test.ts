@@ -70,6 +70,39 @@ describe("resolveProviderRoot", () => {
     ).toThrow("COPILOT_HOME must be an absolute path");
   });
 
+  it("prefers an explicit root over GROK_HOME", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.grok, "/fixture/home", {
+        root: "/fixture/configured-grok",
+        environment: { GROK_HOME: "/fixture/environment-grok" },
+      }),
+    ).toBe("/fixture/configured-grok");
+  });
+
+  it("uses an absolute GROK_HOME before the default", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.grok, "/fixture/home", {
+        environment: { GROK_HOME: "/fixture/environment-grok" },
+      }),
+    ).toBe("/fixture/environment-grok");
+  });
+
+  it("falls back to the Grok directory under the audited home", () => {
+    expect(
+      resolveProviderRoot(PROVIDER_SPECS.grok, "/fixture/home", {
+        environment: {},
+      }),
+    ).toBe("/fixture/home/.grok");
+  });
+
+  it("rejects a relative GROK_HOME", () => {
+    expect(() =>
+      resolveProviderRoot(PROVIDER_SPECS.grok, "/fixture/home", {
+        environment: { GROK_HOME: "relative/grok" },
+      }),
+    ).toThrow("GROK_HOME must be an absolute path");
+  });
+
   it("uses FLATPAK_XDG_DATA_HOME for Zed before XDG_DATA_HOME", () => {
     expect(
       resolveProviderRoot(PROVIDER_SPECS.zed, "/fixture/home", {
