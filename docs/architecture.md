@@ -27,10 +27,12 @@ drift in CI and shipped in the npm package.
 
 Collectors and classifiers are read-only. Provider and Docker adapters emit
 protected findings by default. The Codex adapter may emit a versioned
-experimental `database.vacuum` action after explicit audit opt-in. The artifact adapter can emit one exact
-`artifacts.remove` action for each eligible configured directory. The Git
-adapter can emit one exact `worktree.quarantine` action for each fully proven
-inactive linked worktree.
+experimental `database.vacuum` action after explicit audit opt-in. The Docker
+adapter records versioned context, daemon, builder, worker, and cache evidence
+but emits no action because Buildx cannot bind prune to that owner identity.
+The artifact adapter can emit one exact `artifacts.remove` action for each
+eligible configured directory. The Git adapter can emit one exact
+`worktree.quarantine` action for each fully proven inactive linked worktree.
 
 No adapter mutates directly.
 

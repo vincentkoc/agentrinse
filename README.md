@@ -24,8 +24,9 @@ copy. It also quarantines exact stale Claude debug logs and changelog cache
 files with a seven-day undo window.
 
 current main extends that recoverable boundary to Zed's exact stale
-`Zed.log.old` rotated application log. the latest published release remains
-`0.5.0`.
+`Zed.log.old` rotated application log. it also reports OpenCode, Cursor, and
+version-gated Docker Buildx maintenance facts. the latest published release
+remains `0.5.0`.
 
 the point is confidence: make real cleanup changes without deleting the
 session, branch, worktree, database content, or cache that another agent still
@@ -58,7 +59,8 @@ text files and its rebuildable changelog cache. AgentRinse also reports
 Claude's native retention policy and Copilot's native session and process-log
 maintenance. It also reports OpenCode's owner-run snapshot compaction and its
 separate append-only server log, plus Cursor's owner-run state database
-maintenance. Docker remains audit-only.
+maintenance. Docker inventories images, containers, and supported Buildx cache
+records but remains audit-only.
 
 ## agent integrations
 
@@ -90,7 +92,7 @@ logical memory records.
 | <img width="48px" src="docs/client-opencode.png" alt="OpenCode" />          | OpenCode native maintenance          | report-only        | hourly snapshot GC and the append-only server-log contract              |
 | <img width="48px" src="docs/client-cursor.jpg" alt="Cursor" />              | Cursor database maintenance          | report-only        | exact DB companions, orphan KV GC, and destructive chat cleanup         |
 | ⚡                                                                          | Agent runtimes                       | audit-only, opt-in | installed agent executables and versions                                |
-| <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" />        | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images and containers                                                   |
+| <img width="48px" src="docs/client-docker-agent.svg" alt="Docker" />        | [Docker](https://docs.docker.com/)   | audit-only, opt-in | images, containers, and versioned Buildx cache                          |
 | 🕳️                                                                          | [Mole](https://github.com/tw93/Mole) | suggestions only   | external dry-run cleanup opportunities on macOS                         |
 
 ## install
@@ -384,7 +386,8 @@ unreleased build at real developer state.
 configured artifact cleanup, recoverable Git worktree and Claude file
 quarantine, and recoverable offline Codex database compaction. Current main
 also quarantines the exact stale Zed `Zed.log.old` file and reports OpenCode's
-native maintenance contract plus Cursor's owner database commands. Grok Build,
-Docker, and all other Cursor, Zed, and OpenCode state remain non-mutating.
+native maintenance contract, Cursor's owner database commands, and Docker
+Buildx cache facts. Grok Build, Docker, and all other Cursor, Zed, and OpenCode
+state remain non-mutating.
 
 MIT licensed. built by [Vincent Koc](https://github.com/vincentkoc).

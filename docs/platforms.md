@@ -13,8 +13,8 @@ ownership proof.
 - `lockf` on macOS or `flock` from `util-linux` on Linux
 - local filesystem state directory with owner read/write access
 
-Docker is optional and isolated to its adapter. Mole is an optional external
-macOS handoff.
+Docker and Buildx are optional and isolated to the Docker adapter. Mole is an
+optional external macOS handoff.
 
 Run `agentrinse doctor` to verify the current machine without mutating it.
 
@@ -82,4 +82,6 @@ limitation and recommends WSL for supported artifact apply.
 
 When enabled, Docker uses the current CLI context and structured output.
 Unavailable CLI, context, or daemon state degrades only Docker inventory.
-`0.5.0` does not remove any Docker resource.
+Buildx is an optional sub-capability: supported healthy builders add
+report-only cache records, while missing or unsupported Buildx preserves image
+and container inventory. No current build removes a Docker resource.

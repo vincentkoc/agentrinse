@@ -18,6 +18,21 @@ The project follows semantic versioning after its first supported release.
   companion diagnostics
 - report-only Cursor owner-command findings for orphaned agent KV garbage
   collection and user-selected old-chat deletion
+- version-gated Docker Buildx cache inventory with selected context, daemon,
+  builder, worker, size, type, sharing, and conservative age facts
+- isolated Buildx diagnostics that preserve image and container inventory when
+  the cache capability is missing, unsupported, or unhealthy
+- effective `DOCKER_HOST` selection and before/after owner checks that discard
+  inventory when the daemon or selected builder changes
+- conservative unknown last-use handling and per-record diagnostics that keep
+  malformed Buildx output from suppressing valid sibling records
+- separate exact and humanized cache-size evidence so rounded Buildx output is
+  never published as an exact measured or reclaimable byte count
+- fail-closed rejection for dynamic Buildx builders whose separate inventory
+  commands cannot be bound to the same worker
+- fail-closed rejection for builder nodes that expose no stable worker ID
+- protected unknown-type cache findings and complete Docker human-size suffix
+  parsing without promoting rounded values to exact measurements
 
 ### Safety
 
@@ -30,6 +45,9 @@ The project follows semantic versioning after its first supported release.
   invoke Git or remove logs
 - Cursor databases, chat history, workspace state, backups, and companions
   remain protected; AgentRinse never invokes either command-palette operation
+- Docker images, containers, networks, volumes, and build cache remain
+  protected because Buildx prune cannot condition mutation on the revalidated
+  daemon and worker identity
 
 ## [0.5.0] - 2026-07-28
 

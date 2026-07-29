@@ -17,7 +17,7 @@ recoverable whole-worktree action when every safety gate is proven.
 | Grok Build     | version-gated data root                                   | all             |
 | Runtime        | opt-in selected executable and Claude native versions     | all             |
 | Git            | worktree audit and recoverable linked-worktree quarantine | conditional     |
-| Docker         | opt-in structured image/container inventory               | all             |
+| Docker         | opt-in structured image/container/Buildx cache inventory  | all             |
 | Artifacts      | exact configured rebuildable directories                  | conditional     |
 
 ## Artifact Rules
@@ -191,5 +191,30 @@ remove superseded versions.
 
 The Docker adapter is disabled by default. When explicitly enabled, it probes
 the selected Docker context and inventories images and containers through
-structured CLI output. Daemon failure degrades only Docker. Every resource is
-protected and no prune command exists.
+structured CLI output. It also inventories cache records from the selected
+healthy static builder when the installed Buildx version is within the
+inspected `0.33.0` through `0.35.99` contract. Dynamic builders are rejected
+because separate Buildx commands may select different workers. Static nodes
+without stable worker IDs are also rejected.
+
+When `DOCKER_HOST` selects an engine without `DOCKER_CONTEXT`, AgentRinse
+preserves that host selection instead of adding `--context default`. It samples
+the effective daemon and builder identity before and after collection and
+discards results if either owner changes.
+
+The cache facts include the context endpoint, daemon ID and version, selected
+builder driver, stable worker IDs, record identity, type, size, mutability,
+reclaimability, sharing, and conservative age evidence. Unsupported humanized
+age text is retained but treated as recent evidence.
+
+Numeric byte values remain exact measurements. Buildx humanized sizes are
+rounded upstream, so AgentRinse preserves the displayed value and an
+approximation in facts but omits exact measured and reclaimable-byte totals.
+Missing optional record types remain inventoried and protected as unknown.
+
+Daemon failure degrades only Docker. Missing, unsupported, or unhealthy Buildx
+degrades only cache inventory; image and container inventory continues. Every
+Docker resource is protected and no prune command exists. Buildx prune
+re-resolves context and builder names in its own process and exposes no
+conditional daemon/worker identity binding, so post-validation cannot prevent
+the command from targeting a replacement owner.
