@@ -24,15 +24,24 @@ export const grokOwnerContractFactsSchema = z.object({
   sourceVersion: z.literal(GROK_SOURCE_CONTRACT.version),
   sourceInspectedAt: z.literal(GROK_SOURCE_CONTRACT.inspectedAt),
   sourceReleaseTagged: z.literal(false),
-  installedVersionStatus: z.enum(["exact", "different", "unavailable", "unparseable"]),
+  installedVersionStatus: z.enum([
+    "exact",
+    "version-mismatch",
+    "revision-mismatch",
+    "unavailable",
+    "unparseable",
+  ]),
   installedVersion: z.string().min(1).optional(),
+  installedRevision: z.string().min(7).optional(),
+  installedChannel: z.enum(["alpha", "stable"]).optional(),
   inventoryScope: z.enum(["confirmed-subpaths", "owner-root"]),
   nativeMemoryGc: z.object({
     trigger: z.literal("session-init"),
     configurablePath: z.literal("memory.gc.max_age_days"),
     defaultOrphanAgeDays: z.literal(30),
+    temporaryEmptyRemoval: z.literal("immediate"),
     temporaryNonEmptyAgeDays: z.literal(7),
-    preservesNonEmptyWorkspaceMemory: z.literal(true),
+    preservesNonTemporaryWorkspaceMemory: z.literal(true),
   }),
   mutationAvailable: z.literal(false),
   refusalCode: z.literal("grok-cleanup-owner-contract-unavailable"),
@@ -50,27 +59,51 @@ async function defaultRunGrokVersion(environment: NodeJS.ProcessEnv): Promise<st
   return result.stdout.trim() === "" ? result.stderr : result.stdout;
 }
 
-export function parseGrokVersion(output: string): string | undefined {
+export type ParsedGrokVersion = {
+  version: string;
+  revision: string;
+  channel?: "alpha" | "stable";
+};
+
+export function parseGrokVersion(output: string): ParsedGrokVersion | undefined {
   const firstLine = output.split(/\r?\n/u)[0]?.trim();
-  return firstLine?.match(/^grok\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)(?:\s|$)/u)?.[1];
+  const match = firstLine?.match(
+    /^grok\s+(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\s+\(([0-9a-f]{7,40})\)(?:\s+\[(alpha|stable)\])?$/u,
+  );
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return undefined;
+  }
+  return {
+    version: match[1],
+    revision: match[2],
+    ...(match[3] === undefined ? {} : { channel: match[3] as "alpha" | "stable" }),
+  };
+}
+
+function matchesSourceRevision(revision: string): boolean {
+  return [GROK_SOURCE_CONTRACT.commit, GROK_SOURCE_CONTRACT.sourceRevision].some((candidate) =>
+    candidate.startsWith(revision),
+  );
 }
 
 export async function inspectGrokOwnerContract(
   environment: NodeJS.ProcessEnv,
   runVersion?: GrokVersionRunner,
 ): Promise<GrokOwnerContractFacts> {
-  let installedVersion: string | undefined;
+  let parsedVersion: ParsedGrokVersion | undefined;
   let installedVersionStatus: GrokOwnerContractFacts["installedVersionStatus"];
   try {
-    installedVersion = parseGrokVersion(
+    parsedVersion = parseGrokVersion(
       await (runVersion ?? (() => defaultRunGrokVersion(environment)))(),
     );
     installedVersionStatus =
-      installedVersion === undefined
+      parsedVersion === undefined
         ? "unparseable"
-        : installedVersion === GROK_SOURCE_CONTRACT.version
-          ? "exact"
-          : "different";
+        : parsedVersion.version !== GROK_SOURCE_CONTRACT.version
+          ? "version-mismatch"
+          : matchesSourceRevision(parsedVersion.revision)
+            ? "exact"
+            : "revision-mismatch";
   } catch {
     installedVersionStatus = "unavailable";
   }
@@ -85,14 +118,23 @@ export async function inspectGrokOwnerContract(
     sourceInspectedAt: GROK_SOURCE_CONTRACT.inspectedAt,
     sourceReleaseTagged: false,
     installedVersionStatus,
-    ...(installedVersion === undefined ? {} : { installedVersion }),
+    ...(parsedVersion === undefined
+      ? {}
+      : {
+          installedVersion: parsedVersion.version,
+          installedRevision: parsedVersion.revision,
+          ...(parsedVersion.channel === undefined
+            ? {}
+            : { installedChannel: parsedVersion.channel }),
+        }),
     inventoryScope: installedVersionStatus === "exact" ? "confirmed-subpaths" : "owner-root",
     nativeMemoryGc: {
       trigger: "session-init",
       configurablePath: "memory.gc.max_age_days",
       defaultOrphanAgeDays: 30,
+      temporaryEmptyRemoval: "immediate",
       temporaryNonEmptyAgeDays: 7,
-      preservesNonEmptyWorkspaceMemory: true,
+      preservesNonTemporaryWorkspaceMemory: true,
     },
     mutationAvailable: false,
     refusalCode: "grok-cleanup-owner-contract-unavailable",

@@ -161,18 +161,22 @@ adapter.
 
 The pinned source contract is Grok `0.2.112` at
 `5da6962e4adb9c857f3def762542b52b4ec3e522`, with upstream `SOURCE_REV`
-`2a818575225183d8ca915f5632a09b8067b5156a`. When `grok --version` matches that
-contract, AgentRinse inventories the confirmed `sessions`, `logs`, `memory`,
-`worktrees`, `marketplace-cache`, and `downloads` roots separately. A missing,
-unparseable, or different version falls back to one directory-level owner-root
-finding.
+`2a818575225183d8ca915f5632a09b8067b5156a`. AgentRinse parses both the semantic
+version and build revision from `grok --version`; the revision must match the
+public source commit or upstream `SOURCE_REV`. The displayed alpha/stable
+channel is recorded but is not build identity because Grok derives it from a
+local version cache. Exact version-and-revision matches inventory the confirmed
+`sessions`, `logs`, `memory`, `worktrees`, `marketplace-cache`, and `downloads`
+roots separately. Missing, unparseable, or mismatched builds fall back to one
+directory-level owner-root finding.
 
 The inspected source runs memory garbage collection during session
-initialization. It removes empty temporary workspace-memory directories
-immediately, non-empty temporary directories after seven days, and other
+initialization. Its machine facts distinguish empty temporary workspace-memory
+directories removed immediately, non-empty temporary directories removed after
+seven days, and other
 workspace-memory directories without session files after
 `memory.gc.max_age_days`, which defaults to 30. Non-empty workspace memory is
-preserved.
+preserved only when it is not temporary.
 
 This native sweep is not a tagged, user-invokable cleanup command. AgentRinse
 therefore emits `grok-cleanup-owner-contract-unavailable`, reports the source

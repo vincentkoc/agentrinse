@@ -801,12 +801,14 @@ export class ProviderAuditAdapter implements AuditAdapter {
       const versionStatus = grokOwnerContract.data.installedVersionStatus;
       const exact = versionStatus === "exact";
       const detail = exact
-        ? "The installed Grok version matches the inspected source snapshot. Grok runs its memory GC during session initialization, but exposes no tagged, user-invokable cleanup contract that AgentRinse can bind and revalidate."
-        : versionStatus === "different"
+        ? "The installed Grok version and build revision match the inspected source snapshot. Grok runs its memory GC during session initialization, but exposes no tagged, user-invokable cleanup contract that AgentRinse can bind and revalidate."
+        : versionStatus === "version-mismatch"
           ? `Installed Grok ${grokOwnerContract.data.installedVersion} does not match inspected source version ${grokOwnerContract.data.sourceVersion}; only the owner root was inventoried.`
-          : versionStatus === "unparseable"
-            ? "The installed Grok version output did not match the documented format; only the owner root was inventoried."
-            : "The Grok executable version could not be inspected; only the owner root was inventoried.";
+          : versionStatus === "revision-mismatch"
+            ? `Installed Grok build revision ${grokOwnerContract.data.installedRevision} does not match the inspected source revisions; only the owner root was inventoried.`
+            : versionStatus === "unparseable"
+              ? "The installed Grok version output did not match the documented format; only the owner root was inventoried."
+              : "The Grok executable version could not be inspected; only the owner root was inventoried.";
       return {
         schemaVersion: 1,
         findingId: `${resource.resource.id}:${sha256(context.auditId)}`,

@@ -61,8 +61,8 @@ maintenance. It also reports OpenCode's owner-run snapshot compaction and its
 separate append-only server log, plus Cursor's owner-run state database
 maintenance. Docker inventories images, containers, and supported Buildx cache
 records but remains audit-only. Grok inventory is pinned to the inspected
-`0.2.112` source snapshot and reports its session-start memory GC without
-invoking it.
+`0.2.112` version and build revision, and reports its session-start memory GC
+without invoking it.
 
 ## agent integrations
 

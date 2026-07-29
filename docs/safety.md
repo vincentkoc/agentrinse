@@ -127,11 +127,13 @@ Synced sessions, named sessions, the current session, extension logs, and
 Copilot configuration remain protected.
 
 Grok native maintenance is report-only. AgentRinse invokes `grok --version`
-only to compare the installed runtime with the pinned `0.2.112` source
-snapshot. Exact matches expose separate confirmed owner roots and the native
-session-start memory GC facts. Missing, malformed, or different versions
-collapse to one owner-root finding. The upstream memory sweep is not exposed as
-a tagged, user-invokable command, so AgentRinse emits
+only to compare the installed semantic version and build revision with the
+pinned `0.2.112` source snapshot. Exact version-and-revision matches expose
+separate confirmed owner roots and the native session-start memory GC facts.
+The alpha/stable label is recorded but is not treated as source identity.
+Missing, malformed, or mismatched builds collapse to one owner-root finding.
+The upstream memory sweep is not exposed as a tagged, user-invokable command,
+so AgentRinse emits
 `grok-cleanup-owner-contract-unavailable` and never runs it. Grok sessions,
 logical memory, configuration, credentials, plugins, skills, logs, worktrees,
 caches, and runtime assets remain protected.

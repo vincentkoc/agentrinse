@@ -23,9 +23,18 @@ async function fixtureContext(): Promise<AuditContext> {
 
 describe("Grok owner contract reporting", () => {
   it("parses the current channel-aware version format", () => {
-    expect(parseGrokVersion("grok 0.2.112 (abc1234) [stable]\n")).toBe("0.2.112");
-    expect(parseGrokVersion("grok 0.2.113-alpha.1 (def5678) [alpha]\n")).toBe("0.2.113-alpha.1");
+    expect(parseGrokVersion("grok 0.2.112 (abc1234) [stable]\n")).toEqual({
+      version: "0.2.112",
+      revision: "abc1234",
+      channel: "stable",
+    });
+    expect(parseGrokVersion("grok 0.2.113-alpha.1 (def5678) [alpha]\n")).toEqual({
+      version: "0.2.113-alpha.1",
+      revision: "def5678",
+      channel: "alpha",
+    });
     expect(parseGrokVersion("0.2.112\n")).toBeUndefined();
+    expect(parseGrokVersion("grok 0.2.112 (unknown)\n")).toBeUndefined();
   });
 
   it("records an unavailable executable without inventing installed support", async () => {
@@ -64,7 +73,8 @@ describe("Grok owner contract reporting", () => {
       environment: {},
       measureBytes: true,
       maxEntries: 100,
-      runGrokVersion: async () => `grok ${GROK_SOURCE_CONTRACT.version} (abc1234) [stable]\n`,
+      runGrokVersion: async () =>
+        `grok ${GROK_SOURCE_CONTRACT.version} (${GROK_SOURCE_CONTRACT.sourceRevision.slice(0, 7)}) [stable]\n`,
     });
 
     const probe = await adapter.probe(context);
@@ -128,7 +138,9 @@ describe("Grok owner contract reporting", () => {
     });
     expect(collection.resources[0]?.facts.ownerContract).toMatchObject({
       installedVersion: "0.2.111",
-      installedVersionStatus: "different",
+      installedRevision: "abc1234",
+      installedChannel: "stable",
+      installedVersionStatus: "version-mismatch",
       sourceVersion: GROK_SOURCE_CONTRACT.version,
       inventoryScope: "owner-root",
     });
@@ -141,5 +153,33 @@ describe("Grok owner contract reporting", () => {
       "grok-cleanup-owner-contract-unavailable",
       "provider-owned-report-only",
     ]);
+  });
+
+  it("rejects the same semver when the build revision is not the inspected source", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "grok-data");
+    await mkdir(join(root, "sessions"), { recursive: true });
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.grok, {
+      root,
+      environment: {},
+      measureBytes: true,
+      maxEntries: 100,
+      runGrokVersion: async () => `grok ${GROK_SOURCE_CONTRACT.version} (deadbee) [alpha]\n`,
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(collection.resources).toHaveLength(1);
+    expect(collection.resources[0]?.facts.ownerContract).toMatchObject({
+      installedVersion: GROK_SOURCE_CONTRACT.version,
+      installedRevision: "deadbee",
+      installedChannel: "alpha",
+      installedVersionStatus: "revision-mismatch",
+      inventoryScope: "owner-root",
+    });
+    expect(finding.confidence).toBe("unknown");
+    expect(finding.candidateActions).toEqual([]);
   });
 });
