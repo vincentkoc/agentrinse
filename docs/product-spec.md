@@ -2165,8 +2165,21 @@ MVP behavior:
 - detect recursive/self-capture risk
 - report stale temporary pack candidates
 - explain the OpenCode setting that controls snapshots
+- report the owner-run snapshot garbage-collection contract
 - never run Git garbage collection inside a snapshot repository
 - never delete snapshot objects or packs
+
+OpenCode `1.18.9` schedules its own snapshot
+`git gc --prune=7.days` after one minute and repeats it hourly while the
+snapshot service is active. AgentRinse reports this version-pinned owner
+maintenance with unknown confidence until the installed OpenCode version is
+proven. It does not duplicate or trigger the Git operation.
+
+The same shipped source appends server logs to
+`$XDG_DATA_HOME/opencode/log/opencode.log` without a server-log retention
+sweep. OpenCode Desktop owns a distinct Electron log root and removes entries
+older than seven days there. AgentRinse must not apply the desktop policy to
+the server log directory.
 
 Future cleanup requires one of:
 
@@ -3189,30 +3202,30 @@ Exit criteria:
 
 ## Default Policy Table
 
-| Resource                       | Default age | Action               | Risk        | Recovery        |
-| ------------------------------ | ----------: | -------------------- | ----------- | --------------- |
-| active worktree                |         any | none                 | n/a         | protected       |
-| dirty worktree                 |         any | none                 | n/a         | protected       |
-| unpushed worktree              |         any | none                 | n/a         | protected       |
-| locked worktree                |         any | none                 | n/a         | protected       |
-| inactive worktree artifacts    |          3d | remove artifacts     | safe        | rebuild         |
-| clean unreachable worktree     |         14d | quarantine           | recoverable | 7d undo         |
-| Codex/Claude sessions          |         any | report only          | n/a         | provider-owned  |
-| Cursor workspace/global state  |         any | report only          | n/a         | editor-owned    |
-| GitHub Copilot sessions        |         any | report only          | n/a         | provider-owned  |
-| Zed database/agent state       |         any | report only          | n/a         | editor-owned    |
-| Zed `Zed.log.old`              |         30d | quarantine           | recoverable | 7d undo         |
-| OpenCode database/snapshots    |         any | report only          | n/a         | provider-owned  |
-| Grok Build sessions/task state |         any | report only          | n/a         | provider-owned  |
-| Codex logs DB free pages       |   threshold | report only          | n/a         | phase 4         |
-| dangling Docker image          |         14d | remove exact image   | safe        | rebuild/pull    |
-| Docker build cache             |          7d | filtered prune       | safe        | rebuild         |
-| unlabeled stopped container    |         any | report only          | n/a         | owner decision  |
-| labeled stopped container      |         14d | report only          | n/a         | future design   |
-| Docker network                 |         14d | narrow removal       | safe        | recreate        |
-| Docker volume                  |         any | report only          | n/a         | protected       |
-| old agent runtime              |         14d | report, later remove | safe        | package manager |
-| Mole cleanup                   |         any | handoff              | external    | Mole-owned      |
+| Resource                        | Default age | Action                | Risk        | Recovery        |
+| ------------------------------- | ----------: | --------------------- | ----------- | --------------- |
+| active worktree                 |         any | none                  | n/a         | protected       |
+| dirty worktree                  |         any | none                  | n/a         | protected       |
+| unpushed worktree               |         any | none                  | n/a         | protected       |
+| locked worktree                 |         any | none                  | n/a         | protected       |
+| inactive worktree artifacts     |          3d | remove artifacts      | safe        | rebuild         |
+| clean unreachable worktree      |         14d | quarantine            | recoverable | 7d undo         |
+| Codex/Claude sessions           |         any | report only           | n/a         | provider-owned  |
+| Cursor workspace/global state   |         any | report only           | n/a         | editor-owned    |
+| GitHub Copilot sessions         |         any | report only           | n/a         | provider-owned  |
+| Zed database/agent state        |         any | report only           | n/a         | editor-owned    |
+| Zed `Zed.log.old`               |         30d | quarantine            | recoverable | 7d undo         |
+| OpenCode database/log/snapshots |         any | report + native facts | n/a         | provider-owned  |
+| Grok Build sessions/task state  |         any | report only           | n/a         | provider-owned  |
+| Codex logs DB free pages        |   threshold | report only           | n/a         | phase 4         |
+| dangling Docker image           |         14d | remove exact image    | safe        | rebuild/pull    |
+| Docker build cache              |          7d | filtered prune        | safe        | rebuild         |
+| unlabeled stopped container     |         any | report only           | n/a         | owner decision  |
+| labeled stopped container       |         14d | report only           | n/a         | future design   |
+| Docker network                  |         14d | narrow removal        | safe        | recreate        |
+| Docker volume                   |         any | report only           | n/a         | protected       |
+| old agent runtime               |         14d | report, later remove  | safe        | package manager |
+| Mole cleanup                    |         any | handoff               | external    | Mole-owned      |
 
 Defaults are intentionally conservative. Power comes from good root discovery,
 not aggressive age thresholds.
@@ -3421,8 +3434,21 @@ configuration, or neighboring files.
 
 The shared executor does not decide retention. Each provider adapter needs a
 separate evidence-backed policy for its known log or cache files before it may
-emit the action. Claude transcript retention and OpenCode snapshot compaction
-therefore remain separate provider-owned designs.
+emit the action. Claude transcript retention remains provider-owned. OpenCode
+snapshot compaction is already owner-run, so AgentRinse reports the pinned
+contract and does not add a competing Git operation.
+
+### 2026-07-29: OpenCode owns snapshot Git maintenance
+
+OpenCode `1.18.9` stores snapshot repositories below its data root and runs
+`git gc --prune=7.days` after one minute, then hourly, under its own per-snapshot
+lock. AgentRinse reports this behavior instead of invoking Git against recovery
+state.
+
+The CLI/server logger appends to one `opencode.log` and does not define the
+desktop application's seven-day cleanup. AgentRinse keeps both surfaces
+protected, reports the distinction, and emits no cleanup action until a
+versioned owner contract includes exact scope and recovery behavior.
 
 ### 2026-07-28: Zed cleanup is one rotated log
 

@@ -13,7 +13,7 @@ recoverable whole-worktree action when every safety gate is proven.
 | Cursor         | workspace state, global state, logs                       | all             |
 | GitHub Copilot | CLI sessions, logs, native maintenance guidance           | all             |
 | Zed            | user-data root and exact rotated-log quarantine           | conditional     |
-| OpenCode       | database, logs, snapshots                                 | all             |
+| OpenCode       | database, logs, snapshots, native maintenance guidance    | all             |
 | Grok Build     | version-gated data root                                   | all             |
 | Runtime        | opt-in selected executable and Claude native versions     | all             |
 | Git            | worktree audit and recoverable linked-worktree quarantine | conditional     |
@@ -122,6 +122,17 @@ protected.
 
 Snapshot repositories are recovery state, not ordinary Git cache. AgentRinse
 never runs Git garbage collection inside them.
+
+The inspected OpenCode `1.18.9` source schedules its own snapshot
+`git gc --prune=7.days` after a one-minute delay and repeats it hourly while
+the snapshot service is active. AgentRinse reports that owner maintenance but
+does not invoke it, because the installed OpenCode version is not probed.
+
+The same source writes server logs by appending to
+`$XDG_DATA_HOME/opencode/log/opencode.log` and defines no server-log retention
+sweep. OpenCode Desktop's separate seven-day cleanup applies to its Electron
+user-data log runs, not this server log directory. AgentRinse reports the
+distinction and emits no action for either log surface.
 
 ### Grok Build
 

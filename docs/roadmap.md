@@ -69,11 +69,11 @@ Current:
 - exact stale Zed `Zed.log.old` quarantine
 - native macOS, explicit-root, Flatpak, and XDG log-root resolution
 - active Zed, descriptor, symlink, age, and exact-path refusal
+- report-only OpenCode snapshot GC and server-log retention contracts
 
 Remaining:
 
 - Cursor database diagnostics and optional compaction
-- provider-native retention operations
 - filtered Docker build-cache cleanup
 - owner-managed old agent runtime removal
 
