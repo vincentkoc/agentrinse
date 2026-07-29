@@ -128,8 +128,8 @@ function requireNonnegativeInteger(record: Record<string, unknown>, key: string)
 }
 
 function parseSemver(version: string): [number, number, number] | undefined {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/u.exec(version);
-  if (match === null) {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u.exec(version);
+  if (match === null || match[4] !== undefined) {
     return undefined;
   }
   return [Number(match[1]), Number(match[2]), Number(match[3])];
@@ -157,7 +157,9 @@ export function supportsDockerBuildxContract(version: string): boolean {
 }
 
 function parseBuildxVersion(output: string): string {
-  const match = /\bv?(\d+\.\d+\.\d+)(?:[-+][^\s]+)?\b/u.exec(output);
+  const match = /\bv?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?=\s|$)/u.exec(
+    output,
+  );
   if (match?.[1] === undefined) {
     throw new DockerOwnerContractError("Docker Buildx version is unrecognized");
   }

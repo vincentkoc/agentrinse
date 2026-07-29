@@ -165,8 +165,18 @@ describe("Docker owner contract", () => {
     expect(supportsDockerBuildxContract("0.32.1")).toBe(false);
     expect(supportsDockerBuildxContract("0.33.0")).toBe(true);
     expect(supportsDockerBuildxContract("0.35.0")).toBe(true);
+    expect(supportsDockerBuildxContract("0.35.0+vendor.1")).toBe(true);
+    expect(supportsDockerBuildxContract("0.33.0-rc1")).toBe(false);
+    expect(supportsDockerBuildxContract("0.35.0-desktop.1")).toBe(false);
     expect(supportsDockerBuildxContract("0.36.0")).toBe(false);
 
+    await expect(
+      inspectDockerScope(
+        scopeRunner({
+          "buildx version": "github.com/docker/buildx v0.33.0-rc1 future\n",
+        }),
+      ),
+    ).rejects.toThrow("outside the inspected");
     await expect(
       inspectDockerScope(
         scopeRunner({
