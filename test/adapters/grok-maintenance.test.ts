@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,6 +21,14 @@ async function fixtureContext(): Promise<AuditContext> {
   };
 }
 
+async function createGrokExecutable(root: string): Promise<string> {
+  const executable = join(root, "bin", "grok");
+  await mkdir(join(root, "bin"), { recursive: true });
+  await writeFile(executable, "#!/bin/sh\n");
+  await chmod(executable, 0o700);
+  return realpath(executable);
+}
+
 describe("Grok owner contract reporting", () => {
   it("parses the current channel-aware version format", () => {
     expect(parseGrokVersion("grok 0.2.112 (abc1234) [stable]\n")).toEqual({
@@ -38,11 +46,15 @@ describe("Grok owner contract reporting", () => {
   });
 
   it("records an unavailable executable without inventing installed support", async () => {
-    const facts = await inspectGrokOwnerContract({}, async () => {
-      throw new Error("missing");
+    const context = await fixtureContext();
+    const root = join(context.home, "grok-data");
+    await mkdir(root);
+    const facts = await inspectGrokOwnerContract(root, {}, "linux", async () => {
+      throw new Error("must not run");
     });
 
     expect(facts).toMatchObject({
+      ownerExecutableStatus: "missing",
       installedVersionStatus: "unavailable",
       inventoryScope: "owner-root",
       mutationAvailable: false,
@@ -68,13 +80,17 @@ describe("Grok owner contract reporting", () => {
     }
     await writeFile(join(root, "config.toml"), "protected = true\n");
     await mkdir(join(root, "plugins"));
+    const executable = await createGrokExecutable(root);
     const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.grok, {
       root,
       environment: {},
+      platform: "linux",
       measureBytes: true,
       maxEntries: 100,
-      runGrokVersion: async () =>
-        `grok ${GROK_SOURCE_CONTRACT.version} (${GROK_SOURCE_CONTRACT.sourceRevision.slice(0, 7)}) [stable]\n`,
+      runGrokVersion: async (selectedExecutable) => {
+        expect(selectedExecutable).toBe(executable);
+        return `grok ${GROK_SOURCE_CONTRACT.version} (${GROK_SOURCE_CONTRACT.sourceRevision.slice(0, 7)}) [stable]\n`;
+      },
     });
 
     const probe = await adapter.probe(context);
@@ -83,6 +99,11 @@ describe("Grok owner contract reporting", () => {
       collection.resources.map((resource) => adapter.classify(context, resource)),
     );
 
+    expect(collection.resources[0]?.facts.ownerContract).toMatchObject({
+      ownerExecutableStatus: "bound",
+      installedVersionStatus: "exact",
+      inventoryScope: "confirmed-subpaths",
+    });
     expect(collection.resources.map((resource) => resource.resource.displayName)).toEqual(
       expectedResources.map(([, displayName]) => displayName),
     );
@@ -127,9 +148,11 @@ describe("Grok owner contract reporting", () => {
     const root = join(context.home, "grok-data");
     await mkdir(join(root, "sessions"), { recursive: true });
     await writeFile(join(root, "config.toml"), "protected = true\n");
+    await createGrokExecutable(root);
     const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.grok, {
       root,
       environment: {},
+      platform: "linux",
       measureBytes: true,
       maxEntries: 100,
       runGrokVersion: async () => "grok 0.2.111 (abc1234) [stable]\n",
@@ -168,9 +191,11 @@ describe("Grok owner contract reporting", () => {
     const context = await fixtureContext();
     const root = join(context.home, "grok-data");
     await mkdir(join(root, "sessions"), { recursive: true });
+    await createGrokExecutable(root);
     const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.grok, {
       root,
       environment: {},
+      platform: "linux",
       measureBytes: true,
       maxEntries: 100,
       runGrokVersion: async () => `grok ${GROK_SOURCE_CONTRACT.version} (deadbee) [alpha]\n`,
@@ -186,6 +211,68 @@ describe("Grok owner contract reporting", () => {
       installedRevision: "deadbee",
       installedChannel: "alpha",
       installedVersionStatus: "revision-mismatch",
+      inventoryScope: "owner-root",
+    });
+    expect(finding.confidence).toBe("unknown");
+    expect(finding.candidateActions).toEqual([]);
+  });
+
+  it("does not bind a PATH executable to a different audited root", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "grok-data");
+    const otherBin = join(context.home, "other-bin");
+    await mkdir(join(root, "sessions"), { recursive: true });
+    await mkdir(otherBin);
+    await writeFile(join(otherBin, "grok"), "#!/bin/sh\n");
+    await chmod(join(otherBin, "grok"), 0o700);
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.grok, {
+      root,
+      environment: { PATH: otherBin },
+      platform: "linux",
+      measureBytes: true,
+      maxEntries: 100,
+      runGrokVersion: async () => {
+        throw new Error("unrelated PATH executable must not run");
+      },
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+
+    expect(collection.resources).toHaveLength(1);
+    expect(collection.resources[0]?.facts.ownerContract).toMatchObject({
+      ownerExecutableStatus: "missing",
+      installedVersionStatus: "unavailable",
+      inventoryScope: "owner-root",
+    });
+  });
+
+  it("rejects a canonical launcher that resolves outside the audited root", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, "grok-data");
+    const outside = join(context.home, "outside-grok");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await writeFile(outside, "#!/bin/sh\n");
+    await chmod(outside, 0o700);
+    await symlink(outside, join(root, "bin", "grok"));
+    const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.grok, {
+      root,
+      environment: {},
+      platform: "linux",
+      measureBytes: true,
+      maxEntries: 100,
+      runGrokVersion: async () => {
+        throw new Error("escaping executable must not run");
+      },
+    });
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(collection.resources[0]?.facts.ownerContract).toMatchObject({
+      ownerExecutableStatus: "unsafe",
+      installedVersionStatus: "unavailable",
       inventoryScope: "owner-root",
     });
     expect(finding.confidence).toBe("unknown");

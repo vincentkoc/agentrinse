@@ -161,14 +161,19 @@ adapter.
 
 The pinned source contract is Grok `0.2.112` at
 `5da6962e4adb9c857f3def762542b52b4ec3e522`, with upstream `SOURCE_REV`
-`2a818575225183d8ca915f5632a09b8067b5156a`. AgentRinse parses both the semantic
-version and build revision from `grok --version`; the revision must match the
-public source commit or upstream `SOURCE_REV`. The displayed alpha/stable
-channel is recorded but is not build identity because Grok derives it from a
-local version cache. Exact version-and-revision matches inventory the confirmed
-`sessions`, `logs`, `memory`, `worktrees`, `marketplace-cache`, and `downloads`
-roots separately. Missing, unparseable, or mismatched builds fall back to one
-directory-level owner-root finding.
+`2a818575225183d8ca915f5632a09b8067b5156a`. AgentRinse executes only Grok's
+canonical executable at `$GROK_HOME/bin/grok` (`grok.exe` on Windows), and its
+resolved target must remain inside the audited owner root. It never substitutes
+an unrelated `grok` from `PATH`.
+
+AgentRinse parses both the semantic version and build revision from
+`grok --version`; the revision must match the public source commit or upstream
+`SOURCE_REV`. The displayed alpha/stable channel is recorded but is not build
+identity because Grok derives it from a local version cache. Exact
+owner-bound, version-and-revision matches inventory the confirmed `sessions`,
+`logs`, `memory`, `worktrees`, `marketplace-cache`, and `downloads` roots
+separately. Missing, unsafe, non-executable, unreadable, unparseable, or
+mismatched builds fall back to one directory-level owner-root finding.
 
 The inspected source runs memory garbage collection during session
 initialization. Its machine facts distinguish empty temporary workspace-memory

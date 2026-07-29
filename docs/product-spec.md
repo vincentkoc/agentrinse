@@ -2234,12 +2234,18 @@ Known configuration:
 $GROK_HOME/config.toml
 ```
 
-Run `grok --version` without a shell. Parse its semantic version, build
-revision, and optional alpha/stable channel. The semantic version must match
-`0.2.112`, and the build revision must be a prefix of either the public source
-commit or upstream `SOURCE_REV`. The channel is recorded but is not source
-identity because Grok derives it from a local version cache. Only an exact
-version-and-revision match inventories these source-confirmed owner roots:
+Resolve the canonical executable at `$GROK_HOME/bin/grok` or
+`$GROK_HOME/bin/grok.exe`. Its real path must stay inside the audited owner
+root, and it must be executable on Unix. Do not use a `grok` executable selected
+from `PATH`.
+
+Run that bound executable with `--version` without a shell. Parse its semantic
+version, build revision, and optional alpha/stable channel. The semantic version
+must match `0.2.112`, and the build revision must be a prefix of either the
+public source commit or upstream `SOURCE_REV`. The channel is recorded but is
+not source identity because Grok derives it from a local version cache. Only an
+exact owner-bound version-and-revision match inventories these source-confirmed
+owner roots:
 
 - `sessions`
 - `logs`
@@ -2249,9 +2255,10 @@ version-and-revision match inventories these source-confirmed owner roots:
 - `downloads`
 
 Do not enumerate configuration, authentication, skills, plugins, hooks, or MCP
-credential stores as cleanup candidates. When the executable is unavailable,
-the version output is unparseable, or the installed version or revision
-differs, emit only one directory-level owner-root finding.
+credential stores as cleanup candidates. When the canonical executable is
+missing, unsafe, non-executable, or unreadable, the version output is
+unparseable, or the installed version or revision differs, emit only one
+directory-level owner-root finding.
 
 ### Safety policy
 
@@ -2276,10 +2283,10 @@ This sweep has no tagged, user-invokable cleanup contract. AgentRinse reports
 the native behavior but does not invoke it, and every finding emits
 `grok-cleanup-owner-contract-unavailable`.
 
-Every finding exposes the installed-version status, parsed installed version,
-build revision and channel when available, source version, source commit,
-upstream source revision, inventory scope, native memory-GC contract, and
-mutation refusal.
+Every finding exposes the owner-executable binding status, installed-version
+status, parsed installed version, build revision and channel when available,
+source version, source commit, upstream source revision, inventory scope,
+native memory-GC contract, and mutation refusal.
 
 ## Docker Adapter
 

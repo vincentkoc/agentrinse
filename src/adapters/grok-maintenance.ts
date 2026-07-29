@@ -1,4 +1,7 @@
 import { execFile } from "node:child_process";
+import { constants } from "node:fs";
+import { access, lstat, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import { z } from "zod";
@@ -13,7 +16,7 @@ export const GROK_SOURCE_CONTRACT = {
   inspectedAt: "2026-07-29",
 } as const;
 
-export type GrokVersionRunner = () => Promise<string>;
+export type GrokVersionRunner = (executable: string) => Promise<string>;
 
 export const grokOwnerContractFactsSchema = z.object({
   provider: z.literal("grok"),
@@ -24,6 +27,7 @@ export const grokOwnerContractFactsSchema = z.object({
   sourceVersion: z.literal(GROK_SOURCE_CONTRACT.version),
   sourceInspectedAt: z.literal(GROK_SOURCE_CONTRACT.inspectedAt),
   sourceReleaseTagged: z.literal(false),
+  ownerExecutableStatus: z.enum(["bound", "missing", "unsafe", "unexecutable", "unreadable"]),
   installedVersionStatus: z.enum([
     "exact",
     "version-mismatch",
@@ -49,8 +53,11 @@ export const grokOwnerContractFactsSchema = z.object({
 
 export type GrokOwnerContractFacts = z.infer<typeof grokOwnerContractFactsSchema>;
 
-async function defaultRunGrokVersion(environment: NodeJS.ProcessEnv): Promise<string> {
-  const result = await execFileAsync("grok", ["--version"], {
+async function defaultRunGrokVersion(
+  executable: string,
+  environment: NodeJS.ProcessEnv,
+): Promise<string> {
+  const result = await execFileAsync(executable, ["--version"], {
     encoding: "utf8",
     env: environment,
     maxBuffer: 256 * 1024,
@@ -86,26 +93,87 @@ function matchesSourceRevision(revision: string): boolean {
   );
 }
 
+type GrokExecutableInspection =
+  | { status: "bound"; executable: string }
+  | { status: "missing" | "unsafe" | "unexecutable" | "unreadable" };
+
+async function inspectOwnerExecutable(
+  ownerRoot: string,
+  platform: NodeJS.Platform,
+): Promise<GrokExecutableInspection> {
+  let root: string;
+  try {
+    root = await realpath(resolve(ownerRoot));
+  } catch {
+    return { status: "unreadable" };
+  }
+  const candidate = join(root, "bin", platform === "win32" ? "grok.exe" : "grok");
+  try {
+    const stats = await lstat(candidate);
+    if (!stats.isFile() && !stats.isSymbolicLink()) {
+      return { status: "unsafe" };
+    }
+    const executable = await realpath(candidate);
+    const relativeExecutable = relative(root, executable);
+    // Version evidence belongs to this owner only when Grok's canonical launcher
+    // resolves back into the audited root rather than another installation.
+    if (
+      relativeExecutable === "" ||
+      relativeExecutable === ".." ||
+      relativeExecutable.startsWith(`..${sep}`) ||
+      isAbsolute(relativeExecutable)
+    ) {
+      return { status: "unsafe" };
+    }
+    if (platform !== "win32") {
+      try {
+        await access(executable, constants.X_OK);
+      } catch {
+        return { status: "unexecutable" };
+      }
+    }
+    return { status: "bound", executable };
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return { status: "missing" };
+    }
+    return { status: "unreadable" };
+  }
+}
+
 export async function inspectGrokOwnerContract(
+  ownerRoot: string,
   environment: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform,
   runVersion?: GrokVersionRunner,
 ): Promise<GrokOwnerContractFacts> {
   let parsedVersion: ParsedGrokVersion | undefined;
   let installedVersionStatus: GrokOwnerContractFacts["installedVersionStatus"];
-  try {
-    parsedVersion = parseGrokVersion(
-      await (runVersion ?? (() => defaultRunGrokVersion(environment)))(),
-    );
-    installedVersionStatus =
-      parsedVersion === undefined
-        ? "unparseable"
-        : parsedVersion.version !== GROK_SOURCE_CONTRACT.version
-          ? "version-mismatch"
-          : matchesSourceRevision(parsedVersion.revision)
-            ? "exact"
-            : "revision-mismatch";
-  } catch {
+  const ownerExecutable = await inspectOwnerExecutable(ownerRoot, platform);
+  if (ownerExecutable.status !== "bound") {
     installedVersionStatus = "unavailable";
+  } else {
+    try {
+      parsedVersion = parseGrokVersion(
+        await (runVersion ?? ((executable) => defaultRunGrokVersion(executable, environment)))(
+          ownerExecutable.executable,
+        ),
+      );
+      installedVersionStatus =
+        parsedVersion === undefined
+          ? "unparseable"
+          : parsedVersion.version !== GROK_SOURCE_CONTRACT.version
+            ? "version-mismatch"
+            : matchesSourceRevision(parsedVersion.revision)
+              ? "exact"
+              : "revision-mismatch";
+    } catch {
+      installedVersionStatus = "unavailable";
+    }
   }
 
   return grokOwnerContractFactsSchema.parse({
@@ -117,6 +185,7 @@ export async function inspectGrokOwnerContract(
     sourceVersion: GROK_SOURCE_CONTRACT.version,
     sourceInspectedAt: GROK_SOURCE_CONTRACT.inspectedAt,
     sourceReleaseTagged: false,
+    ownerExecutableStatus: ownerExecutable.status,
     installedVersionStatus,
     ...(parsedVersion === undefined
       ? {}

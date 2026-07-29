@@ -242,7 +242,9 @@ export class ProviderAuditAdapter implements AuditAdapter {
     const grokOwnerContract =
       this.spec.id === "grok"
         ? await inspectGrokOwnerContract(
+            probe.root,
             this.options.environment ?? process.env,
+            this.options.platform ?? process.platform,
             this.options.runGrokVersion,
           )
         : undefined;
@@ -799,6 +801,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
     }
     if (this.spec.id === "grok" && grokOwnerContract.success) {
       const versionStatus = grokOwnerContract.data.installedVersionStatus;
+      const executableStatus = grokOwnerContract.data.ownerExecutableStatus;
       const exact = versionStatus === "exact";
       const detail = exact
         ? "The installed Grok version and build revision match the inspected source snapshot. Grok runs its memory GC during session initialization, but exposes no tagged, user-invokable cleanup contract that AgentRinse can bind and revalidate."
@@ -808,7 +811,15 @@ export class ProviderAuditAdapter implements AuditAdapter {
             ? `Installed Grok build revision ${grokOwnerContract.data.installedRevision} does not match the inspected source revisions; only the owner root was inventoried.`
             : versionStatus === "unparseable"
               ? "The installed Grok version output did not match the documented format; only the owner root was inventoried."
-              : "The Grok executable version could not be inspected; only the owner root was inventoried.";
+              : executableStatus === "unsafe"
+                ? "The canonical Grok executable escapes or does not resolve to a file inside the audited owner root; only the owner root was inventoried."
+                : executableStatus === "unexecutable"
+                  ? "The canonical Grok executable is not executable; only the owner root was inventoried."
+                  : executableStatus === "unreadable"
+                    ? "The canonical Grok executable could not be inspected; only the owner root was inventoried."
+                    : executableStatus === "missing"
+                      ? "The audited owner root has no canonical Grok executable; only the owner root was inventoried."
+                      : "The bound Grok executable version could not be inspected; only the owner root was inventoried.";
       return {
         schemaVersion: 1,
         findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
