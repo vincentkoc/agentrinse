@@ -2,11 +2,11 @@
 
 Status: active implementation
 
-Target version: 0.6.0
+Target version: 0.7.0
 
 Created: 2026-07-23
 
-Updated: 2026-07-29
+Updated: 2026-08-07
 
 Owner: Vincent Koc
 
@@ -3167,6 +3167,27 @@ Exit criteria:
 - no active log, ACP log, database, thread, configuration, credential,
   extension, crash report, neighboring file, or symlink can match
 - active Zed processes and open descriptors block mutation
+
+### `0.7.0`: stateless exact-provider audits
+
+Deliver:
+
+- `audit --no-state --providers <exact-list>` emits JSON or NDJSON only
+- no AgentRinse state is resolved, created, or written
+- output, state-directory, provider-selector, and relative selected-provider
+  root misuse is rejected before discovery
+- only the exact selected providers are instantiated; Git, Docker, runtime,
+  and artifact adapters remain suppressed
+- transient reports omit every candidate action
+
+Exit criteria:
+
+- parser and provider-registry refusal tests pass
+- an all-enabled configuration still probes only the exact selected providers
+- synthetic home metadata remains unchanged and trap binaries remain untouched
+- repository synthetic permission smoke verifies the denials supported by the
+  active Node runtime; unsupported network and FFI controls require the
+  documented external sandbox
 
 ### `1.0.0`: stable contracts
 
