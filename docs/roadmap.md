@@ -64,7 +64,7 @@ Shipped:
 
 ## 0.6: Additional Provider Policies
 
-Current:
+Shipped:
 
 - exact stale Zed `Zed.log.old` quarantine
 - native macOS, explicit-root, Flatpak, and XDG log-root resolution
@@ -81,7 +81,22 @@ Current:
 - explicit Docker mutation refusal while Buildx cannot condition prune on the
   revalidated owner identity
 
-Remaining:
+## 0.7: Stateless Exact-Provider Audits
+
+Current:
+
+- `audit --no-state --providers <exact-list>` emits JSON or NDJSON only
+- no AgentRinse state is resolved, created, or written
+- invalid output, state-directory, provider, and relative-root combinations
+  fail before discovery
+- only the exact selected providers are instantiated; Git, Docker, runtime,
+  and artifact adapters remain suppressed
+- transient reports omit every candidate action
+- repository synthetic permission smoke verifies the denials supported by the
+  active Node runtime; unsupported network and FFI controls require the
+  documented external sandbox
+
+## Later
 
 - owner-managed old agent runtime removal
 - Docker mutation only after the owner command exposes conditional daemon and
