@@ -40,6 +40,8 @@ export function buildProgram(): Command {
     .option("--json", "emit the versioned JSON report", false)
     .option("--ndjson", "stream versioned NDJSON events", false)
     .option("--redact", "redact paths and identifiers in machine output", false)
+    .option("--providers <ids>", "audit only comma-separated provider IDs; requires --no-state")
+    .option("--no-state", "do not persist audit state; requires JSON or NDJSON")
     .option("--output <path>", "write the JSON report atomically")
     .option("--state-dir <path>", "override the AgentRinse state directory")
     .option(
@@ -54,6 +56,8 @@ export function buildProgram(): Command {
         json: boolean;
         ndjson: boolean;
         redact: boolean;
+        providers?: string;
+        state: boolean;
         output?: string;
         stateDir?: string;
         allowOfflineVacuum: boolean;
@@ -61,6 +65,7 @@ export function buildProgram(): Command {
         const result = await executeAuditCommand({
           ...options,
           home: options.home ?? homedir(),
+          noState: options.state === false,
           ...(options.ndjson ? { emit: (output) => process.stdout.write(output) } : {}),
         });
         if (result.output !== "") {

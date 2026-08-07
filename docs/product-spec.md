@@ -1339,6 +1339,7 @@ Read-only discovery and classification.
 agentrinse audit
 agentrinse audit --adapter git --adapter codex
 agentrinse audit --json
+agentrinse audit --providers cursor,copilot,opencode --no-state --json
 agentrinse audit --save
 agentrinse audit --paths "$HOME/src/project"
 ```
@@ -1350,8 +1351,17 @@ Key flags:
 --paths <path>          repeatable
 --include-protected
 --min-size <bytes>
+--no-state              machine output only; never persist audit state
+--providers <ids>       exact provider list; requires --no-state
 --state <state>         repeatable
 ```
+
+Provider-scoped audits are transient read-only evidence. They honor configured
+roots only when those roots are absolute and override the selected providers'
+enabled settings, but instantiate no Git, Docker, runtime, or artifact adapters.
+They omit every candidate action, so saving one and passing it to `plan` cannot
+authorize cleanup. A future machine-output schema would be required before
+provider-scoped evidence could participate in plan/apply.
 
 Default human summary:
 

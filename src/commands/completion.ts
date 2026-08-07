@@ -1,3 +1,5 @@
+import { PROVIDER_IDS } from "../adapters/provider-specs.js";
+
 export const completionShells = ["bash", "zsh", "fish"] as const;
 export type CompletionShell = (typeof completionShells)[number];
 
@@ -27,16 +29,23 @@ const SUBCOMMANDS = {
 function bashCompletion(): string {
   return `# bash completion for AgentRinse
 _agentrinse_completion() {
-  local current command
+  local current command previous
   current="\${COMP_WORDS[COMP_CWORD]}"
   command="\${COMP_WORDS[1]}"
+  previous="\${COMP_WORDS[COMP_CWORD-1]}"
 
   if [[ "\${COMP_CWORD}" -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "${COMMANDS.join(" ")}" -- "\${current}") )
     return
   fi
 
+  if [[ "\${command}" == "audit" && "\${previous}" == "--providers" ]]; then
+    COMPREPLY=( $(compgen -W "${PROVIDER_IDS.join(" ")}" -- "\${current}") )
+    return
+  fi
+
   case "\${command}" in
+    audit) COMPREPLY=( $(compgen -W "--help --home --config --json --ndjson --redact --output --state-dir --no-state --providers --allow-offline-vacuum" -- "\${current}") ) ;;
     completion) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.completion.join(" ")}" -- "\${current}") ) ;;
     config) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.config.join(" ")}" -- "\${current}") ) ;;
     lock) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.lock.join(" ")}" -- "\${current}") ) ;;
@@ -63,6 +72,7 @@ ${COMMANDS.map((command) => `    '${command}:${command}'`).join("\n")}
   fi
 
   case "\${words[2]}" in
+    audit) _arguments '--no-state[do not persist audit state]' '--providers[comma-separated provider IDs]:providers:(${PROVIDER_IDS.join(" ")})' '*:argument:_files' ;;
     completion) _values 'shell' ${SUBCOMMANDS.completion.join(" ")} ;;
     config) _values 'config command' ${SUBCOMMANDS.config.join(" ")} ;;
     lock) _values 'lock command' ${SUBCOMMANDS.lock.join(" ")} ;;
@@ -91,6 +101,12 @@ function fishCompletion(): string {
       );
     }
   }
+  lines.push(
+    "complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l no-state -d 'Do not persist audit state'",
+  );
+  lines.push(
+    `complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l providers -r -a '${PROVIDER_IDS.join(" ")}' -d 'Audit only selected providers'`,
+  );
   return `${lines.join("\n")}\n`;
 }
 

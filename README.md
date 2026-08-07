@@ -194,6 +194,7 @@ rollback set is actually deleted.
 | Command                                   | Purpose                                                   | Mutation              |
 | ----------------------------------------- | --------------------------------------------------------- | --------------------- |
 | `agentrinse audit`                        | inventory a home and explain protection evidence          | none                  |
+| `agentrinse audit --no-state --providers` | stream selected provider evidence without persisted state | none                  |
 | `agentrinse audit --allow-offline-vacuum` | propose supported offline Codex DB actions                | none                  |
 | `agentrinse plan`                         | create a bounded plan from a saved audit                  | persisted plan only   |
 | `agentrinse clean --profile closeout`     | audit and plan the current repository                     | none                  |
@@ -329,6 +330,19 @@ long audits can stream versioned events:
 ```bash
 agentrinse audit --ndjson
 ```
+
+headless checks can select exact providers without creating AgentRinse state:
+
+```bash
+agentrinse audit --providers cursor,copilot,opencode --no-state --json
+```
+
+`--no-state` requires JSON or NDJSON and rejects `--output` and `--state-dir`.
+`--providers` accepts unique provider IDs only, honors configured provider
+roots when they are absolute, and is valid only with `--no-state`. Git, Docker,
+runtime, and artifact adapters are not instantiated for a provider-scoped
+audit. The transient report omits candidate actions, so redirecting it into a
+later plan cannot authorize cleanup.
 
 create a non-executable report for issue filing:
 

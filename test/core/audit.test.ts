@@ -39,6 +39,62 @@ describe("runAudit", () => {
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).not.toContain("grok");
   });
 
+  it("instantiates only explicitly selected providers", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.git = { enabled: true, root: "/tmp/agentrinse-git-fixture" };
+    config.adapters.docker = { enabled: true };
+    config.adapters.runtime = { enabled: true };
+    config.artifacts.projects = [
+      {
+        root: "/tmp/agentrinse-artifact-project",
+        names: ["node_modules"],
+      },
+    ];
+
+    expect(
+      createAuditAdapters(config, "linux", {
+        providers: ["cursor", "copilot", "opencode"],
+      }).map((adapter) => adapter.id),
+    ).toEqual(["cursor", "copilot", "opencode"]);
+  });
+
+  it("rejects invalid direct provider selections", () => {
+    expect(() => createAuditAdapters(DEFAULT_CONFIG, "linux", { providers: [] })).toThrow(
+      "must not be empty",
+    );
+    expect(() =>
+      createAuditAdapters(DEFAULT_CONFIG, "linux", {
+        providers: ["cursor", "cursor"],
+      }),
+    ).toThrow("duplicate provider ID");
+    expect(() =>
+      createAuditAdapters(DEFAULT_CONFIG, "linux", {
+        providers: ["git" as never],
+      }),
+    ).toThrow("unknown provider ID");
+  });
+
+  it("honors configured roots when selection overrides a disabled provider", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-provider-select-home-"));
+    const cursorRoot = await mkdtemp(join(tmpdir(), "agentrinse-provider-select-cursor-"));
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.cursor = { enabled: false, root: cursorRoot };
+
+    const report = await runAudit({
+      home,
+      config,
+      adapters: createAuditAdapters(config, "darwin", { providers: ["cursor"] }),
+    });
+
+    expect(report.probes).toEqual([
+      expect.objectContaining({
+        adapter: "cursor",
+        root: cursorRoot,
+        status: "available",
+      }),
+    ]);
+  });
+
   it("adds Git only when explicitly enabled", () => {
     const config = structuredClone(DEFAULT_CONFIG);
     config.adapters.git = {
