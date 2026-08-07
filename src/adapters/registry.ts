@@ -6,12 +6,13 @@ import { ArtifactAuditAdapter } from "./artifacts/adapter.js";
 import { DockerAuditAdapter } from "./docker/adapter.js";
 import { GitWorktreeAuditAdapter } from "./git/adapter.js";
 import { ProviderAuditAdapter } from "./provider-adapter.js";
-import { PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
+import { PROVIDER_IDS, PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
 import { RuntimeAuditAdapter } from "./runtime/adapter.js";
 
-const PROVIDER_IDS = Object.keys(PROVIDER_SPECS) as ProviderAdapterId[];
+const PROVIDER_ID_SET = new Set<string>(PROVIDER_IDS);
 
 export type AuditAdapterRegistryOptions = {
+  providers?: readonly ProviderAdapterId[];
   providerInventory?: boolean;
   roots?: ReachabilityRoot[];
   environment?: NodeJS.ProcessEnv;
@@ -19,13 +20,35 @@ export type AuditAdapterRegistryOptions = {
   allowOfflineVacuum?: boolean;
 };
 
+function validateProviderSelection(providers: readonly ProviderAdapterId[]): ProviderAdapterId[] {
+  if (providers.length === 0) {
+    throw new Error("provider selection must not be empty");
+  }
+  const selected: ProviderAdapterId[] = [];
+  const seen = new Set<string>();
+  for (const id of providers) {
+    if (!PROVIDER_ID_SET.has(id)) {
+      throw new Error(`unknown provider ID: ${String(id)}`);
+    }
+    if (seen.has(id)) {
+      throw new Error(`duplicate provider ID: ${id}`);
+    }
+    seen.add(id);
+    selected.push(id);
+  }
+  return selected;
+}
+
 export function createAuditAdapters(
   config: AgentRinseConfig,
   platform: NodeJS.Platform = process.platform,
   options: AuditAdapterRegistryOptions = {},
 ): AuditAdapter[] {
   const reachability = options.reachability ?? new ReachabilityIndex();
-  const gitEnabled = config.adapters.git?.enabled === true;
+  const providerSelection =
+    options.providers === undefined ? undefined : validateProviderSelection(options.providers);
+  const exclusiveProviders = providerSelection !== undefined;
+  const gitEnabled = !exclusiveProviders && config.adapters.git?.enabled === true;
   for (const root of options.roots ?? []) {
     reachability.add(root);
   }
@@ -50,9 +73,9 @@ export function createAuditAdapters(
       });
     }
   }
-  const adapters: AuditAdapter[] = PROVIDER_IDS.filter(
-    (id) => config.adapters[id]?.enabled !== false,
-  ).map(
+  const providerIds =
+    providerSelection ?? PROVIDER_IDS.filter((id) => config.adapters[id]?.enabled !== false);
+  const adapters: AuditAdapter[] = providerIds.map(
     (id) =>
       new ProviderAuditAdapter(PROVIDER_SPECS[id], {
         ...(config.adapters[id]?.root === undefined ? {} : { root: config.adapters[id].root }),
@@ -65,6 +88,10 @@ export function createAuditAdapters(
         environment: options.environment ?? process.env,
       }),
   );
+
+  if (exclusiveProviders) {
+    return adapters;
+  }
 
   if (gitEnabled) {
     adapters.push(

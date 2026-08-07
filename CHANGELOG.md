@@ -6,6 +6,19 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- stateless JSON and NDJSON audits for an exact provider allowlist, including
+  shell completion and configured-root support
+
+### Safety
+
+- `audit --no-state` rejects output and state paths before discovery and never
+  resolves or writes the AgentRinse state layout
+- provider-scoped audits suppress Git, Docker, runtime, and artifact discovery,
+  reject relative configured roots, and omit candidate actions so redirected
+  output cannot authorize cleanup
+
 ## [0.6.0] - 2026-07-29
 
 ### Added

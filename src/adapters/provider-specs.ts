@@ -224,3 +224,5 @@ export const PROVIDER_SPECS: Record<ProviderAdapterId, ProviderSpec> = {
     ],
   },
 };
+
+export const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDER_SPECS) as ProviderAdapterId[]);

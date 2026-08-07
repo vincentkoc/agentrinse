@@ -49,7 +49,7 @@
     "pack:check": "pnpm build && pnpm schemas:check && node scripts/check-package-manifest.mjs && publint && npm pack --dry-run",
     "schemas:check": "pnpm build && node scripts/generate-schemas.mjs --check",
     "schemas:generate": "pnpm build && node scripts/generate-schemas.mjs",
-    "smoke": "pnpm build && node scripts/smoke.mjs",
+    "smoke": "pnpm build && node scripts/stateless-audit-smoke.mjs && node scripts/smoke.mjs",
     "smoke:package": "pnpm build && node scripts/smoke-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

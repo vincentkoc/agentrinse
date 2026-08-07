@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 import { createAuditAdapters } from "../adapters/registry.js";
+import { PROVIDER_IDS, type ProviderAdapterId } from "../adapters/provider-specs.js";
 import { loadConfigForHome } from "../config/load.js";
+import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditReport } from "../contracts/report.js";
 import { runAudit, type AuditProgressEvent } from "../core/audit.js";
 import { redactAuditReport, redactAuditValue } from "../core/redaction.js";
@@ -24,6 +26,8 @@ export type AuditCommandOptions = {
   redact?: boolean;
   output?: string;
   stateDir?: string;
+  noState?: boolean;
+  providers?: string;
   allowOfflineVacuum?: boolean;
   now?: () => Date;
   emit?: (output: string) => void;
@@ -31,9 +35,66 @@ export type AuditCommandOptions = {
 
 export type AuditCommandResult = {
   report: AuditReport;
-  statePath: string;
+  statePath?: string;
   output: string;
 };
+
+const PROVIDER_ID_SET = new Set<string>(PROVIDER_IDS);
+const NON_PROVIDER_IDS = new Set(["artifacts", "docker", "git", "runtime"]);
+
+export function parseAuditProviders(value?: string): ProviderAdapterId[] | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value.length === 0) {
+    throw new Error("audit --providers requires a non-empty comma-separated provider list");
+  }
+
+  const providers: ProviderAdapterId[] = [];
+  const seen = new Set<string>();
+  for (const id of value.split(",")) {
+    if (id.length === 0) {
+      throw new Error("audit --providers contains an empty provider ID");
+    }
+    if (id.trim() !== id) {
+      throw new Error("audit --providers accepts exact provider IDs without whitespace");
+    }
+    if (NON_PROVIDER_IDS.has(id)) {
+      throw new Error(`audit --providers accepts provider IDs only; got ${id}`);
+    }
+    if (!PROVIDER_ID_SET.has(id)) {
+      throw new Error(`audit --providers contains unknown provider: ${id}`);
+    }
+    if (seen.has(id)) {
+      throw new Error(`audit --providers contains duplicate provider: ${id}`);
+    }
+    seen.add(id);
+    providers.push(id as ProviderAdapterId);
+  }
+  return providers;
+}
+
+function assertAbsoluteSelectedProviderRoots(
+  config: AgentRinseConfig,
+  providers: readonly ProviderAdapterId[],
+): void {
+  for (const id of providers) {
+    const root = config.adapters[id]?.root;
+    if (root !== undefined && !isAbsolute(root)) {
+      throw new Error(`audit --providers requires an absolute configured root for ${id}`);
+    }
+  }
+}
+
+function withoutCandidateActions(report: AuditReport): AuditReport {
+  return {
+    ...report,
+    findings: report.findings.map((finding) => ({
+      ...finding,
+      candidateActions: [],
+    })),
+  };
+}
 
 export async function executeAuditCommand(
   options: AuditCommandOptions,
@@ -43,6 +104,19 @@ export async function executeAuditCommand(
   }
   if (options.redact === true && options.json !== true && options.ndjson !== true) {
     throw new Error("audit --redact requires --json or --ndjson");
+  }
+  if (options.noState === true && options.output !== undefined) {
+    throw new Error("audit --no-state does not accept --output");
+  }
+  if (options.noState === true && options.stateDir !== undefined) {
+    throw new Error("audit --no-state does not accept --state-dir");
+  }
+  if (options.noState === true && options.json !== true && options.ndjson !== true) {
+    throw new Error("audit --no-state requires --json or --ndjson");
+  }
+  const providers = parseAuditProviders(options.providers);
+  if (providers !== undefined && options.noState !== true) {
+    throw new Error("audit --providers requires --no-state");
   }
 
   const clock = options.now ?? (() => new Date());
@@ -69,35 +143,48 @@ export async function executeAuditCommand(
 
   const home = resolve(options.home);
   const { config } = await loadConfigForHome(home, options.config);
+  if (providers !== undefined) {
+    assertAbsoluteSelectedProviderRoots(config, providers);
+  }
   const startedAt = clock().toISOString();
   if (options.ndjson === true) {
     emitEvent("command.started", startedAt, options.redact === true ? { home: "$HOME" } : { home });
   }
   try {
-    const report = await runAudit({
+    const discoveredReport = await runAudit({
       home,
       config,
       adapters: createAuditAdapters(config, process.platform, {
         allowOfflineVacuum: options.allowOfflineVacuum ?? false,
+        ...(providers === undefined ? {} : { providers }),
       }),
       now: clock,
       ...(options.ndjson === true
         ? {
             onEvent: (event: AuditProgressEvent) => {
+              const eventData =
+                providers !== undefined && event.type === "finding.completed"
+                  ? { ...event.data, candidateActions: [] }
+                  : event.data;
               emitEvent(
                 event.type,
                 event.timestamp,
-                options.redact === true ? redactAuditValue(event.data, home, salt) : event.data,
+                options.redact === true ? redactAuditValue(eventData, home, salt) : eventData,
               );
             },
           }
         : {}),
     });
-    const layout = stateLayout(resolveStateRoot(home, options.stateDir));
-    const statePath = resolve(layout.audits, `${report.auditId}.json`);
-    await writeJsonAtomic(statePath, report, {
-      privateDirectories: [layout.root, layout.audits],
-    });
+    const report =
+      providers === undefined ? discoveredReport : withoutCandidateActions(discoveredReport);
+    let statePath: string | undefined;
+    if (options.noState !== true) {
+      const layout = stateLayout(resolveStateRoot(home, options.stateDir));
+      statePath = resolve(layout.audits, `${report.auditId}.json`);
+      await writeJsonAtomic(statePath, report, {
+        privateDirectories: [layout.root, layout.audits],
+      });
+    }
 
     if (options.output !== undefined) {
       await writeJsonAtomic(resolve(options.output), report);
@@ -125,7 +212,7 @@ export async function executeAuditCommand(
         : "ok";
     return {
       report,
-      statePath,
+      ...(statePath === undefined ? {} : { statePath }),
       output:
         options.ndjson === true
           ? ndjson.join("")

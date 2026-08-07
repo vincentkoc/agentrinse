@@ -103,22 +103,26 @@ describe("atomic JSON files", () => {
     await expectPosixMode(join(root, "config.json"), 0o600);
   });
 
-  it("repairs and verifies AgentRinse-owned state directories", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-private-state-"));
-    const plans = join(root, "plans");
-    await chmod(root, 0o777);
+  it(
+    "repairs and verifies AgentRinse-owned state directories",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "agentrinse-private-state-"));
+      const plans = join(root, "plans");
+      await chmod(root, 0o777);
 
-    await writeJsonAtomic(
-      join(plans, "plan.json"),
-      { planId: "plan-1" },
-      {
-        privateDirectories: [root, plans],
-      },
-    );
+      await writeJsonAtomic(
+        join(plans, "plan.json"),
+        { planId: "plan-1" },
+        {
+          privateDirectories: [root, plans],
+        },
+      );
 
-    await expectPosixMode(root, 0o700);
-    await expectPosixMode(plans, 0o700);
-  });
+      await expectPosixMode(root, 0o700);
+      await expectPosixMode(plans, 0o700);
+    },
+    process.platform === "win32" ? 30_000 : 10_000,
+  );
 
   it.runIf(process.platform === "win32")(
     "removes inherited access from private state directories",

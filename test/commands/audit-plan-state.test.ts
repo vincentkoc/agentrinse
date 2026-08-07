@@ -20,7 +20,8 @@ describe("audit and plan state persistence", () => {
       output: auditOutput,
       stateDir,
     });
-    await access(audit.statePath);
+    expect(audit.statePath).toBeTypeOf("string");
+    await access(audit.statePath!);
 
     const plan = await executePlanCommand({
       audit: auditOutput,

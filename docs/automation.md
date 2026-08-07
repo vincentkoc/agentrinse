@@ -60,6 +60,32 @@ agentrinse audit --ndjson |
 
 Do not parse human output.
 
+## Stateless Provider Audits
+
+Headless checks can request only exact provider adapters and keep all evidence
+on stdout:
+
+```bash
+agentrinse audit --providers cursor,copilot,opencode --no-state --json
+agentrinse audit --providers cursor,copilot,opencode --no-state --ndjson
+```
+
+`--no-state` requires JSON or NDJSON and rejects `--output` and `--state-dir`
+before config or provider discovery. It neither resolves nor creates the
+AgentRinse state layout. `--providers` accepts a unique comma-separated list of
+known provider IDs, overrides each selected provider's `enabled` setting, and
+still honors its configured root when that root is absolute. Relative configured
+roots are rejected before provider discovery. The selector is valid only with
+`--no-state`. Transient provider reports omit every candidate action; if one is
+manually redirected and passed to `plan`, it produces no cleanup actions.
+
+Provider selection does not instantiate Git, Docker, runtime, or artifact
+adapters even when configuration enables them. Node permission mode can deny
+filesystem writes, child processes, and native addons. Node runtimes that do
+not expose network and FFI permission controls still require OS containment:
+use `sandbox-exec` on macOS or `bwrap` with seccomp on Linux and WSL. The
+launcher owns that containment; AgentRinse does not weaken or emulate it.
+
 ## Redacted Reports
 
 Redaction is available only with audit JSON or NDJSON:

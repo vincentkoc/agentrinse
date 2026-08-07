@@ -19,7 +19,8 @@ describe("audit machine output", () => {
       now: () => new Date("2026-07-24T00:00:00.000Z"),
     });
     const envelope = commandEnvelopeSchema.parse(JSON.parse(result.output));
-    const stored = auditReportSchema.parse(JSON.parse(await readFile(result.statePath, "utf8")));
+    expect(result.statePath).toBeTypeOf("string");
+    const stored = auditReportSchema.parse(JSON.parse(await readFile(result.statePath!, "utf8")));
 
     expect(envelope.command).toBe("audit");
     expect(envelope.data).toEqual(result.report);
@@ -58,7 +59,8 @@ describe("audit machine output", () => {
     });
 
     expect(result.output).not.toContain(home);
-    expect(await readFile(result.statePath, "utf8")).toContain(home);
+    expect(result.statePath).toBeTypeOf("string");
+    expect(await readFile(result.statePath!, "utf8")).toContain(home);
   });
 
   it("emits a failed terminal NDJSON event when persistence fails", async () => {
