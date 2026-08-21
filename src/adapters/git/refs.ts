@@ -1,29 +1,64 @@
 export type RepositoryGitRunner = (args: string[]) => Promise<string>;
 
-function lines(output: string): string[] {
-  return output
+async function gitRefExists(runGit: RepositoryGitRunner, gitRef: string): Promise<boolean> {
+  const refs = (await runGit(["for-each-ref", "--format=%(refname)", "--", gitRef]))
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+  if (refs.some((ref) => !ref.startsWith("refs/"))) {
+    throw new Error(`invalid Git ref inspection output for ${gitRef}`);
+  }
+  return refs.includes(gitRef);
 }
 
-export async function listGitRefsForCommit(
+async function gitRefContainsHead(
   runGit: RepositoryGitRunner,
   head: string,
-): Promise<{ containingRefs: string[]; gitRefs: string[] }> {
-  const [containingRefs, tagRefs] = await Promise.all([
-    runGit([
-      "for-each-ref",
-      "--contains",
-      head,
-      "--format=%(refname)",
-      "refs/heads",
-      "refs/remotes",
-    ]).then(lines),
-    runGit(["for-each-ref", "--points-at", head, "--format=%(refname)", "refs/tags"]).then(lines),
-  ]);
-  return {
-    containingRefs,
-    gitRefs: [...new Set([...containingRefs, ...tagRefs])].sort(),
-  };
+  gitRef: string,
+): Promise<boolean> {
+  if (!(await gitRefExists(runGit, gitRef))) {
+    return false;
+  }
+  if (gitRef.startsWith("refs/tags/")) {
+    return (await runGit(["rev-parse", `${gitRef}^{commit}`])).trim() === head;
+  }
+  return (await runGit(["rev-list", "--max-count=1", head, "--not", gitRef])).trim() === "";
+}
+
+export async function isPushedHead(
+  runGit: RepositoryGitRunner,
+  input: {
+    head: string;
+    upstream?: string;
+    ahead: number;
+    remoteConfigured: boolean;
+    detached: boolean;
+  },
+): Promise<boolean> {
+  if (!input.remoteConfigured || input.detached) {
+    return false;
+  }
+  if (input.upstream === undefined) {
+    return (
+      (await runGit(["rev-list", "--max-count=1", input.head, "--not", "--remotes"])).trim() === ""
+    );
+  }
+  const upstream = input.upstream.startsWith("refs/")
+    ? input.upstream
+    : `refs/remotes/${input.upstream}`;
+  return input.ahead === 0 && (await gitRefContainsHead(runGit, input.head, upstream));
+}
+
+export async function matchingGitRefPins(
+  runGit: RepositoryGitRunner,
+  head: string,
+  gitRefs: readonly string[],
+): Promise<string[]> {
+  const matches: string[] = [];
+  for (const gitRef of gitRefs) {
+    if (await gitRefContainsHead(runGit, head, gitRef)) {
+      matches.push(gitRef);
+    }
+  }
+  return matches;
 }

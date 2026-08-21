@@ -19,8 +19,8 @@ import {
   type ProcessOwnershipResult,
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
-import { parseWorktreePorcelain } from "./porcelain.js";
-import { listGitRefsForCommit } from "./refs.js";
+import { parseWorktreePorcelain, type GitWorktreeRecord } from "./porcelain.js";
+import { isPushedHead, matchingGitRefPins } from "./refs.js";
 import {
   countStatusSuppressedIndexEntries,
   parseGitStatusPorcelainV2,
@@ -38,6 +38,12 @@ export type GitWorktreeOptions = AgentRinseConfig["audit"] &
 export type GitWorktreeDependencies = {
   measure?: typeof measurePath;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
+  inspect?: typeof lstat;
+  isolateRepositoryFailure?: boolean;
+  discovery?: {
+    records?: readonly GitWorktreeRecord[];
+    diagnostic?: Diagnostic;
+  };
 };
 
 const DEFAULT_OPTIONS: GitWorktreeOptions = {
@@ -127,6 +133,24 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     }
 
     const requestedRoot = resolve(this.root);
+    if (this.dependencies.discovery?.diagnostic !== undefined) {
+      return {
+        adapter: this.id,
+        status: "degraded",
+        root: requestedRoot,
+        detail: "Git repository could not be inspected",
+        diagnostics: [this.dependencies.discovery.diagnostic],
+      };
+    }
+    if (this.dependencies.discovery?.records !== undefined) {
+      return {
+        adapter: this.id,
+        status: "available",
+        root: requestedRoot,
+        detail: "Git repository found",
+        diagnostics: [],
+      };
+    }
     try {
       const root = (
         await this.runGit(["-C", requestedRoot, "rev-parse", "--show-toplevel"])
@@ -158,12 +182,22 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
   async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
-      this.reachability?.protectUnresolvedGitRefs(context.now.toISOString());
+      if (this.dependencies.isolateRepositoryFailure !== true) {
+        this.reachability?.protectUnresolvedGitRefs(context.now.toISOString());
+      }
       return { resources: [], diagnostics: [] };
     }
 
-    const output = await this.runGit(["-C", probe.root, "worktree", "list", "--porcelain", "-z"]);
-    const records = parseWorktreePorcelain(output);
+    let records: readonly GitWorktreeRecord[];
+    try {
+      records =
+        this.dependencies.discovery?.records ??
+        parseWorktreePorcelain(
+          await this.runGit(["-C", probe.root, "worktree", "list", "--porcelain", "-z"]),
+        );
+    } catch (error) {
+      return this.repositoryFailure(context, error);
+    }
     const mainWorktreePath = records[0] === undefined ? undefined : resolve(records[0].path);
     const resources: ResourceSnapshot[] = [];
     const diagnostics: Diagnostic[] = [];
@@ -171,10 +205,13 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     for (const record of records) {
       let exists = true;
       try {
-        const stats = await lstat(record.path);
+        const stats = await (this.dependencies.inspect ?? lstat)(record.path);
         exists = stats.isDirectory() && !stats.isSymbolicLink();
       } catch (error) {
         if (!isMissing(error)) {
+          if (this.dependencies.isolateRepositoryFailure === true) {
+            return this.repositoryFailure(context, error, diagnostics);
+          }
           throw error;
         }
         exists = false;
@@ -184,10 +221,10 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       const canonicalKey = `git:git-worktree:${worktreePath}`;
       let inspectionComplete = exists;
       let status: GitStatusFacts | undefined;
-      let containingRefs: string[] = [];
       let gitRefs: string[] = [];
-      let gitRefInspectionComplete = false;
+      let gitRefInspectionComplete = true;
       let remotes: string[] = [];
+      let remoteReachable = false;
       let repositoryCommonDir: string | undefined;
       let measurement: Measurement | undefined;
       let mountBoundaries: MountBoundaryResult = {
@@ -207,7 +244,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
       if (exists) {
         try {
-          stats = await lstat(worktreePath);
+          stats = await (this.dependencies.inspect ?? lstat)(worktreePath);
           await realpath(worktreePath);
           status = parseGitStatusPorcelainV2(
             await this.runGit([
@@ -250,21 +287,45 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           );
           const head = status.head ?? record.head;
           if (head !== undefined) {
-            const refs = await listGitRefsForCommit(
-              (args) => this.runGit(["-C", worktreePath, ...args]),
-              head,
-            );
-            containingRefs = refs.containingRefs;
+            const configuredPins =
+              this.reachability?.activeGitRefs(context.now.toISOString()) ?? [];
+            let matchingPins: string[] = [];
+            try {
+              matchingPins = await matchingGitRefPins(
+                (args) => this.runGit(["-C", worktreePath, ...args]),
+                head,
+                configuredPins,
+              );
+            } catch (error) {
+              gitRefInspectionComplete = false;
+              diagnostics.push({
+                severity: "warning",
+                code: "GIT_REF_PIN_INSPECTION_FAILED",
+                message: error instanceof Error ? error.message : String(error),
+                adapter: this.id,
+              });
+            }
             gitRefs = [
               record.branch,
               branchRef(status.branch),
               upstreamRef(status.upstream),
-              ...refs.gitRefs,
+              ...matchingPins,
             ]
               .filter((value): value is string => value !== undefined)
               .filter((value, index, values) => values.indexOf(value) === index)
               .sort();
-            gitRefInspectionComplete = true;
+            remoteReachable = await isPushedHead(
+              (args) => this.runGit(["-C", worktreePath, ...args]),
+              {
+                head,
+                ...(status.upstream === undefined ? {} : { upstream: status.upstream }),
+                ahead: status.ahead,
+                remoteConfigured: remotes.length > 0,
+                detached: record.detached,
+              },
+            );
+          } else {
+            gitRefInspectionComplete = false;
           }
           for (const operation of await findGitOperations(
             worktreePath,
@@ -282,6 +343,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
             inspectionComplete = false;
           }
         } catch (error) {
+          if (this.dependencies.isolateRepositoryFailure === true) {
+            return this.repositoryFailure(context, error, diagnostics);
+          }
           inspectionComplete = false;
           diagnostics.push({
             severity: "warning",
@@ -298,8 +362,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         gitRefInspectionComplete,
       );
 
-      const localReachable = containingRefs.some((ref) => ref.startsWith("refs/heads/"));
-      const remoteReachable = containingRefs.some((ref) => ref.startsWith("refs/remotes/"));
+      const localReachable = typeof status?.branch === "string" || record.branch !== undefined;
       const remoteConfigured = remotes.length > 0;
       const ahead = status?.ahead ?? 0;
       const staged = status?.staged ?? 0;
@@ -370,19 +433,45 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           localReachable,
           remoteReachable,
           remoteConfigured,
-          unpushed: ahead > 0 || (remoteConfigured && localReachable && !remoteReachable),
-          remoteProof: remoteConfigured ? "local-remote-tracking-refs" : "unavailable",
+          unpushed:
+            status?.upstream !== undefined
+              ? ahead > 0
+              : remoteConfigured && !record.detached && !remoteReachable,
+          remoteProof:
+            status?.upstream !== undefined
+              ? "configured-upstream"
+              : remoteConfigured
+                ? "local-remote-tracking-refs"
+                : "unavailable",
           inspectionComplete,
           reportOnly: true,
         },
         ...(measurement === undefined ? {} : { measuredBytes: measurement.bytes }),
       });
     }
-    if (records.length === 0) {
+    return { resources, diagnostics };
+  }
+
+  private repositoryFailure(
+    context: AuditContext,
+    error: unknown,
+    diagnostics: readonly Diagnostic[] = [],
+  ): CollectionResult {
+    if (this.dependencies.isolateRepositoryFailure !== true) {
       this.reachability?.protectUnresolvedGitRefs(context.now.toISOString());
     }
-
-    return { resources, diagnostics };
+    return {
+      resources: [],
+      diagnostics: [
+        ...diagnostics,
+        {
+          severity: "warning",
+          code: "GIT_REPOSITORY_INSPECTION_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+          adapter: this.id,
+        },
+      ],
+    };
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
@@ -423,12 +512,26 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       });
     }
 
-    if (resource.facts.dirty === true) {
+    if (
+      Number(resource.facts.staged ?? 0) +
+        Number(resource.facts.modified ?? 0) +
+        Number(resource.facts.untracked ?? 0) +
+        Number(resource.facts.conflicted ?? 0) >
+      0
+    ) {
       roots.push({
         code: "dirty-worktree",
         source: "git",
         observedAt,
-        detail: "Git reports staged, modified, conflicted, untracked, or ignored work.",
+        detail: "Git reports staged, modified, conflicted, or untracked work.",
+      });
+    }
+    if (typeof resource.facts.ignored === "number" && resource.facts.ignored > 0) {
+      roots.push({
+        code: "ignored-worktree-content",
+        source: "git",
+        observedAt,
+        detail: "Git reports ignored content that would be lost by whole-worktree cleanup.",
       });
     }
     if (

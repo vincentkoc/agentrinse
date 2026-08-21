@@ -1487,6 +1487,34 @@ The profile does not infer that a task is finished. The caller remains
 responsible for invoking it only after its work has landed, been handed off, or
 otherwise reached a terminal state.
 
+### Fleet profile
+
+The built-in `fleet` profile audits only explicitly supplied repositories:
+
+```text
+agentrinse clean --profile fleet \
+  --repo /path/to/repo-a \
+  --repo /path/to/repo-b \
+  --max-risk safe
+```
+
+At least one absolute `--repo` and an explicit `safe` or `recoverable` risk
+ceiling are required. The profile never infers a repository from the current
+directory and never crawls home. Repository aliases are canonicalized and
+deduplicated by their physical Git common directory.
+
+Provider reachability collectors run once, Git collection runs once for each
+unique repository, and artifact collection runs once across configured
+projects inside the discovered worktrees. A failed Git repository emits
+diagnostics and no resources without suppressing healthy repositories.
+Unknown provider ownership remains global protection.
+
+The fleet machine summary adds repository count, risk ceiling, candidate and
+selected action counts, exclusions by risk, counts by risk, candidate and
+selected quarantine bytes, unknown findings, and the five most frequent
+blocker codes. Human output also prints diagnostics. An apply with zero
+selected actions does not acquire the lock or create a run journal.
+
 ### `agentrinse undo`
 
 Undo recoverable actions from a run.
@@ -1595,6 +1623,7 @@ Discover worktrees through repositories found from:
 - current working directory
 - provider-managed worktree roots
 - Git common directories referenced by discovered worktrees
+- explicit repeated `--repo` roots in the fleet profile
 
 Use:
 
@@ -1630,14 +1659,18 @@ A branch is not cleanable merely because the working tree is clean.
 
 Protection logic:
 
-1. If there is no upstream, protect unless HEAD is proven reachable from a
-   configured remote ref.
-2. If upstream exists and local is ahead, protect.
+1. If there is no upstream, protect unless bounded `rev-list` proves HEAD
+   reachable from local remote-tracking refs.
+2. If upstream exists, protect when local is ahead or targeted ancestry cannot
+   prove HEAD reachable from that upstream.
 3. If detached, protect unless HEAD is reachable from another durable local
    ref and the policy explicitly permits detached cleanup.
-4. Network fetch is not performed by default. The result is relative to local
+4. Configured branch and remote pins use targeted ancestry checks. Configured
+   tags match only when the tag resolves exactly to HEAD. A pin inspection
+   failure protects that repository.
+5. Network fetch is not performed by default. The result is relative to local
    remote-tracking refs and must say so.
-5. `--fetch` may be a future explicit read-only option.
+6. `--fetch` may be a future explicit read-only option.
 
 ### Artifact trimming
 

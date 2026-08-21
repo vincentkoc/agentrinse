@@ -156,4 +156,68 @@ describe("ReachabilityIndex", () => {
       },
     ]);
   });
+
+  it("keeps exact current-worktree protection from leaking to nested worktrees", () => {
+    const index = new ReachabilityIndex();
+    index.add({
+      path: "/tmp/repo",
+      code: "current-worktree",
+      source: "closeout",
+      detail: "current",
+      scope: "exact",
+      resourceKinds: ["git-worktree"],
+    });
+    index.add({
+      path: "/tmp/repo",
+      code: "current-worktree",
+      source: "closeout",
+      detail: "current artifacts",
+      scope: "subtree",
+      resourceKinds: ["build-artifact"],
+    });
+    const observedAt = "2026-07-24T00:00:00.000Z";
+
+    expect(
+      index.rootsForResource(
+        {
+          id: "git:current",
+          adapter: "git",
+          kind: "git-worktree",
+          canonicalKey: "git:/tmp/repo",
+          displayName: "Current",
+          path: "/tmp/repo",
+        },
+        {},
+        observedAt,
+      ),
+    ).toHaveLength(1);
+    expect(
+      index.rootsForResource(
+        {
+          id: "git:nested",
+          adapter: "git",
+          kind: "git-worktree",
+          canonicalKey: "git:/tmp/repo/.worktrees/task",
+          displayName: "Nested",
+          path: "/tmp/repo/.worktrees/task",
+        },
+        {},
+        observedAt,
+      ),
+    ).toEqual([]);
+    expect(
+      index.rootsForResource(
+        {
+          id: "artifact:nested",
+          adapter: "artifacts",
+          kind: "build-artifact",
+          canonicalKey: "artifact:/tmp/repo/.worktrees/task/node_modules",
+          displayName: "node_modules",
+          path: "/tmp/repo/.worktrees/task/node_modules",
+        },
+        {},
+        observedAt,
+      ),
+    ).toHaveLength(1);
+  });
 });

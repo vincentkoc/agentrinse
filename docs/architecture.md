@@ -36,6 +36,19 @@ eligible configured directory. The Git adapter can emit one exact
 
 No adapter mutates directly.
 
+Fleet cleanup shares one reachability index across one provider pass, one Git
+adapter per deduplicated physical common directory, and one artifact adapter.
+Expected Git failures are contained by the owning Git adapter so another
+explicit repository can still produce evidence and actions. Provider
+reachability failure is intentionally not isolated because unknown provider
+ownership must protect all candidate worktrees.
+
+Git reachability avoids repository-wide containing-ref enumeration. Attached
+branches require zero upstream-ahead commits plus a targeted upstream ancestry
+check; branches without upstreams use a bounded `rev-list` proof against local
+remote-tracking refs. Configured branch and remote pins use targeted ancestry
+checks; configured tags require an exact commit target.
+
 ## Plan Engine
 
 The plan engine selects eligible actions within the configured risk ceiling,

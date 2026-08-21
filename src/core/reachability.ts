@@ -1,7 +1,7 @@
 import { isAbsolute, relative, resolve } from "node:path";
 
 import type { RootEvidence } from "../contracts/finding.js";
-import type { ResourceRef } from "../contracts/resource.js";
+import type { ResourceKind, ResourceRef } from "../contracts/resource.js";
 
 type ReachabilityEvidence = Omit<RootEvidence, "observedAt"> & {
   expiresAt?: string;
@@ -9,7 +9,8 @@ type ReachabilityEvidence = Omit<RootEvidence, "observedAt"> & {
 
 export type ReachabilityRoot = ReachabilityEvidence & {
   path: string;
-  scope?: "overlap" | "subtree";
+  scope?: "exact" | "overlap" | "subtree";
+  resourceKinds?: readonly ResourceKind[];
 };
 
 function isInside(root: string, candidate: string): boolean {
@@ -25,7 +26,8 @@ export class ReachabilityIndex {
 
   add(root: ReachabilityRoot): void {
     const path = resolve(root.path);
-    const key = `${root.code}\0${root.source}\0${path}\0${root.scope ?? "overlap"}\0${root.evidenceRef ?? ""}`;
+    const resourceKinds = [...(root.resourceKinds ?? [])].sort();
+    const key = `${root.code}\0${root.source}\0${path}\0${root.scope ?? "overlap"}\0${resourceKinds.join(",")}\0${root.evidenceRef ?? ""}`;
     this.roots.set(key, { ...root, path });
   }
 
@@ -81,6 +83,13 @@ export class ReachabilityIndex {
     }
   }
 
+  activeGitRefs(observedAt: string): string[] {
+    return [...this.gitRefRoots]
+      .filter(([, root]) => this.isCurrent(root, observedAt))
+      .map(([key]) => key.slice(0, key.indexOf("\0")))
+      .sort();
+  }
+
   private isCurrent(root: ReachabilityEvidence, observedAt: string): boolean {
     return root.expiresAt === undefined || Date.parse(root.expiresAt) > Date.parse(observedAt);
   }
@@ -103,21 +112,34 @@ export class ReachabilityIndex {
     });
   }
 
-  rootsFor(path: string, observedAt: string): RootEvidence[] {
+  private pathRoots(path: string, observedAt: string, resourceKind?: ResourceKind): RootEvidence[] {
     const target = resolve(path);
     const matchingRoots = [...this.roots.values()]
       .filter((root) => this.isCurrent(root, observedAt))
-      .filter((root) =>
-        root.scope === "subtree"
-          ? isInside(root.path, target)
-          : isInside(root.path, target) || isInside(target, root.path),
+      .filter(
+        (root) =>
+          root.resourceKinds === undefined ||
+          (resourceKind !== undefined && root.resourceKinds.includes(resourceKind)),
       )
-      .map(({ path: _path, scope: _scope, ...root }) => this.evidence(root, observedAt));
+      .filter((root) =>
+        root.scope === "exact"
+          ? root.path === target
+          : root.scope === "subtree"
+            ? isInside(root.path, target)
+            : isInside(root.path, target) || isInside(target, root.path),
+      )
+      .map(({ path: _path, scope: _scope, resourceKinds: _resourceKinds, ...root }) =>
+        this.evidence(root, observedAt),
+      );
     const globalRoots = [...this.globalRoots.values()]
       .filter((root) => this.isCurrent(root, observedAt))
       .map((root) => this.evidence(root, observedAt));
 
     return this.sort([...matchingRoots, ...globalRoots]);
+  }
+
+  rootsFor(path: string, observedAt: string): RootEvidence[] {
+    return this.pathRoots(path, observedAt);
   }
 
   rootsForResource(
@@ -127,8 +149,8 @@ export class ReachabilityIndex {
   ): RootEvidence[] {
     const roots =
       resource.path === undefined
-        ? this.rootsFor("/", observedAt)
-        : this.rootsFor(resource.path, observedAt);
+        ? this.pathRoots("/", observedAt, resource.kind)
+        : this.pathRoots(resource.path, observedAt, resource.kind);
     for (const [key, root] of this.resourceRoots) {
       if (key.startsWith(`${resource.id}\0`) && this.isCurrent(root, observedAt)) {
         roots.push(this.evidence(root, observedAt));

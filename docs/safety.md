@@ -195,6 +195,8 @@ matches the pinned Codex schema contract.
 `recoverable`, excluded by the default `safe` risk ceiling, and requires:
 
 - a linked, branch-attached, unlocked, clean worktree
+- no ignored content; ignored files have a distinct hard blocker because
+  whole-worktree quarantine would move data outside the active checkout
 - configured remote reachability with no unpushed commit
 - no Git operation, submodule, provider/session root, user pin, or live process
 - complete filesystem measurement with no special entry or mount boundary
@@ -217,6 +219,19 @@ recorded recovery ref.
 Purge is a separate destructive command. It repeats the quarantine checks and
 uses `git worktree remove` without `--force`. Changed or dirty quarantine state
 is never purged.
+
+Repository campaigns remain fail-closed without becoming all-or-nothing.
+Each explicit Git repository probes and collects independently: a failed
+repository emits diagnostics and no resources, while healthy repositories
+continue. Provider metadata is collected once and still protects every
+matching worktree. A missing or malformed provider reachability source remains
+global protection.
+
+The worktree that starts a closeout is an exact `git-worktree` root, not an
+ancestor root for nested linked worktrees. Its rebuildable artifacts remain
+protected by a separate subtree-scoped `build-artifact` root. Provider roots
+retain overlap semantics, so a provider path inside a worktree protects the
+enclosing worktree.
 
 ## Authorization
 

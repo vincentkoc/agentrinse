@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { createAuditAdapters } from "../../src/adapters/registry.js";
+import { GitWorktreeAuditAdapter } from "../../src/adapters/git/adapter.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { AgentRinseConfig } from "../../src/config/schema.js";
 import type { WorktreeQuarantineAction } from "../../src/contracts/action.js";
@@ -145,12 +145,25 @@ describe("revalidateWorktreeQuarantine", () => {
     config.adapters.codex = { enabled: true, root: codexRoot };
     config.adapters.git = { enabled: true, root: main };
     config.worktrees = { ...config.worktrees, minAgeMinutes: 0 };
-    config.pins = [{ gitRef: "refs/tags/keep" }];
+    config.pins = [];
     const platform = process.platform === "linux" ? "linux" : "darwin";
     const initial = await runAudit({
       home,
       config,
-      adapters: createAuditAdapters(config, platform),
+      adapters: [
+        new GitWorktreeAuditAdapter(
+          main,
+          undefined,
+          undefined,
+          async () => ({ status: "idle", matches: [] }),
+          undefined,
+          {
+            ...config.audit,
+            ...config.worktrees,
+            platform,
+          },
+        ),
+      ],
     });
     const action = initial.findings
       .flatMap((finding) => finding.candidateActions)
@@ -160,6 +173,10 @@ describe("revalidateWorktreeQuarantine", () => {
       );
     expect(action).toBeDefined();
 
+    const otherRepository = join(home, "other-repo");
+    await execFileAsync("git", ["init", "-b", "main", otherRepository]);
+    config.adapters.git = { enabled: true, root: otherRepository };
+    config.pins = [{ gitRef: "refs/tags/keep" }];
     await execFileAsync("git", ["-C", linked, "tag", "--no-sign", "keep"]);
     await writeFile(
       metadataPath,
@@ -185,7 +202,7 @@ describe("revalidateWorktreeQuarantine", () => {
         expect.objectContaining({ code: "user-pin" }),
       ]),
     );
-  });
+  }, 30_000);
 
   it("blocks mutation on native Windows", async () => {
     const audit = vi.fn(async () => report());

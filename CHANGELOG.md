@@ -6,6 +6,21 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- Added explicit multi-repository cleanup campaigns with
+  `clean --profile fleet --repo <root>... --max-risk safe|recoverable`,
+  deterministic Git common-directory deduplication, and fleet-specific action,
+  quarantine-byte, blocker, unknown-state, and diagnostic summaries.
+
+### Safety
+
+- Git worktree reachability now uses bounded upstream, remote, and configured
+  pin checks instead of enumerating every containing ref. Current-worktree
+  protection is exact for worktrees and subtree-scoped for artifacts, ignored
+  content has its own hard blocker, failed fleet repositories remain isolated,
+  and empty applies create no lock or journal.
+
 ## [0.7.0] - 2026-08-07
 
 ### Added

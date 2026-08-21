@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import { listGitRefsForCommit } from "../adapters/git/refs.js";
+import { matchingGitRefPins } from "../adapters/git/refs.js";
 import { createAuditAdapters } from "../adapters/registry.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import type { AgentRinseConfig } from "../config/schema.js";
@@ -74,17 +74,29 @@ export async function currentWorktreeProtectionRoots(
     path: action.target.path,
   };
   const observedAt = now.toISOString();
-  const currentRefs = config.pins.some((pin) => "gitRef" in pin)
-    ? await listGitRefsForCommit(
-        (args) => runGit(["--git-dir", action.target.repositoryCommonDir, ...args]),
-        action.target.head,
-      )
-    : { gitRefs: [] };
+  const configuredRefs = reachability.activeGitRefs(observedAt);
+  let matchingRefs: string[] = [];
+  let refInspectionComplete = true;
+  try {
+    matchingRefs = await matchingGitRefPins(
+      (args) => runGit(["--git-dir", action.target.repositoryCommonDir, ...args]),
+      action.target.head,
+      configuredRefs,
+    );
+  } catch {
+    refInspectionComplete = false;
+  }
+  reachability.bindGitRefsToPath(
+    action.target.path,
+    matchingRefs,
+    observedAt,
+    refInspectionComplete,
+  );
   const facts = {
     ...(action.target.branch === undefined ? {} : { branch: action.target.branch }),
     gitRefs: [
       ...(action.target.branch === undefined ? [] : [action.target.branch]),
-      ...currentRefs.gitRefs,
+      ...matchingRefs,
     ],
   };
   const roots = [
@@ -139,7 +151,9 @@ export async function revalidateWorktreeQuarantine(
         ? await runAudit({
             home,
             config,
-            adapters: createAuditAdapters(config, platform),
+            adapters: createAuditAdapters(config, platform, {
+              gitRepositories: [{ root: action.target.path }],
+            }),
             ...(dependencies.now === undefined ? {} : { now: dependencies.now }),
           })
         : await dependencies.audit({ home, config, platform });

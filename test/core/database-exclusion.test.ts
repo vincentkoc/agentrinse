@@ -42,17 +42,19 @@ describe("database exclusion", () => {
         "SELECT * FROM values_table;",
       ]),
     ).rejects.toMatchObject({ code: 5 });
-    const waitingWrite = execFileAsync("sqlite3", [
-      "-batch",
-      "-cmd",
-      ".timeout 2000",
-      path,
-      "INSERT INTO values_table VALUES(2);",
-    ]);
+    const waitingWriteRejection = expect(
+      execFileAsync("sqlite3", [
+        "-batch",
+        "-cmd",
+        ".timeout 2000",
+        path,
+        "INSERT INTO values_table VALUES(2);",
+      ]),
+    ).rejects.toBeDefined();
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     await exclusion.release();
-    await expect(waitingWrite).rejects.toBeDefined();
+    await waitingWriteRejection;
     expect((await lstat(path)).mode & 0o7777).toBe(originalMode);
     await expect(
       execFileAsync("sqlite3", ["-batch", path, "SELECT count(*) FROM values_table;"]),
