@@ -18,7 +18,11 @@ import {
   quarantineRecoveryRef,
   type QuarantineEntry,
 } from "../contracts/quarantine.js";
-import { ensurePrivateDirectory, writeJsonAtomic } from "../state/json-file.js";
+import {
+  ensurePrivateDirectories,
+  ensurePrivateDirectory,
+  writeJsonAtomic,
+} from "../state/json-file.js";
 import { findGitOperations } from "./git-operation-state.js";
 import { measurePath, type Measurement, type MeasureOptions } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
@@ -309,8 +313,7 @@ async function reserveQuarantineContainer(
       { diagnosticCode: "QUARANTINE_CONTAINER_UNSAFE" },
     );
   }
-  await ensurePrivateDirectory(quarantineParent);
-  await ensurePrivateDirectory(ownerDirectory);
+  await ensurePrivateDirectories([quarantineParent, ownerDirectory]);
   const [container, owner] = await Promise.all([
     inspect(quarantineParent),
     inspect(ownerDirectory),

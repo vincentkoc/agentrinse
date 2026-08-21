@@ -20,6 +20,8 @@ The project follows semantic versioning after its first supported release.
   protection is exact for worktrees and subtree-scoped for artifacts, ignored
   content has its own hard blocker, failed fleet repositories remain isolated,
   and empty applies create no lock or journal.
+- Private state directories are now preflighted as a complete batch before any
+  permission repair, with one verified Windows ACL update for the full batch.
 
 ## [0.7.0] - 2026-08-07
 
