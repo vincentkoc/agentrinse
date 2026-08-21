@@ -1,5 +1,2 @@
 allowBuilds:
   koffi: true
-minimumReleaseAgeExclude:
-  - "@publint/pack@0.1.6"
-  - publint@0.3.22
