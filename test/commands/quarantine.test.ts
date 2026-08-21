@@ -648,14 +648,10 @@ describe("purge command", () => {
         dependencies: {
           purge,
           runGit: async (args) => {
-            if (
-              args.includes("--points-at") &&
-              "gitRef" in pin &&
-              pin.gitRef.startsWith("refs/tags/")
-            ) {
-              return `${pin.gitRef}\n`;
+            if (args.includes("rev-parse")) {
+              return `${value.target.head}\n`;
             }
-            return args.includes("--contains") ? `${value.target.branch}\n` : "";
+            return "";
           },
         },
       }),

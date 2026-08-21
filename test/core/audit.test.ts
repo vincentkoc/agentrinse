@@ -122,6 +122,29 @@ describe("runAudit", () => {
     expect(adapters.indexOf("git")).toBeLessThan(adapters.indexOf("artifacts"));
   });
 
+  it("runs providers once and Git once per explicit fleet repository", () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.git = {
+      enabled: true,
+      root: "/tmp/agentrinse-configured-repo",
+    };
+    config.artifacts.projects = [
+      {
+        root: "/tmp/agentrinse-artifact-project",
+        names: ["node_modules"],
+      },
+    ];
+
+    const adapters = createAuditAdapters(config, "linux", {
+      gitRepositories: [{ root: "/tmp/agentrinse-repo-a" }, { root: "/tmp/agentrinse-repo-b" }],
+    }).map((adapter) => adapter.id);
+
+    expect(adapters.filter((id) => id === "git")).toHaveLength(2);
+    expect(adapters.filter((id) => id === "codex")).toHaveLength(1);
+    expect(adapters.filter((id) => id === "claude")).toHaveLength(1);
+    expect(adapters.filter((id) => id === "artifacts")).toHaveLength(1);
+  });
+
   it("adds Docker only when explicitly enabled", () => {
     const config = structuredClone(DEFAULT_CONFIG);
     config.adapters.docker = { enabled: true };

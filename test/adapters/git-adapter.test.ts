@@ -24,6 +24,97 @@ describe("GitWorktreeAuditAdapter", () => {
     expect((await adapter.probe(context)).status).toBe("degraded");
   });
 
+  it("contains repository collection failures as diagnostics", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const context: AuditContext = {
+      home,
+      now: new Date("2026-07-23T00:00:00.000Z"),
+      auditId: "audit-git-failure",
+    };
+    const adapter = new GitWorktreeAuditAdapter(home, async (args) => {
+      if (args.includes("--show-toplevel")) {
+        return `${home}\n`;
+      }
+      throw new Error("repository changed during collection");
+    });
+
+    const collection = await adapter.collect(context, await adapter.probe(context));
+
+    expect(collection.resources).toEqual([]);
+    expect(collection.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "GIT_REPOSITORY_INSPECTION_FAILED",
+        message: "repository changed during collection",
+      }),
+    ]);
+  });
+
+  it("contains malformed fleet discovery without returning partial resources", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const context: AuditContext = {
+      home,
+      now: new Date("2026-07-23T00:00:00.000Z"),
+      auditId: "audit-git-parse-failure",
+    };
+    const adapter = new GitWorktreeAuditAdapter(
+      home,
+      async (args) => {
+        if (args.includes("--show-toplevel")) {
+          return `${home}\n`;
+        }
+        return "HEAD before-worktree\0";
+      },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { isolateRepositoryFailure: true },
+    );
+
+    const collection = await adapter.collect(context, await adapter.probe(context));
+
+    expect(collection.resources).toEqual([]);
+    expect(collection.diagnostics).toEqual([
+      expect.objectContaining({ code: "GIT_REPOSITORY_INSPECTION_FAILED" }),
+    ]);
+  });
+
+  it("contains fleet path inspection failures without returning partial resources", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const context: AuditContext = {
+      home,
+      now: new Date("2026-07-23T00:00:00.000Z"),
+      auditId: "audit-git-path-failure",
+    };
+    const adapter = new GitWorktreeAuditAdapter(
+      home,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        isolateRepositoryFailure: true,
+        discovery: {
+          records: [{ path: home, detached: false, bare: false }],
+        },
+        inspect: async () => {
+          throw new Error("path inspection failed");
+        },
+      },
+    );
+
+    const collection = await adapter.collect(context, await adapter.probe(context));
+
+    expect(collection.resources).toEqual([]);
+    expect(collection.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "GIT_REPOSITORY_INSPECTION_FAILED",
+        message: "path inspection failed",
+      }),
+    ]);
+  });
+
   it("inventories worktrees as protected using a fake Git runner", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
     const main = join(home, "repo");
@@ -76,6 +167,20 @@ describe("GitWorktreeAuditAdapter", () => {
       }
       if (command === "ls-files") {
         return "";
+      }
+      if (command === "rev-list") {
+        const gitRef = args.at(-1);
+        if (
+          (worktree === main && gitRef === "refs/remotes/origin/main") ||
+          (worktree === linked &&
+            ["refs/heads/task", "refs/remotes/origin/task"].includes(gitRef ?? ""))
+        ) {
+          return "";
+        }
+        return `${args[3]}\n`;
+      }
+      if (command === "rev-parse" && args.at(-1) === "refs/tags/v0.2.0^{commit}") {
+        return "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
       }
       if (command === "for-each-ref") {
         if (args.includes("--points-at")) {
@@ -152,7 +257,7 @@ describe("GitWorktreeAuditAdapter", () => {
       dirty: true,
       ahead: 1,
       localReachable: true,
-      remoteReachable: true,
+      remoteReachable: false,
       unpushed: true,
       operations: ["merge"],
       processOwnership: "busy",
@@ -207,6 +312,9 @@ describe("GitWorktreeAuditAdapter", () => {
         return "";
       }
       if (command === "ls-files") {
+        return "";
+      }
+      if (command === "rev-list") {
         return "";
       }
       if (command === "rev-parse" && args.includes("--git-path")) {
@@ -280,6 +388,9 @@ describe("GitWorktreeAuditAdapter", () => {
         return "origin\n";
       }
       if (command === "ls-files") {
+        return "";
+      }
+      if (command === "rev-list") {
         return "";
       }
       if (command === "for-each-ref") {
@@ -417,6 +528,29 @@ describe("GitWorktreeAuditAdapter", () => {
         branch: "refs/heads/task",
       },
     });
+    await execFileAsync("git", ["-C", linked, "branch", "--unset-upstream"]);
+    const noUpstreamCollection = await adapter.collect(context, await adapter.probe(context));
+    const noUpstreamResource = noUpstreamCollection.resources.find(
+      (resource) => resource.facts.isMain === false,
+    );
+    expect(noUpstreamResource?.facts).toMatchObject({
+      upstream: undefined,
+      remoteConfigured: true,
+      remoteReachable: true,
+      unpushed: false,
+    });
+    expect(await adapter.classify(context, noUpstreamResource!)).toMatchObject({
+      state: "eligible",
+    });
+    expect(
+      await adapter.classify(context, {
+        ...noUpstreamResource!,
+        facts: { ...noUpstreamResource!.facts, detached: true },
+      }),
+    ).toMatchObject({
+      state: "protected",
+      roots: expect.arrayContaining([expect.objectContaining({ code: "detached-worktree" })]),
+    });
     const reservedFinding = await adapter.classify(context, {
       ...linkedResource!,
       resource: {
@@ -440,7 +574,9 @@ describe("GitWorktreeAuditAdapter", () => {
     const ignoredFinding = await adapter.classify(context, ignoredResource!);
     expect(ignoredFinding).toMatchObject({
       state: "protected",
-      roots: expect.arrayContaining([expect.objectContaining({ code: "dirty-worktree" })]),
+      roots: expect.arrayContaining([
+        expect.objectContaining({ code: "ignored-worktree-content" }),
+      ]),
     });
 
     await rm(join(linked, ".env"));

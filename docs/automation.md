@@ -166,6 +166,31 @@ agentrinse clean --profile closeout --apply --yes --max-risk safe --json
 The profile does not infer that work is complete. Call it only after the task
 has landed, been handed off, or otherwise reached a terminal state.
 
+## Fleet Profile
+
+Fleet cleanup requires every repository and the risk ceiling to be explicit:
+
+```bash
+agentrinse clean --profile fleet \
+  --repo /path/to/repo-a \
+  --repo /path/to/repo-b \
+  --max-risk safe \
+  --json
+```
+
+Use `recoverable` to select proven inactive worktree quarantine actions.
+`destructive` and `experimental` are refused. Fleet mode does not infer a
+repository from the current directory and does not crawl home. Every `--repo`
+must be absolute. Main and linked paths for the same repository are
+deduplicated by the physical Git common directory.
+
+The fleet summary reports repository count, risk ceiling, candidate and
+selected actions, exclusions by risk, candidates by risk, candidate and
+selected quarantine bytes, unknown findings, the five most frequent blockers,
+and diagnostics. `--apply --yes` uses the same persisted immutable plan,
+global lock, journal, revalidation, and executors as `agentrinse apply`. If no
+actions are selected, no apply lock or run journal is created.
+
 Recoverable worktree selection must be explicit:
 
 ```bash

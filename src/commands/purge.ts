@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
-import { listGitRefsForCommit } from "../adapters/git/refs.js";
+import { matchingGitRefPins } from "../adapters/git/refs.js";
 import { createAuditAdapters } from "../adapters/registry.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import { loadConfigForHome } from "../config/load.js";
@@ -113,18 +113,27 @@ async function currentProtectionRoots(
     path: entry.originalPath,
   };
   const observedAt = now.toISOString();
-  const currentRefs = config.pins.some((pin) => "gitRef" in pin)
-    ? await listGitRefsForCommit(
-        (args) => runGit(["--git-dir", entry.target.repositoryCommonDir, ...args]),
-        entry.target.head,
-      )
-    : { gitRefs: [] };
+  const configuredRefs = reachability.activeGitRefs(observedAt);
+  let matchingRefs: string[] = [];
+  let refInspectionComplete = true;
+  try {
+    matchingRefs = await matchingGitRefPins(
+      (args) => runGit(["--git-dir", entry.target.repositoryCommonDir, ...args]),
+      entry.target.head,
+      configuredRefs,
+    );
+  } catch {
+    refInspectionComplete = false;
+  }
+  reachability.bindGitRefsToPath(
+    entry.originalPath,
+    matchingRefs,
+    observedAt,
+    refInspectionComplete,
+  );
   const facts = {
     ...(entry.target.branch === undefined ? {} : { branch: entry.target.branch }),
-    gitRefs: [
-      ...(entry.target.branch === undefined ? [] : [entry.target.branch]),
-      ...currentRefs.gitRefs,
-    ],
+    gitRefs: [...(entry.target.branch === undefined ? [] : [entry.target.branch]), ...matchingRefs],
   };
   const roots = [
     ...reachability.rootsForResource(resource, facts, observedAt),

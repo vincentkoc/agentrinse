@@ -10,7 +10,7 @@ import {
   countStatusSuppressedIndexEntries,
   parseGitStatusPorcelainV2,
 } from "../adapters/git/status.js";
-import { listGitRefsForCommit } from "../adapters/git/refs.js";
+import { isPushedHead } from "../adapters/git/refs.js";
 import type { WorktreeQuarantineAction } from "../contracts/action.js";
 import {
   quarantineEntryIdSchema,
@@ -367,16 +367,15 @@ async function assertCleanPushedGitState(
       { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
     );
   }
-  const { containingRefs } = await listGitRefsForCommit(
-    (args) => runGit(["--git-dir", action.target.repositoryCommonDir, ...args]),
-    action.target.head,
-  );
-  if (
-    status.ahead > 0 ||
-    action.target.branch === undefined ||
-    !containingRefs.includes(action.target.branch) ||
-    !containingRefs.some((ref) => ref.startsWith("refs/remotes/"))
-  ) {
+  const remoteConfigured = (await runGit(["-C", worktreePath, "remote"])).trim() !== "";
+  const pushed = await isPushedHead((args) => runGit(["-C", worktreePath, ...args]), {
+    head: action.target.head,
+    ...(status.upstream === undefined ? {} : { upstream: status.upstream }),
+    ahead: status.ahead,
+    remoteConfigured,
+    detached: status.branch === undefined,
+  }).catch(() => false);
+  if (action.target.branch === undefined || !pushed) {
     throw new WorktreeExecutionError(
       "worktree HEAD is no longer proven pushed before quarantine",
       "skipped-stale",

@@ -27,6 +27,7 @@ import { CommandInterruptedError } from "./core/interruption.js";
 import { VERSION } from "./version.js";
 
 export function buildProgram(): Command {
+  const collectOption = (value: string, previous: string[]): string[] => [...previous, value];
   const program = new Command()
     .name("agentrinse")
     .description("Safe cleanup for agentic development.")
@@ -99,16 +100,23 @@ export function buildProgram(): Command {
     .command("clean")
     .description("Audit and plan repository-scoped agent cleanup.")
     .option("--profile <name>", "cleanup profile", "closeout")
+    .option(
+      "--repo <root>",
+      "explicit repository root; repeat for fleet cleanup",
+      collectOption,
+      [],
+    )
     .option("--home <path>", "home directory to audit")
     .option("--config <path>", "explicit JSON config")
     .option("--state-dir <path>", "override the AgentRinse state directory")
     .option("--max-risk <risk>", "safe, recoverable, destructive, or experimental")
     .option("--apply", "apply the fresh plan after confirmation", false)
     .option("--yes", "authorize non-interactive apply", false)
-    .option("--json", "emit a compact versioned closeout summary", false)
+    .option("--json", "emit a compact versioned cleanup summary", false)
     .action(
       async (options: {
         profile: string;
+        repo: string[];
         home?: string;
         config?: string;
         stateDir?: string;
@@ -117,7 +125,7 @@ export function buildProgram(): Command {
         yes: boolean;
         json: boolean;
       }) => {
-        if (options.profile !== "closeout") {
+        if (!["closeout", "fleet"].includes(options.profile)) {
           throw new Error(`unsupported clean profile: ${options.profile}`);
         }
         const controller = new AbortController();
@@ -126,12 +134,22 @@ export function buildProgram(): Command {
         };
         process.on("SIGINT", interrupt);
         try {
-          const result = await executeCleanCommand({
+          const input = {
             ...options,
-            profile: "closeout",
             home: options.home ?? homedir(),
             signal: controller.signal,
-          });
+          };
+          const result =
+            options.profile === "fleet"
+              ? await executeCleanCommand({
+                  ...input,
+                  profile: "fleet",
+                  repos: options.repo,
+                })
+              : await executeCleanCommand({
+                  ...input,
+                  profile: "closeout",
+                });
           process.stdout.write(result.output);
           const exitCode = cleanCommandExitCode(result);
           if (exitCode !== undefined) {

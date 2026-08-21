@@ -4,7 +4,7 @@ import { sha256 } from "../core/digest.js";
 import { ReachabilityIndex, type ReachabilityRoot } from "../core/reachability.js";
 import { ArtifactAuditAdapter } from "./artifacts/adapter.js";
 import { DockerAuditAdapter } from "./docker/adapter.js";
-import { GitWorktreeAuditAdapter } from "./git/adapter.js";
+import { GitWorktreeAuditAdapter, type GitWorktreeDependencies } from "./git/adapter.js";
 import { ProviderAuditAdapter } from "./provider-adapter.js";
 import { PROVIDER_IDS, PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
 import { RuntimeAuditAdapter } from "./runtime/adapter.js";
@@ -15,6 +15,10 @@ export type AuditAdapterRegistryOptions = {
   providers?: readonly ProviderAdapterId[];
   providerInventory?: boolean;
   roots?: ReachabilityRoot[];
+  gitRepositories?: readonly {
+    root: string | undefined;
+    discovery?: GitWorktreeDependencies["discovery"];
+  }[];
   environment?: NodeJS.ProcessEnv;
   reachability?: ReachabilityIndex;
   allowOfflineVacuum?: boolean;
@@ -94,20 +98,27 @@ export function createAuditAdapters(
   }
 
   if (gitEnabled) {
-    adapters.push(
-      new GitWorktreeAuditAdapter(
-        config.adapters.git?.root,
-        undefined,
-        undefined,
-        undefined,
-        reachability,
-        {
-          ...config.audit,
-          ...config.worktrees,
-          platform,
-        },
-      ),
-    );
+    const gitRepositories = options.gitRepositories ?? [{ root: config.adapters.git?.root }];
+    for (const repository of gitRepositories) {
+      adapters.push(
+        new GitWorktreeAuditAdapter(
+          repository.root,
+          undefined,
+          undefined,
+          undefined,
+          reachability,
+          {
+            ...config.audit,
+            ...config.worktrees,
+            platform,
+          },
+          {
+            isolateRepositoryFailure: options.gitRepositories !== undefined,
+            ...(repository.discovery === undefined ? {} : { discovery: repository.discovery }),
+          },
+        ),
+      );
+    }
   }
 
   if (config.artifacts.projects.length > 0) {

@@ -155,6 +155,20 @@ agentrinse clean --profile closeout --max-risk recoverable
 agentrinse clean --profile closeout --max-risk recoverable --apply --yes
 ```
 
+for an explicit repository fleet, repeat `--repo` and choose the risk ceiling:
+
+```bash
+agentrinse clean --profile fleet \
+  --repo /path/to/repo-a \
+  --repo /path/to/repo-b \
+  --max-risk recoverable
+```
+
+fleet mode requires absolute `--repo` paths and never crawls the current
+directory or home for repositories. linked-worktree aliases are deduplicated
+by their physical Git common directory. add `--apply --yes` only after
+reviewing the persisted plan.
+
 that moves a proven inactive linked worktree into quarantine. it does not
 reclaim disk immediately. restore it or inspect a later permanent purge:
 
@@ -198,6 +212,7 @@ rollback set is actually deleted.
 | `agentrinse audit --allow-offline-vacuum` | propose supported offline Codex DB actions                | none                  |
 | `agentrinse plan`                         | create a bounded plan from a saved audit                  | persisted plan only   |
 | `agentrinse clean --profile closeout`     | audit and plan the current repository                     | none                  |
+| `agentrinse clean --profile fleet`        | audit and plan explicit repository roots                  | none                  |
 | `agentrinse apply --plan <file>`          | revalidate and apply an authorized plan                   | selected actions      |
 | `agentrinse undo <run-id>`                | restore recoverable actions from a run                    | recovery restore      |
 | `agentrinse purge`                        | preview worktree and database recovery backups            | none                  |

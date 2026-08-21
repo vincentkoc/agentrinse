@@ -128,6 +128,12 @@ inventory is disabled by default because it searches `PATH` and may execute
 selected binaries with `--version`. Docker is disabled by default and uses
 the active Docker context when enabled. Runtime and Docker remain report-only.
 
+`clean --profile fleet` does not add a configuration surface. Repeated
+absolute `--repo` values are ephemeral command scope, canonicalized by their
+physical Git common directory, and persisted only through the derived plan
+config needed for verification. Revalidation resolves each worktree
+repository from the planned action rather than `adapters.git.root`.
+
 ## Worktree Quarantine
 
 `worktrees.minAgeMinutes` defaults to 14 days and is measured from the newest

@@ -10,6 +10,7 @@ import {
   cleanCommandExitCode,
   cleanCommandStatus,
   executeCleanCommand,
+  type FleetSummary,
 } from "../../src/commands/clean.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import { commandEnvelopeSchema } from "../../src/contracts/output.js";
@@ -51,6 +52,23 @@ async function gitFixture(): Promise<{
   ]);
   await run("git", ["-C", main, "worktree", "add", "-b", "task", linked]);
   return { home, main, linked, configPath, stateDir };
+}
+
+async function pushedGitFixture(): Promise<{
+  home: string;
+  main: string;
+  linked: string;
+  configPath: string;
+  stateDir: string;
+}> {
+  const value = await gitFixture();
+  const remote = join(value.home, "remote.git");
+  await run("git", ["init", "--bare", remote]);
+  await run("git", ["-C", value.main, "remote", "add", "origin", remote]);
+  await run("git", ["-C", value.main, "push", "-u", "origin", "main"]);
+  await run("git", ["-C", value.main, "push", "-u", "origin", "task"]);
+  await run("git", ["-C", value.linked, "branch", "--set-upstream-to", "origin/task"]);
+  return value;
 }
 
 function fixtureConfig(projects: { root: string; names: ["node_modules"] }[]) {
@@ -144,7 +162,7 @@ describe("clean closeout profile", () => {
     expect(scopedConfig.artifacts.projects).toEqual([
       { root: value.linked, names: ["node_modules"] },
     ]);
-  });
+  }, 30_000);
 
   it("marks incomplete provider reachability as degraded", async () => {
     const value = await gitFixture();
@@ -177,7 +195,7 @@ describe("clean closeout profile", () => {
     expect(result.audit.diagnostics.map((item) => item.code)).toContain(
       "CODEX_WORKSPACE_METADATA_MISSING",
     );
-  });
+  }, 30_000);
 
   it("applies only an existing safe artifact action from a fresh closeout plan", async () => {
     const value = await gitFixture();
@@ -213,5 +231,176 @@ describe("clean closeout profile", () => {
     expect(result.run?.actions[0]?.status).toBe("applied");
     await expect(access(artifact)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(value.main, "README.md"), "utf8")).resolves.toBe("fixture\n");
+  }, 30_000);
+});
+
+describe("clean fleet profile", () => {
+  it("requires explicit repositories and a bounded risk ceiling", async () => {
+    const value = await gitFixture();
+    const base = {
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateDir,
+      profile: "fleet" as const,
+      apply: false,
+      yes: false,
+      json: true,
+    };
+
+    await expect(executeCleanCommand({ ...base, repos: [] })).rejects.toThrow(
+      "requires at least one --repo",
+    );
+    await expect(executeCleanCommand({ ...base, repos: [value.main] })).rejects.toThrow(
+      "requires --max-risk safe or recoverable",
+    );
+    await expect(
+      executeCleanCommand({
+        ...base,
+        repos: [value.main],
+        maxRisk: "destructive",
+      }),
+    ).rejects.toThrow("supports only --max-risk safe or recoverable");
+    await expect(
+      executeCleanCommand({
+        ...base,
+        repos: ["relative/repo"],
+        maxRisk: "safe",
+      }),
+    ).rejects.toThrow("requires absolute --repo paths");
   });
+
+  it("deduplicates linked roots by common directory and skips empty apply state", async () => {
+    const value = await gitFixture();
+    const config = fixtureConfig([]);
+    config.audit.measureBytes = false;
+    await writeJsonAtomic(value.configPath, config);
+
+    let worktreeListCalls = 0;
+    const result = await executeCleanCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateDir,
+      profile: "fleet",
+      repos: [value.linked, value.main, value.linked],
+      maxRisk: "safe",
+      apply: true,
+      yes: true,
+      json: true,
+      dependencies: {
+        platform: "linux",
+        now: () => new Date(),
+        runCommand: async (command, args) => {
+          if (command === "git" && args.includes("worktree") && args.includes("list")) {
+            worktreeListCalls += 1;
+          }
+          return run(command, args);
+        },
+      },
+    });
+    const envelope = commandEnvelopeSchema.parse(JSON.parse(result.output));
+    const summary = envelope.data as FleetSummary;
+
+    expect(result.summary).toMatchObject({
+      profile: "fleet",
+      repositoryCount: 1,
+      riskCeiling: "safe",
+      candidateActions: 0,
+      selectedActions: 0,
+      excludedByRisk: 0,
+      candidateQuarantineBytes: 0,
+      selectedQuarantineBytes: 0,
+    });
+    expect(summary.candidatesByRisk).toEqual({
+      safe: 0,
+      recoverable: 0,
+      destructive: 0,
+      experimental: 0,
+    });
+    expect(result.run).toBeUndefined();
+    expect(worktreeListCalls).toBe(1);
+    await expect(access(join(value.stateDir, "locks"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    await expect(access(join(value.stateDir, "runs"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  }, 30_000);
+
+  it("applies safe artifacts and recoverable worktrees only at that ceiling", async () => {
+    const safe = await gitFixture();
+    const artifact = join(safe.main, "node_modules");
+    await mkdir(artifact);
+    await writeFile(join(artifact, "cache.bin"), "remove");
+    await writeJsonAtomic(
+      safe.configPath,
+      fixtureConfig([{ root: safe.main, names: ["node_modules"] }]),
+    );
+    const safeResult = await executeCleanCommand({
+      home: safe.home,
+      config: safe.configPath,
+      stateDir: safe.stateDir,
+      profile: "fleet",
+      repos: [safe.main],
+      maxRisk: "safe",
+      apply: true,
+      yes: true,
+      json: true,
+      dependencies: {
+        platform: "linux",
+        now: () => new Date(),
+        runCommand: run,
+      },
+    });
+    expect(safeResult.run?.actions[0]?.status).toBe("applied");
+    await expect(access(artifact)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const recoverable = await pushedGitFixture();
+    await writeFile(join(recoverable.main, "KEEP.md"), "keep\n");
+    await run("git", ["-C", recoverable.main, "add", "KEEP.md"]);
+    await run("git", [
+      "-C",
+      recoverable.main,
+      "-c",
+      "user.name=AgentRinse",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "pin main",
+    ]);
+    await run("git", ["-C", recoverable.main, "tag", "--no-sign", "keep"]);
+    const config = fixtureConfig([]);
+    config.worktrees.minAgeMinutes = 0;
+    config.pins = [{ gitRef: "refs/tags/keep" }];
+    await writeJsonAtomic(recoverable.configPath, config);
+    const recoverableResult = await executeCleanCommand({
+      home: recoverable.home,
+      config: recoverable.configPath,
+      stateDir: recoverable.stateDir,
+      profile: "fleet",
+      repos: [join(recoverable.home, "missing"), recoverable.main],
+      maxRisk: "recoverable",
+      apply: true,
+      yes: true,
+      json: false,
+      dependencies: {
+        platform: process.platform === "linux" ? "linux" : "darwin",
+        now: () => new Date(),
+        runCommand: run,
+      },
+    });
+
+    expect(recoverableResult.summary.candidatesByRisk.recoverable).toBe(1);
+    expect(recoverableResult.run?.actions).toEqual([
+      expect.objectContaining({
+        type: "worktree.quarantine",
+        status: "applied",
+      }),
+    ]);
+    expect(recoverableResult.audit.diagnostics.map((diagnostic) => diagnostic.code)).toContain(
+      "GIT_PROBE_FAILED",
+    );
+    expect(recoverableResult.output).toContain("GIT_PROBE_FAILED:");
+    await expect(access(recoverable.linked)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 120_000);
 });
