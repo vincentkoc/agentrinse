@@ -11,7 +11,7 @@ import type { CleanupPlan } from "../contracts/plan.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { acquireApplyLock } from "../state/lock.js";
 import { stateLayout } from "../state/layout.js";
-import { ensurePrivateDirectory } from "../state/json-file.js";
+import { ensurePrivateDirectories } from "../state/json-file.js";
 import { createRunJournal } from "../state/run-journal.js";
 import {
   ArtifactExecutionError,
@@ -153,12 +153,14 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
     }
   }
   const runId = randomUUID();
-  await ensurePrivateDirectory(layout.root);
-  await ensurePrivateDirectory(layout.locks);
-  await ensurePrivateDirectory(layout.runs);
-  await ensurePrivateDirectory(layout.quarantine);
-  await ensurePrivateDirectory(layout.providerQuarantine);
-  await ensurePrivateDirectory(layout.databaseBackups);
+  await ensurePrivateDirectories([
+    layout.root,
+    layout.locks,
+    layout.runs,
+    layout.quarantine,
+    layout.providerQuarantine,
+    layout.databaseBackups,
+  ]);
   const lock = await acquireApplyLock(layout.locks, {
     planId: plan.planId,
     runId,
