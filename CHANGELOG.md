@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-21
+
 ### Added
 
 - Added explicit multi-repository cleanup campaigns with

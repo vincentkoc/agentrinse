@@ -20,7 +20,7 @@ Run `agentrinse doctor` to verify the current machine without mutating it.
 
 ## macOS
 
-macOS is Tier 1 for `0.7.0`.
+macOS is Tier 1 for `0.8.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - `lsof` process ownership proof
@@ -38,7 +38,7 @@ cleanup.
 
 ## Linux
 
-Linux is Tier 2 for `0.7.0`.
+Linux is Tier 2 for `0.8.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - same-user `/proc` process ownership inspection
@@ -58,7 +58,7 @@ automatically.
 ## WSL
 
 WSL follows the Linux contract for paths and processes inside the WSL
-filesystem. Do not use `0.7.0` to mutate Windows-mounted project trees unless
+filesystem. Do not use `0.8.0` to mutate Windows-mounted project trees unless
 doctor and a disposable canary prove path identity, ownership, rename, and
 mount behavior for that exact setup.
 

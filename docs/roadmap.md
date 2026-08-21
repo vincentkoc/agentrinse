@@ -83,7 +83,7 @@ Shipped:
 
 ## 0.7: Stateless Exact-Provider Audits
 
-Current:
+Shipped:
 
 - `audit --no-state --providers <exact-list>` emits JSON or NDJSON only
 - no AgentRinse state is resolved, created, or written
@@ -95,6 +95,20 @@ Current:
 - repository synthetic permission smoke verifies the denials supported by the
   active Node runtime; unsupported network and FFI controls require the
   documented external sandbox
+
+## 0.8: Explicit Fleet Cleanup
+
+Current:
+
+- repeated absolute `--repo` roots with an explicit `safe` or `recoverable`
+  risk ceiling
+- physical Git common-directory deduplication across main and linked paths
+- provider collection once, Git collection once per unique repository, and
+  artifact collection once across discovered worktrees
+- isolated repository failures with global unknown-provider protection
+- fleet action, risk, quarantine-byte, blocker, unknown-state, and diagnostic
+  summaries
+- no apply lock or run journal when no actions are selected
 
 ## Later
 

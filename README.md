@@ -15,7 +15,7 @@ protected or eligible, creates a content-addressed plan, and revalidates the
 same facts immediately before mutation.
 
 agentrinse is not audit-only. audit establishes the evidence; apply performs
-the approved filesystem, Git metadata, and offline database changes. `0.7.0`
+the approved filesystem, Git metadata, and offline database changes. `0.8.0`
 removes exact configured rebuildable artifacts, quarantines proven inactive
 linked worktrees, repairs and locks their Git registrations, restores
 quarantined worktrees, permanently purges explicitly selected quarantine
@@ -49,7 +49,7 @@ optional external handoff for broader macOS and project debris.
 | 🔒 lock recovery       | operational  | removes only a stale AgentRinse lock after proving its process is gone         | rerun the interrupted command           |
 
 provider sessions, transcripts, credentials, configuration, and logical
-database records remain report-only. `0.7.0` supports explicit offline
+database records remain report-only. `0.8.0` supports explicit offline
 compaction for the exact current Codex `state_5`, `logs_2`, `goals_1`, and
 `memories_1` SQLite contracts. Claude cleanup is limited to exact old debug
 text files and its rebuildable changelog cache. AgentRinse also reports
@@ -112,7 +112,7 @@ brew install vincentkoc/tap/agentrinse
 one-off use:
 
 ```bash
-npx agentrinse@0.7.0 doctor
+npx agentrinse@0.8.0 doctor
 ```
 
 then:
@@ -248,7 +248,7 @@ agentrinse is built around refusal:
 
 there is no generic `--force` escape hatch.
 
-agentrinse `0.7.0` never removes:
+agentrinse `0.8.0` never removes:
 
 - provider sessions, transcripts, logical database rows, credentials, or configuration
 - unsupported provider databases or Codex databases with unknown migrations
@@ -371,7 +371,7 @@ it can be verified before apply.
 
 ## platform support
 
-| Platform       | `0.7.0` support                                                     |
+| Platform       | `0.8.0` support                                                     |
 | -------------- | ------------------------------------------------------------------- |
 | macOS          | audit, artifact/worktree/Claude/Zed cleanup, DB vacuum, undo, purge |
 | Linux          | audit, artifact/worktree/Claude/Zed cleanup, DB vacuum, undo, purge |
@@ -411,13 +411,16 @@ unreleased build at real developer state.
 
 ## status
 
-`0.7.0` ships the complete audit → plan → revalidate → apply loop, safe
+`0.8.0` ships the complete audit → plan → revalidate → apply loop, safe
 configured artifact cleanup, recoverable Git worktree, Claude file, and exact
 Zed rotated-log quarantine, plus recoverable offline Codex database
-compaction. It reports OpenCode's native maintenance contract, Cursor's owner
-database commands, Docker Buildx cache facts, and Grok's version-gated
-session-start memory GC. Exact-provider JSON and NDJSON audits can run without
-creating AgentRinse state and omit candidate actions. Grok Build, Docker, and
-all other Cursor, Zed, and OpenCode state remain non-mutating.
+compaction. Explicit fleet cleanup applies the same safety model across
+repeated absolute repository roots, deduplicates linked aliases by physical
+Git common directory, and isolates failed repositories. It reports OpenCode's
+native maintenance contract, Cursor's owner database commands, Docker Buildx
+cache facts, and Grok's version-gated session-start memory GC. Exact-provider
+JSON and NDJSON audits can run without creating AgentRinse state and omit
+candidate actions. Grok Build, Docker, and all other Cursor, Zed, and OpenCode
+state remain non-mutating.
 
 MIT licensed. built by [Vincent Koc](https://github.com/vincentkoc).
