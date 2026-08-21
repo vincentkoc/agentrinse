@@ -128,6 +128,9 @@ export function buildProgram(): Command {
         if (!["closeout", "fleet"].includes(options.profile)) {
           throw new Error(`unsupported clean profile: ${options.profile}`);
         }
+        if (options.profile === "closeout" && options.repo.length > 0) {
+          throw new Error("clean --profile closeout does not accept --repo; use --profile fleet");
+        }
         const controller = new AbortController();
         const interrupt = () => {
           controller.abort(new CommandInterruptedError("interrupted by SIGINT"));

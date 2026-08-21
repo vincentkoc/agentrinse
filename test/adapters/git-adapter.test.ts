@@ -183,12 +183,12 @@ describe("GitWorktreeAuditAdapter", () => {
         return "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n";
       }
       if (command === "for-each-ref") {
-        if (args.includes("--points-at")) {
-          return worktree === linked ? "refs/tags/v0.2.0\n" : "";
-        }
-        return worktree === linked
-          ? "refs/heads/task\nrefs/remotes/origin/task\n"
-          : "refs/heads/main\nrefs/remotes/origin/main\n";
+        const refs =
+          worktree === linked
+            ? ["refs/heads/task", "refs/remotes/origin/task", "refs/tags/v0.2.0"]
+            : ["refs/heads/main", "refs/remotes/origin/main"];
+        const requested = args.at(-1);
+        return requested !== undefined && refs.includes(requested) ? `${requested}\n` : "";
       }
       if (command === "rev-parse" && args.includes("--git-path")) {
         return `.git/${args.at(-1)!}`;
@@ -408,12 +408,18 @@ describe("GitWorktreeAuditAdapter", () => {
       }
       throw new Error(`unexpected Git command: ${args.join(" ")}`);
     };
+    const reachability = new ReachabilityIndex();
+    reachability.addGitRef("refs/tags/missing", {
+      code: "user-pin",
+      source: "config",
+      detail: "User configuration pins this resource.",
+    });
     const adapter = new GitWorktreeAuditAdapter(
       main,
       runner,
       async () => false,
       async () => ({ status: "idle", matches: [] }),
-      undefined,
+      reachability,
       {
         maxEntries: 100,
         measureBytes: true,

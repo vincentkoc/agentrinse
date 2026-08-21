@@ -648,6 +648,9 @@ describe("purge command", () => {
         dependencies: {
           purge,
           runGit: async (args) => {
+            if (args.includes("for-each-ref") && "gitRef" in pin) {
+              return `${pin.gitRef}\n`;
+            }
             if (args.includes("rev-parse")) {
               return `${value.target.head}\n`;
             }
@@ -658,6 +661,55 @@ describe("purge command", () => {
     ).rejects.toThrow("purge refused protected quarantine entry protected");
 
     expect(purge).not.toHaveBeenCalled();
+  });
+
+  it("does not protect purge with a missing configured Git ref", async () => {
+    const value = entry("missing-ref", "run-2", "2026-08-01T00:00:00.000Z");
+    const fixture = await stateFixture([value]);
+    const configPath = join(fixture.home, "agentrinse.json");
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        adapters: {
+          codex: { enabled: false },
+          claude: { enabled: false },
+          cursor: { enabled: false },
+          copilot: { enabled: false },
+          zed: { enabled: false },
+          opencode: { enabled: false },
+          grok: { enabled: false },
+          git: { enabled: true },
+        },
+        pins: [{ gitRef: "refs/tags/missing" }],
+      })}\n`,
+    );
+    const purge = vi.fn(async (candidate: QuarantineEntry) => ({
+      entry: {
+        ...candidate,
+        status: "purged" as const,
+        purgedAt: "2026-07-24T00:00:00.000Z",
+      },
+      reclaimedBytes: candidate.target.measuredBytes,
+    }));
+
+    await executePurgeCommand({
+      home: fixture.home,
+      config: configPath,
+      stateDir: fixture.stateRoot,
+      expired: false,
+      runId: "run-2",
+      apply: true,
+      yes: true,
+      json: false,
+      now: new Date("2026-07-24T00:00:00.000Z"),
+      dependencies: {
+        purge,
+        runGit: async () => "",
+      },
+    });
+
+    expect(purge).toHaveBeenCalledOnce();
   });
 
   it("revalidates current provider workspace metadata before destructive purge", async () => {

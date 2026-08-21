@@ -27,6 +27,9 @@ describe("bounded Git ref inspection", () => {
     const commands: string[][] = [];
     const runGit = async (args: string[]) => {
       commands.push(args);
+      if (args[0] === "for-each-ref") {
+        return `${args.at(-1)}\n`;
+      }
       return "";
     };
 
@@ -58,6 +61,7 @@ describe("bounded Git ref inspection", () => {
     ).resolves.toBe(false);
 
     expect(commands).toEqual([
+      ["for-each-ref", "--format=%(refname)", "--", "refs/remotes/origin/task"],
       ["rev-list", "--max-count=1", head, "--not", "refs/remotes/origin/task"],
     ]);
   });
@@ -68,6 +72,9 @@ describe("bounded Git ref inspection", () => {
     const matches = await matchingGitRefPins(
       async (args) => {
         commands.push(args);
+        if (args[0] === "for-each-ref") {
+          return `${args.at(-1)}\n`;
+        }
         if (args[0] === "rev-parse") {
           return `${head}\n`;
         }
@@ -78,6 +85,21 @@ describe("bounded Git ref inspection", () => {
     );
 
     expect(matches).toEqual(["refs/heads/keep", "refs/tags/v1"]);
-    expect(commands.every((args) => !args.includes("for-each-ref"))).toBe(true);
+    expect(commands.every((args) => !args.includes("--contains"))).toBe(true);
+  });
+
+  it("treats a missing exact ref as a non-match", async () => {
+    const commands: string[][] = [];
+    const matches = await matchingGitRefPins(
+      async (args) => {
+        commands.push(args);
+        return "";
+      },
+      "d".repeat(40),
+      ["refs/tags/missing"],
+    );
+
+    expect(matches).toEqual([]);
+    expect(commands).toEqual([["for-each-ref", "--format=%(refname)", "--", "refs/tags/missing"]]);
   });
 });

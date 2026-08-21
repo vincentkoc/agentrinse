@@ -1,10 +1,24 @@
 export type RepositoryGitRunner = (args: string[]) => Promise<string>;
 
+async function gitRefExists(runGit: RepositoryGitRunner, gitRef: string): Promise<boolean> {
+  const refs = (await runGit(["for-each-ref", "--format=%(refname)", "--", gitRef]))
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (refs.some((ref) => !ref.startsWith("refs/"))) {
+    throw new Error(`invalid Git ref inspection output for ${gitRef}`);
+  }
+  return refs.includes(gitRef);
+}
+
 async function gitRefContainsHead(
   runGit: RepositoryGitRunner,
   head: string,
   gitRef: string,
 ): Promise<boolean> {
+  if (!(await gitRefExists(runGit, gitRef))) {
+    return false;
+  }
   if (gitRef.startsWith("refs/tags/")) {
     return (await runGit(["rev-parse", `${gitRef}^{commit}`])).trim() === head;
   }
