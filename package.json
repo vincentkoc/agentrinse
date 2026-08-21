@@ -1,6 +1,6 @@
 {
   "name": "agentrinse",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": false,
   "description": "Safe, local-first cleanup for agentic development.",
   "keywords": [

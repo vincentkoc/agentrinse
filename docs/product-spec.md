@@ -2,11 +2,11 @@
 
 Status: active implementation
 
-Target version: 0.7.0
+Target version: 0.8.0
 
 Created: 2026-07-23
 
-Updated: 2026-08-07
+Updated: 2026-08-21
 
 Owner: Vincent Koc
 
@@ -3221,6 +3221,29 @@ Exit criteria:
 - repository synthetic permission smoke verifies the denials supported by the
   active Node runtime; unsupported network and FFI controls require the
   documented external sandbox
+
+### `0.8.0`: explicit fleet cleanup
+
+Deliver:
+
+- `clean --profile fleet` audits only repeated absolute `--repo` roots under
+  an explicit `safe` or `recoverable` risk ceiling
+- repository aliases are deduplicated by their physical Git common directory
+- provider reachability runs once, Git collection runs once per unique
+  repository, and artifact collection runs once across discovered worktrees
+- failed repositories remain isolated while unknown provider ownership keeps
+  its global protection
+- machine and human summaries report fleet actions, risk exclusions,
+  quarantine bytes, blockers, unknown findings, and diagnostics
+
+Exit criteria:
+
+- missing, relative, unsupported-risk, and incompatible profile arguments fail
+  before discovery
+- current worktrees, ignored content, failed pin checks, and incomplete
+  repository inspection remain protected
+- duplicate repository aliases do not duplicate discovery or actions
+- an apply with no selected actions creates no lock or run journal
 
 ### `1.0.0`: stable contracts
 
