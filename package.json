@@ -62,9 +62,9 @@
   },
   "devDependencies": {
     "@types/node": "24.13.3",
-    "oxfmt": "0.60.0",
-    "oxlint": "1.75.0",
-    "publint": "0.3.22",
+    "oxfmt": "0.63.0",
+    "oxlint": "1.78.0",
+    "publint": "0.3.23",
     "typescript": "7.0.2",
     "vitest": "4.1.10"
   },
