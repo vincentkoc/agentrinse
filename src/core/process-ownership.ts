@@ -1,9 +1,10 @@
-import { execFile } from "node:child_process";
 import { readdir, readFile, readlink } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { promisify } from "node:util";
 
-const execFileAsync = promisify(execFile);
+import { runBoundedCommand } from "./bounded-command.js";
+
+const LSOF_TIMEOUT_MS = 10_000;
+const LSOF_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 export type ProcessPathMatch = {
   pid: number;
@@ -20,8 +21,18 @@ export type ProcessOwnershipOptions = {
   platform?: NodeJS.Platform;
   procRoot?: string;
   uid?: number;
-  runLsof?: (target: string) => Promise<{ stdout: string; stderr: string }>;
+  runLsof?: (target: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
 };
+
+export type LsofFileRecord = {
+  pid: number;
+  descriptor: string;
+  path?: string;
+};
+
+type LsofInspection =
+  | { status: "complete"; records: LsofFileRecord[] }
+  | { status: "unknown"; reason: string };
 
 function isInside(root: string, candidate: string): boolean {
   const result = relative(resolve(root), resolve(candidate));
@@ -30,6 +41,65 @@ function isInside(root: string, candidate: string): boolean {
 
 function cleanProcLink(value: string): string {
   return value.endsWith(" (deleted)") ? value.slice(0, -" (deleted)".length) : value;
+}
+
+export function parseLsofFileRecords(stdout: string): LsofFileRecord[] {
+  if (stdout === "") {
+    return [];
+  }
+  const fields = stdout.split("\0");
+  const remainder = fields.pop();
+  if (remainder !== "\n") {
+    throw new Error("malformed lsof output: unterminated set");
+  }
+
+  const records: LsofFileRecord[] = [];
+  let pid: number | undefined;
+  let descriptor: string | undefined;
+  let path: string | undefined;
+
+  const finishFile = (): void => {
+    if (pid !== undefined && descriptor !== undefined) {
+      records.push({
+        pid,
+        descriptor,
+        ...(path === undefined ? {} : { path }),
+      });
+    }
+    descriptor = undefined;
+    path = undefined;
+  };
+
+  for (const rawField of fields) {
+    const field = rawField.startsWith("\n") ? rawField.slice(1) : rawField;
+    if (field === "") {
+      continue;
+    }
+    const tag = field[0];
+    const value = field.slice(1);
+    if (tag === "p") {
+      finishFile();
+      if (!/^[1-9]\d*$/u.test(value)) {
+        throw new Error("malformed lsof output: invalid process id");
+      }
+      pid = Number.parseInt(value, 10);
+    } else if (tag === "f") {
+      finishFile();
+      if (pid === undefined || value === "") {
+        throw new Error("malformed lsof output: invalid file descriptor");
+      }
+      descriptor = value;
+    } else if (tag === "n") {
+      if (pid === undefined || descriptor === undefined || value === "") {
+        throw new Error("malformed lsof output: unowned path field");
+      }
+      path = value;
+    } else if (tag !== "c") {
+      throw new Error(`malformed lsof output: unexpected ${JSON.stringify(tag)} field`);
+    }
+  }
+  finishFile();
+  return records;
 }
 
 function isGone(error: unknown): boolean {
@@ -118,42 +188,30 @@ async function inspectWithLsof(
   options: ProcessOwnershipOptions,
   exact = false,
 ): Promise<ProcessOwnershipResult> {
+  return ownershipFromLsofInspection(target, await collectLsofInspection(target, exact, options));
+}
+
+async function collectLsofInspection(
+  target: string,
+  exact: boolean,
+  options: ProcessOwnershipOptions,
+): Promise<LsofInspection> {
   try {
+    const args = exact ? ["-nP", "-F0pcfn", "--", target] : ["-nP", "-F0pcfn", "+D", target];
     const result =
       options.runLsof === undefined
-        ? await execFileAsync(
-            "lsof",
-            exact ? ["-nP", "-Fpcfn", "--", target] : ["-nP", "+D", target, "-Fpcfn"],
-            {
-              encoding: "utf8",
-              maxBuffer: 4 * 1024 * 1024,
-              timeout: 10_000,
-            },
-          )
-        : await options.runLsof(target);
+        ? await runBoundedCommand("lsof", args, {
+            maxOutputBytes: LSOF_MAX_OUTPUT_BYTES,
+            timeoutMs: LSOF_TIMEOUT_MS,
+          })
+        : await options.runLsof(target, args);
     if (result.stderr !== "") {
       return {
         status: "unknown",
-        matches: [],
         reason: `lsof reported an incomplete scan: ${result.stderr.trim()}`,
       };
     }
-
-    const matches: ProcessPathMatch[] = [];
-    let pid: number | undefined;
-
-    for (const line of result.stdout.split("\n")) {
-      if (line.startsWith("p")) {
-        pid = Number.parseInt(line.slice(1), 10);
-      } else if (line.startsWith("n") && pid !== undefined) {
-        const path = line.slice(1);
-        if (exact ? resolve(target) === resolve(path) : isInside(target, path)) {
-          matches.push({ pid, source: "fd", path });
-        }
-      }
-    }
-
-    return matches.length > 0 ? { status: "busy", matches } : { status: "idle", matches: [] };
+    return { status: "complete", records: parseLsofFileRecords(result.stdout) };
   } catch (error) {
     const commandError = error as {
       code?: string | number;
@@ -165,14 +223,51 @@ async function inspectWithLsof(
       (commandError.stdout ?? "") === "" &&
       (commandError.stderr ?? "") === ""
     ) {
-      return { status: "idle", matches: [] };
+      return { status: "complete", records: [] };
     }
     return {
       status: "unknown",
-      matches: [],
       reason: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+function ownershipFromLsofInspection(
+  target: string,
+  inspection: LsofInspection,
+): ProcessOwnershipResult {
+  if (inspection.status === "unknown") {
+    return { status: "unknown", matches: [], reason: inspection.reason };
+  }
+  const matches: ProcessPathMatch[] = [];
+  for (const record of inspection.records) {
+    matches.push({
+      pid: record.pid,
+      source: record.descriptor === "cwd" ? "cwd" : "fd",
+      path: record.path ?? target,
+    });
+  }
+  return matches.length > 0 ? { status: "busy", matches } : { status: "idle", matches: [] };
+}
+
+export function createProcessOwnershipProbe(
+  options: ProcessOwnershipOptions = {},
+): (target: string) => Promise<ProcessOwnershipResult> {
+  const platform = options.platform ?? process.platform;
+  if (platform !== "darwin") {
+    return (target) => findProcessesUsingPath(target, options);
+  }
+  let unavailable: Extract<ProcessOwnershipResult, { status: "unknown" }> | undefined;
+  return async (target) => {
+    if (unavailable !== undefined) {
+      return unavailable;
+    }
+    const result = await findProcessesUsingPath(target, options);
+    if (result.status === "unknown") {
+      unavailable = result;
+    }
+    return result;
+  };
 }
 
 export async function findProcessesUsingPath(

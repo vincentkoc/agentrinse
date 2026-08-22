@@ -14,7 +14,9 @@ import {
   type DatabaseIdentity,
   type DatabaseSidecarIdentity,
 } from "../contracts/action.js";
+import { runBoundedCommand } from "../core/bounded-command.js";
 import { sha256 } from "../core/digest.js";
+import { parseLsofFileRecords } from "../core/process-ownership.js";
 
 const execFileAsync = promisify(execFile);
 const SQLITE_SEPARATOR = "\u001f";
@@ -433,12 +435,10 @@ export async function verifyCodexDatabaseIntegrity(
 
 async function defaultLsofRunner(paths: string[]): Promise<CommandResult> {
   try {
-    const result = await execFileAsync("lsof", ["-nP", "-Fpcfn", "--", ...paths], {
-      encoding: "utf8",
-      maxBuffer: 4 * 1024 * 1024,
-      timeout: 10_000,
+    return await runBoundedCommand("lsof", ["-nP", "-F0pcfn", "--", ...paths], {
+      maxOutputBytes: 4 * 1024 * 1024,
+      timeoutMs: 10_000,
     });
-    return { stdout: result.stdout, stderr: result.stderr };
   } catch (error) {
     const value = commandError(error);
     if (Number(value.code) === 1 && value.stderr === "") {
@@ -490,14 +490,9 @@ export async function inspectDatabaseOpenHandles(
         reason: `lsof reported an incomplete scan: ${result.stderr.trim()}`,
       };
     }
-    const pids = [
-      ...new Set(
-        result.stdout
-          .split("\n")
-          .filter((line) => /^p\d+$/u.test(line))
-          .map((line) => Number.parseInt(line.slice(1), 10)),
-      ),
-    ].sort((left, right) => left - right);
+    const pids = [...new Set(parseLsofFileRecords(result.stdout).map((record) => record.pid))].sort(
+      (left, right) => left - right,
+    );
     return pids.length === 0 ? { status: "idle", pids: [] } : { status: "busy", pids };
   } catch (error) {
     return {
