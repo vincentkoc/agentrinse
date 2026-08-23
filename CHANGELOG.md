@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-23
+
 ### Fixed
 
 - macOS process ownership now bounds target-selected `lsof` scans and stops
