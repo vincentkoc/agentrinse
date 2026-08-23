@@ -175,7 +175,7 @@ describe("Codex database inspection", () => {
     await writeFile(path, "synthetic");
     const handles = await inspectDatabaseOpenHandles(path, {
       async runLsof() {
-        return { stdout: `p42\nccodex\nn${path}\n`, stderr: "" };
+        return { stdout: `p42\0ccodex\0\nf9\0n${path}\0\n`, stderr: "" };
       },
     });
     const processes = await inspectCodexProcesses({
@@ -191,5 +191,34 @@ describe("Codex database inspection", () => {
 
     expect(handles).toEqual({ status: "busy", pids: [42] });
     expect(processes).toEqual({ status: "busy", pids: [42] });
+  });
+
+  it("counts every direct-selected lsof file set and fails closed on malformed output", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-handles-"));
+    const path = join(root, "state_5.sqlite");
+    await writeFile(path, "synthetic");
+
+    await expect(
+      inspectDatabaseOpenHandles(path, {
+        async runLsof() {
+          return {
+            stdout:
+              "p42\0ccodex\0\nf9\0\n" + "p43\0ccodex\0\nf10\0n/fixture/hardlink-alias.sqlite\0\n",
+            stderr: "",
+          };
+        },
+      }),
+    ).resolves.toEqual({ status: "busy", pids: [42, 43] });
+
+    await expect(
+      inspectDatabaseOpenHandles(path, {
+        async runLsof() {
+          return { stdout: `p42\0ccodex\0\nn${path}\0\n`, stderr: "" };
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: "unknown",
+      reason: "malformed lsof output: unowned path field",
+    });
   });
 });

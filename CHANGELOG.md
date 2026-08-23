@@ -6,6 +6,17 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- macOS process ownership now bounds target-selected `lsof` scans and stops
+  retrying after the first incomplete scan in an audit pass.
+
+### Safety
+
+- structured `lsof` output is NUL-delimited, size-capped, and rejected when
+  malformed; deadline and output-limit failures kill only the exact child and
+  settle without waiting for child exit.
+
 ## [0.8.0] - 2026-08-21
 
 ### Added

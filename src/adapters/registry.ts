@@ -1,6 +1,10 @@
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditAdapter } from "../contracts/adapter.js";
 import { sha256 } from "../core/digest.js";
+import {
+  createProcessOwnershipProbe,
+  type ProcessOwnershipResult,
+} from "../core/process-ownership.js";
 import { ReachabilityIndex, type ReachabilityRoot } from "../core/reachability.js";
 import { ArtifactAuditAdapter } from "./artifacts/adapter.js";
 import { DockerAuditAdapter } from "./docker/adapter.js";
@@ -22,6 +26,7 @@ export type AuditAdapterRegistryOptions = {
   environment?: NodeJS.ProcessEnv;
   reachability?: ReachabilityIndex;
   allowOfflineVacuum?: boolean;
+  processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
 };
 
 function validateProviderSelection(providers: readonly ProviderAdapterId[]): ProviderAdapterId[] {
@@ -49,6 +54,9 @@ export function createAuditAdapters(
   options: AuditAdapterRegistryOptions = {},
 ): AuditAdapter[] {
   const reachability = options.reachability ?? new ReachabilityIndex();
+  // One failed ownership scan protects the rest of this audit without retrying lsof.
+  // Revalidation and apply construct fresh probes from current process state.
+  const processProbe = options.processProbe ?? createProcessOwnershipProbe({ platform });
   const providerSelection =
     options.providers === undefined ? undefined : validateProviderSelection(options.providers);
   const exclusiveProviders = providerSelection !== undefined;
@@ -105,7 +113,7 @@ export function createAuditAdapters(
           repository.root,
           undefined,
           undefined,
-          undefined,
+          processProbe,
           reachability,
           {
             ...config.audit,
@@ -128,7 +136,7 @@ export function createAuditAdapters(
           ...config.artifacts,
           ...config.audit,
         },
-        undefined,
+        processProbe,
         undefined,
         reachability,
       ),
