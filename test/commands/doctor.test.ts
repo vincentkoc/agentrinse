@@ -436,7 +436,14 @@ describe("doctor command", () => {
       expect.objectContaining({
         id: "schema:plans",
         status: "pass",
-        summary: "2 persisted record(s) are compatible",
+        summary: "1 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "pass",
+        summary: "1 persisted record(s) are compatible",
       }),
     );
   });
@@ -454,6 +461,13 @@ describe("doctor command", () => {
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({
         id: "schema:plans",
+        status: "pass",
+        summary: "1 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
         status: "error",
         detail: `${plan.planId}.config.json`,
       }),
@@ -471,6 +485,13 @@ describe("doctor command", () => {
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({
         id: "schema:plans",
+        status: "pass",
+        summary: "0 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
         status: "error",
         detail: "plan-orphan.config.json",
       }),
@@ -493,6 +514,13 @@ describe("doctor command", () => {
         detail: "plan-wrong-name.json",
       }),
     );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "pass",
+        summary: "0 persisted record(s) are compatible",
+      }),
+    );
   });
 
   it("rejects a config sidecar whose digest does not match its plan without mutation", async () => {
@@ -512,6 +540,13 @@ describe("doctor command", () => {
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({
         id: "schema:plans",
+        status: "pass",
+        summary: "1 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
         status: "error",
         detail: `${plan.planId}.config.json`,
       }),
@@ -531,6 +566,13 @@ describe("doctor command", () => {
         id: "schema:plans",
         status: "error",
         detail: "broken.json",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "pass",
+        summary: "0 persisted record(s) are compatible",
       }),
     );
   });

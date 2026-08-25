@@ -599,83 +599,91 @@ async function schemaDirectoryCheck<T>(
       failures.push(name);
     }
   }
+  return schemaCompatibilityCheck(id, names, failures);
+}
+
+function schemaCompatibilityCheck(
+  id: string,
+  names: readonly string[],
+  failures: readonly string[],
+): DoctorCheck {
   return failures.length === 0
     ? { id, status: "pass", summary: `${names.length} persisted record(s) are compatible` }
     : {
         id,
         status: "error",
         summary: `${failures.length} persisted record(s) are incompatible`,
-        detail: failures.join(", "),
+        detail: [...failures].sort().join(", "),
         remediation: "Inspect the records before moving or removing any AgentRinse state.",
       };
 }
 
-async function planDirectoryCheck(directory: string): Promise<DoctorCheck> {
+async function planDirectoryChecks(directory: string): Promise<DoctorCheck[]> {
   let names: string[];
   try {
     names = (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
   } catch (error) {
     if (errorCode(error) === "ENOENT") {
-      return { id: "schema:plans", status: "pass", summary: "no persisted records found" };
+      return [
+        { id: "schema:plans", status: "pass", summary: "no persisted records found" },
+        { id: "schema:plan-configs", status: "pass", summary: "no persisted records found" },
+      ];
     }
-    return {
-      id: "schema:plans",
+    return ["schema:plans", "schema:plan-configs"].map((id) => ({
+      id,
       status: "error",
       summary: "persisted records could not be listed",
       detail: errorMessage(error),
-    };
+    }));
   }
 
   const configSuffix = ".config.json";
-  const planNames = new Set(names.filter((name) => !name.endsWith(configSuffix)));
+  const planNames: string[] = [];
+  const configNames: string[] = [];
+  for (const name of names) {
+    (name.endsWith(configSuffix) ? configNames : planNames).push(name);
+  }
+  const planNameSet = new Set(planNames);
   const plans = new Map<string, CleanupPlan>();
-  const failures = new Set<string>();
+  const planFailures: string[] = [];
 
   for (const name of planNames) {
     try {
       const plan = cleanupPlanSchema.parse(await readJsonFile(join(directory, name)));
       if (name !== `${plan.planId}.json`) {
-        failures.add(name);
+        planFailures.push(name);
         continue;
       }
       plans.set(plan.planId, plan);
     } catch {
-      failures.add(name);
+      planFailures.push(name);
     }
   }
 
-  for (const name of names.filter((candidate) => candidate.endsWith(configSuffix))) {
+  const configFailures: string[] = [];
+  for (const name of configNames) {
     const planId = name.slice(0, -configSuffix.length);
     try {
       const config = agentRinseConfigSchema.parse(await readJsonFile(join(directory, name)));
       const plan = plans.get(planId);
       if (
         planId.length === 0 ||
-        !planNames.has(`${planId}.json`) ||
+        !planNameSet.has(`${planId}.json`) ||
         plan === undefined ||
         plan.planId !== planId ||
         sha256Json(config) !== plan.configDigest
       ) {
-        failures.add(name);
+        configFailures.push(name);
       }
     } catch {
-      failures.add(name);
+      configFailures.push(name);
     }
   }
 
-  return failures.size === 0
-    ? {
-        id: "schema:plans",
-        status: "pass",
-        summary: `${names.length} persisted record(s) are compatible`,
-      }
-    : {
-        id: "schema:plans",
-        status: "error",
-        summary: `${failures.size} persisted record(s) are incompatible`,
-        detail: [...failures].sort().join(", "),
-        remediation: "Inspect the records before moving or removing any AgentRinse state.",
-      };
+  return [
+    schemaCompatibilityCheck("schema:plans", planNames, planFailures),
+    schemaCompatibilityCheck("schema:plan-configs", configNames, configFailures),
+  ];
 }
 
 async function lockCheck(
@@ -751,7 +759,7 @@ export async function executeDoctorCommand(
     ...(await artifactChecks(loaded.config)),
     await lockCheck(layout.locks, dependencies.lock),
     await schemaDirectoryCheck("schema:audits", layout.audits, auditReportSchema),
-    await planDirectoryCheck(layout.plans),
+    ...(await planDirectoryChecks(layout.plans)),
     await schemaDirectoryCheck("schema:runs", layout.runs, cleanupRunSchema),
     await schemaDirectoryCheck("schema:quarantine", layout.quarantine, quarantineEntrySchema),
     await schemaDirectoryCheck(
