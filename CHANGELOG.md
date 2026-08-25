@@ -6,6 +6,11 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `doctor` now validates cleanup-plan config sidecars against their matching
+  plan instead of misclassifying valid sidecars as malformed plans.
+
 ## [0.8.1] - 2026-08-23
 
 ### Fixed

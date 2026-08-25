@@ -8,14 +8,15 @@ import type { ZodType } from "zod";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import { DEFAULT_CONFIG } from "../config/defaults.js";
 import { loadConfigForHome } from "../config/load.js";
-import type { AgentRinseConfig } from "../config/schema.js";
-import { cleanupPlanSchema } from "../contracts/plan.js";
+import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
+import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import { auditReportSchema } from "../contracts/report.js";
 import { cleanupRunSchema } from "../contracts/run.js";
 import { quarantineEntrySchema } from "../contracts/quarantine.js";
 import { databaseBackupEntrySchema } from "../contracts/database-backup.js";
 import { providerFileQuarantineEntrySchema } from "../contracts/provider-file-quarantine.js";
 import { doctorReportSchema, type DoctorCheck, type DoctorReport } from "../contracts/doctor.js";
+import { sha256Json } from "../core/digest.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 import { inspectApplyLock, type LockInspectionDependencies } from "../state/lock.js";
@@ -598,15 +599,91 @@ async function schemaDirectoryCheck<T>(
       failures.push(name);
     }
   }
+  return schemaCompatibilityCheck(id, names, failures);
+}
+
+function schemaCompatibilityCheck(
+  id: string,
+  names: readonly string[],
+  failures: readonly string[],
+): DoctorCheck {
   return failures.length === 0
     ? { id, status: "pass", summary: `${names.length} persisted record(s) are compatible` }
     : {
         id,
         status: "error",
         summary: `${failures.length} persisted record(s) are incompatible`,
-        detail: failures.join(", "),
+        detail: [...failures].sort().join(", "),
         remediation: "Inspect the records before moving or removing any AgentRinse state.",
       };
+}
+
+async function planDirectoryChecks(directory: string): Promise<DoctorCheck[]> {
+  let names: string[];
+  try {
+    names = (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      return [
+        { id: "schema:plans", status: "pass", summary: "no persisted records found" },
+        { id: "schema:plan-configs", status: "pass", summary: "no persisted records found" },
+      ];
+    }
+    return ["schema:plans", "schema:plan-configs"].map((id) => ({
+      id,
+      status: "error",
+      summary: "persisted records could not be listed",
+      detail: errorMessage(error),
+    }));
+  }
+
+  const configSuffix = ".config.json";
+  const planNames: string[] = [];
+  const configNames: string[] = [];
+  for (const name of names) {
+    (name.endsWith(configSuffix) ? configNames : planNames).push(name);
+  }
+  const planNameSet = new Set(planNames);
+  const plans = new Map<string, CleanupPlan>();
+  const planFailures: string[] = [];
+
+  for (const name of planNames) {
+    try {
+      const plan = cleanupPlanSchema.parse(await readJsonFile(join(directory, name)));
+      if (name !== `${plan.planId}.json`) {
+        planFailures.push(name);
+        continue;
+      }
+      plans.set(plan.planId, plan);
+    } catch {
+      planFailures.push(name);
+    }
+  }
+
+  const configFailures: string[] = [];
+  for (const name of configNames) {
+    const planId = name.slice(0, -configSuffix.length);
+    try {
+      const config = agentRinseConfigSchema.parse(await readJsonFile(join(directory, name)));
+      const plan = plans.get(planId);
+      if (
+        planId.length === 0 ||
+        !planNameSet.has(`${planId}.json`) ||
+        plan === undefined ||
+        plan.planId !== planId ||
+        sha256Json(config) !== plan.configDigest
+      ) {
+        configFailures.push(name);
+      }
+    } catch {
+      configFailures.push(name);
+    }
+  }
+
+  return [
+    schemaCompatibilityCheck("schema:plans", planNames, planFailures),
+    schemaCompatibilityCheck("schema:plan-configs", configNames, configFailures),
+  ];
 }
 
 async function lockCheck(
@@ -682,7 +759,7 @@ export async function executeDoctorCommand(
     ...(await artifactChecks(loaded.config)),
     await lockCheck(layout.locks, dependencies.lock),
     await schemaDirectoryCheck("schema:audits", layout.audits, auditReportSchema),
-    await schemaDirectoryCheck("schema:plans", layout.plans, cleanupPlanSchema),
+    ...(await planDirectoryChecks(layout.plans)),
     await schemaDirectoryCheck("schema:runs", layout.runs, cleanupRunSchema),
     await schemaDirectoryCheck("schema:quarantine", layout.quarantine, quarantineEntrySchema),
     await schemaDirectoryCheck(

@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { executeDoctorCommand, type CommandResult } from "../../src/commands/doctor.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
+import type { AgentRinseConfig } from "../../src/config/schema.js";
+import { sha256Json } from "../../src/core/digest.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 import { stateLayout } from "../../src/state/layout.js";
 import type { ApplyLockOwner } from "../../src/state/lock.js";
@@ -43,6 +45,48 @@ async function setup(): Promise<{
   const stateRoot = join(home, "state", "agentrinse");
   await writeJsonAtomic(configPath, DEFAULT_CONFIG);
   return { home, configPath, stateRoot };
+}
+
+function planForConfig(config: AgentRinseConfig, planId: string) {
+  return {
+    schemaVersion: 1 as const,
+    planId,
+    auditId: "audit-1",
+    home: "/synthetic-home",
+    createdAt: "2026-08-25T00:00:00.000Z",
+    expiresAt: "2026-08-25T00:30:00.000Z",
+    policyVersion: 1 as const,
+    riskCeiling: "safe" as const,
+    configDigest: sha256Json(config),
+    auditDigest: "audit-digest",
+    actions: [],
+    expectedReclaimBytes: 0,
+  };
+}
+
+async function plansSnapshot(directory: string): Promise<Record<string, string>> {
+  const snapshot: Record<string, string> = {};
+  for (const name of (await readdir(directory)).sort()) {
+    snapshot[name] = await readFile(join(directory, name), "utf8");
+  }
+  return snapshot;
+}
+
+async function doctorWithUnchangedPlans(value: Awaited<ReturnType<typeof setup>>) {
+  const directory = stateLayout(value.stateRoot).plans;
+  const before = await plansSnapshot(directory);
+  const result = await executeDoctorCommand({
+    home: value.home,
+    config: value.configPath,
+    stateDir: value.stateRoot,
+    json: false,
+    dependencies: {
+      platform: "darwin",
+      runCommand: healthyRunner,
+    },
+  });
+  expect(await plansSnapshot(directory)).toEqual(before);
+  return result;
 }
 
 describe("doctor command", () => {
@@ -375,6 +419,161 @@ describe("doctor command", () => {
 
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({ id: "git:porcelain", status: "pass" }),
+    );
+  });
+
+  it("accepts a valid cleanup plan and matching config sidecar without mutation", async () => {
+    const value = await setup();
+    const plans = stateLayout(value.stateRoot).plans;
+    const plan = planForConfig(DEFAULT_CONFIG, "plan-valid");
+    await mkdir(plans, { recursive: true });
+    await writeJsonAtomic(join(plans, `${plan.planId}.json`), plan);
+    await writeJsonAtomic(join(plans, `${plan.planId}.config.json`), DEFAULT_CONFIG);
+
+    const result = await doctorWithUnchangedPlans(value);
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plans",
+        status: "pass",
+        summary: "1 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "pass",
+        summary: "1 persisted record(s) are compatible",
+      }),
+    );
+  });
+
+  it("rejects a malformed config sidecar without mutation", async () => {
+    const value = await setup();
+    const plans = stateLayout(value.stateRoot).plans;
+    const plan = planForConfig(DEFAULT_CONFIG, "plan-malformed-config");
+    await mkdir(plans, { recursive: true });
+    await writeJsonAtomic(join(plans, `${plan.planId}.json`), plan);
+    await writeFile(join(plans, `${plan.planId}.config.json`), '{"schemaVersion":99}\n');
+
+    const result = await doctorWithUnchangedPlans(value);
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plans",
+        status: "pass",
+        summary: "1 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "error",
+        detail: `${plan.planId}.config.json`,
+      }),
+    );
+  });
+
+  it("rejects an orphaned config sidecar without mutation", async () => {
+    const value = await setup();
+    const plans = stateLayout(value.stateRoot).plans;
+    await mkdir(plans, { recursive: true });
+    await writeJsonAtomic(join(plans, "plan-orphan.config.json"), DEFAULT_CONFIG);
+
+    const result = await doctorWithUnchangedPlans(value);
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plans",
+        status: "pass",
+        summary: "0 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "error",
+        detail: "plan-orphan.config.json",
+      }),
+    );
+  });
+
+  it("rejects a cleanup plan whose filename does not match its planId without mutation", async () => {
+    const value = await setup();
+    const plans = stateLayout(value.stateRoot).plans;
+    const plan = planForConfig(DEFAULT_CONFIG, "plan-canonical-name");
+    await mkdir(plans, { recursive: true });
+    await writeJsonAtomic(join(plans, "plan-wrong-name.json"), plan);
+
+    const result = await doctorWithUnchangedPlans(value);
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plans",
+        status: "error",
+        detail: "plan-wrong-name.json",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "pass",
+        summary: "0 persisted record(s) are compatible",
+      }),
+    );
+  });
+
+  it("rejects a config sidecar whose digest does not match its plan without mutation", async () => {
+    const value = await setup();
+    const plans = stateLayout(value.stateRoot).plans;
+    const plan = planForConfig(DEFAULT_CONFIG, "plan-digest-mismatch");
+    const mismatchedConfig = {
+      ...structuredClone(DEFAULT_CONFIG),
+      plan: { ...DEFAULT_CONFIG.plan, ttlMinutes: DEFAULT_CONFIG.plan.ttlMinutes + 1 },
+    };
+    await mkdir(plans, { recursive: true });
+    await writeJsonAtomic(join(plans, `${plan.planId}.json`), plan);
+    await writeJsonAtomic(join(plans, `${plan.planId}.config.json`), mismatchedConfig);
+
+    const result = await doctorWithUnchangedPlans(value);
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plans",
+        status: "pass",
+        summary: "1 persisted record(s) are compatible",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "error",
+        detail: `${plan.planId}.config.json`,
+      }),
+    );
+  });
+
+  it("continues to reject malformed cleanup plans without mutation", async () => {
+    const value = await setup();
+    const plans = stateLayout(value.stateRoot).plans;
+    await mkdir(plans, { recursive: true });
+    await writeFile(join(plans, "broken.json"), '{"schemaVersion":99}\n');
+
+    const result = await doctorWithUnchangedPlans(value);
+
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plans",
+        status: "error",
+        detail: "broken.json",
+      }),
+    );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "pass",
+        summary: "0 persisted record(s) are compatible",
+      }),
     );
   });
 });
