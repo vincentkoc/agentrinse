@@ -8,14 +8,15 @@ import type { ZodType } from "zod";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import { DEFAULT_CONFIG } from "../config/defaults.js";
 import { loadConfigForHome } from "../config/load.js";
-import type { AgentRinseConfig } from "../config/schema.js";
-import { cleanupPlanSchema } from "../contracts/plan.js";
+import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
+import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import { auditReportSchema } from "../contracts/report.js";
 import { cleanupRunSchema } from "../contracts/run.js";
 import { quarantineEntrySchema } from "../contracts/quarantine.js";
 import { databaseBackupEntrySchema } from "../contracts/database-backup.js";
 import { providerFileQuarantineEntrySchema } from "../contracts/provider-file-quarantine.js";
 import { doctorReportSchema, type DoctorCheck, type DoctorReport } from "../contracts/doctor.js";
+import { sha256Json } from "../core/digest.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 import { inspectApplyLock, type LockInspectionDependencies } from "../state/lock.js";
@@ -609,6 +610,74 @@ async function schemaDirectoryCheck<T>(
       };
 }
 
+async function planDirectoryCheck(directory: string): Promise<DoctorCheck> {
+  let names: string[];
+  try {
+    names = (await readdir(directory)).filter((name) => name.endsWith(".json")).sort();
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") {
+      return { id: "schema:plans", status: "pass", summary: "no persisted records found" };
+    }
+    return {
+      id: "schema:plans",
+      status: "error",
+      summary: "persisted records could not be listed",
+      detail: errorMessage(error),
+    };
+  }
+
+  const configSuffix = ".config.json";
+  const planNames = new Set(names.filter((name) => !name.endsWith(configSuffix)));
+  const plans = new Map<string, CleanupPlan>();
+  const failures = new Set<string>();
+
+  for (const name of planNames) {
+    try {
+      const plan = cleanupPlanSchema.parse(await readJsonFile(join(directory, name)));
+      if (name !== `${plan.planId}.json`) {
+        failures.add(name);
+        continue;
+      }
+      plans.set(plan.planId, plan);
+    } catch {
+      failures.add(name);
+    }
+  }
+
+  for (const name of names.filter((candidate) => candidate.endsWith(configSuffix))) {
+    const planId = name.slice(0, -configSuffix.length);
+    try {
+      const config = agentRinseConfigSchema.parse(await readJsonFile(join(directory, name)));
+      const plan = plans.get(planId);
+      if (
+        planId.length === 0 ||
+        !planNames.has(`${planId}.json`) ||
+        plan === undefined ||
+        plan.planId !== planId ||
+        sha256Json(config) !== plan.configDigest
+      ) {
+        failures.add(name);
+      }
+    } catch {
+      failures.add(name);
+    }
+  }
+
+  return failures.size === 0
+    ? {
+        id: "schema:plans",
+        status: "pass",
+        summary: `${names.length} persisted record(s) are compatible`,
+      }
+    : {
+        id: "schema:plans",
+        status: "error",
+        summary: `${failures.size} persisted record(s) are incompatible`,
+        detail: [...failures].sort().join(", "),
+        remediation: "Inspect the records before moving or removing any AgentRinse state.",
+      };
+}
+
 async function lockCheck(
   locksDirectory: string,
   dependencies?: LockInspectionDependencies,
@@ -682,7 +751,7 @@ export async function executeDoctorCommand(
     ...(await artifactChecks(loaded.config)),
     await lockCheck(layout.locks, dependencies.lock),
     await schemaDirectoryCheck("schema:audits", layout.audits, auditReportSchema),
-    await schemaDirectoryCheck("schema:plans", layout.plans, cleanupPlanSchema),
+    await planDirectoryCheck(layout.plans),
     await schemaDirectoryCheck("schema:runs", layout.runs, cleanupRunSchema),
     await schemaDirectoryCheck("schema:quarantine", layout.quarantine, quarantineEntrySchema),
     await schemaDirectoryCheck(
