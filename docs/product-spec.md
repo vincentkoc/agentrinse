@@ -2,11 +2,11 @@
 
 Status: active implementation
 
-Target version: 0.8.1
+Target version: 0.8.2
 
 Created: 2026-07-23
 
-Updated: 2026-08-23
+Updated: 2026-08-25
 
 Owner: Vincent Koc
 

@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-08-25
+
 ### Fixed
 
 - `doctor` now validates cleanup-plan config sidecars against their matching
