@@ -6,6 +6,23 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- `audit --quick --providers <ids>` runs stateless selected-provider inventory
+  without recursive byte measurement or action-oriented maintenance collection
+  and reports per-phase timing in NDJSON.
+
+### Safety
+
+- directory measurement now bounds enumeration and pending paths before the
+  entry budget is exhausted, checks cancellation inside iteration, and closes
+  interrupted iterators.
+- Claude debug-log discovery now enforces its entry limit during cancellable
+  iteration instead of after full directory enumeration.
+- quick inventory applies per-phase deadlines, preserves incomplete resources
+  as protected unknown findings, strips candidate actions, and rejects
+  persistence and offline-vacuum options.
+
 ## [0.8.2] - 2026-08-25
 
 ### Fixed

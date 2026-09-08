@@ -209,6 +209,7 @@ rollback set is actually deleted.
 | ----------------------------------------- | --------------------------------------------------------- | --------------------- |
 | `agentrinse audit`                        | inventory a home and explain protection evidence          | none                  |
 | `agentrinse audit --no-state --providers` | stream selected provider evidence without persisted state | none                  |
+| `agentrinse audit --quick --providers`    | bounded selected-provider inventory without size scans    | none                  |
 | `agentrinse audit --allow-offline-vacuum` | propose supported offline Codex DB actions                | none                  |
 | `agentrinse plan`                         | create a bounded plan from a saved audit                  | persisted plan only   |
 | `agentrinse clean --profile closeout`     | audit and plan the current repository                     | none                  |
@@ -358,6 +359,20 @@ roots when they are absolute, and is valid only with `--no-state`. Git, Docker,
 runtime, and artifact adapters are not instantiated for a provider-scoped
 audit. The transient report omits candidate actions, so redirecting it into a
 later plan cannot authorize cleanup.
+
+for routine inventory, `--quick` implies `--no-state`, requires an exact
+provider selection and JSON or NDJSON, disables recursive byte measurement,
+skips action-oriented provider maintenance collection, and applies a 10-second
+deadline to each probe, collection, and classification phase:
+
+```bash
+agentrinse audit --quick --providers codex,claude --ndjson
+agentrinse audit --quick --providers cursor --phase-timeout 30s --json
+```
+
+deadline-limited output is degraded and partial. unclassified resources remain
+`unknown` with no candidate actions or reclaim estimate. quick output cannot
+enable apply, and it rejects offline-vacuum proposals and persistence paths.
 
 create a non-executable report for issue filing:
 

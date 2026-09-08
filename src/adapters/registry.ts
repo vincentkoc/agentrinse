@@ -18,6 +18,7 @@ const PROVIDER_ID_SET = new Set<string>(PROVIDER_IDS);
 export type AuditAdapterRegistryOptions = {
   providers?: readonly ProviderAdapterId[];
   providerInventory?: boolean;
+  providerQuickInventory?: boolean;
   roots?: ReachabilityRoot[];
   gitRepositories?: readonly {
     root: string | undefined;
@@ -96,6 +97,7 @@ export function createAuditAdapters(
         maxEntries: config.audit.maxEntries,
         reachability,
         inventoryResources: options.providerInventory ?? true,
+        quickInventory: options.providerQuickInventory ?? false,
         allowOfflineVacuum: options.allowOfflineVacuum ?? false,
         environment: options.environment ?? process.env,
       }),

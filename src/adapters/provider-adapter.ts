@@ -63,6 +63,7 @@ export type ProviderAdapterOptions = {
   maxEntries: number;
   reachability?: ReachabilityIndex;
   inventoryResources?: boolean;
+  quickInventory?: boolean;
   allowOfflineVacuum?: boolean;
   databaseDependencies?: CodexDatabaseDependencies;
   inspectDatabase?: (
@@ -203,6 +204,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
       if (
         this.spec.id === "zed" &&
         probe.status === "absent" &&
+        this.options.quickInventory !== true &&
         this.options.inventoryResources !== false
       ) {
         return collectZedRotatedLog(context, {
@@ -233,14 +235,14 @@ export class ProviderAuditAdapter implements AuditAdapter {
       return { resources: [], diagnostics };
     }
     const claudeRetention =
-      this.spec.id === "claude"
+      this.options.quickInventory !== true && this.spec.id === "claude"
         ? await inspectClaudeNativeRetention(probe.root, this.options.platform ?? process.platform)
         : undefined;
     if (claudeRetention !== undefined) {
       diagnostics.push(...claudeRetention.diagnostics);
     }
     const grokOwnerContract =
-      this.spec.id === "grok"
+      this.options.quickInventory !== true && this.spec.id === "grok"
         ? await inspectGrokOwnerContract(
             probe.root,
             this.options.environment ?? process.env,
@@ -264,15 +266,17 @@ export class ProviderAuditAdapter implements AuditAdapter {
       const path =
         candidate.relativePath === "." ? probe.root : join(probe.root, candidate.relativePath);
       const copilotNativeMaintenance =
-        this.spec.id === "copilot"
+        this.options.quickInventory !== true && this.spec.id === "copilot"
           ? copilotNativeMaintenanceFor(candidate.relativePath)
           : undefined;
       const opencodeNativeMaintenance =
-        this.spec.id === "opencode"
+        this.options.quickInventory !== true && this.spec.id === "opencode"
           ? opencodeNativeMaintenanceFor(candidate.relativePath)
           : undefined;
       const cursorNativeMaintenance =
-        this.spec.id === "cursor" ? cursorNativeMaintenanceFor(candidate.relativePath) : undefined;
+        this.options.quickInventory !== true && this.spec.id === "cursor"
+          ? cursorNativeMaintenanceFor(candidate.relativePath)
+          : undefined;
       const canonicalKey = `${this.id}:${candidate.kind}:${resolve(path)}`;
       const resourceId = `${this.id}:${candidate.kind}:${sha256(canonicalKey)}`;
       if (cursorNativeMaintenance !== undefined) {
@@ -433,7 +437,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
       }
     }
 
-    if (this.spec.id === "claude") {
+    if (this.options.quickInventory !== true && this.spec.id === "claude") {
       const debugLogs = await collectClaudeDebugLogs(context, probe.root, this.options.maxEntries);
       const changelogCache = await collectClaudeChangelogCache(context, probe.root);
       resources.push(...debugLogs.resources);
@@ -441,7 +445,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
       diagnostics.push(...debugLogs.diagnostics);
       diagnostics.push(...changelogCache.diagnostics);
     }
-    if (this.spec.id === "zed") {
+    if (this.options.quickInventory !== true && this.spec.id === "zed") {
       const rotatedLog = await collectZedRotatedLog(context, {
         ...(this.options.root === undefined ? {} : { root: this.options.root }),
         ...(this.options.platform === undefined ? {} : { platform: this.options.platform }),

@@ -7,6 +7,7 @@ import { loadConfigForHome } from "../config/load.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditReport } from "../contracts/report.js";
 import { runAudit, type AuditProgressEvent } from "../core/audit.js";
+import { parseDurationMs } from "../core/duration.js";
 import { redactAuditReport, redactAuditValue } from "../core/redaction.js";
 import {
   createCommandEnvelope,
@@ -28,7 +29,10 @@ export type AuditCommandOptions = {
   stateDir?: string;
   noState?: boolean;
   providers?: string;
+  quick?: boolean;
+  phaseTimeout?: string;
   allowOfflineVacuum?: boolean;
+  signal?: AbortSignal;
   now?: () => Date;
   emit?: (output: string) => void;
 };
@@ -99,25 +103,37 @@ function withoutCandidateActions(report: AuditReport): AuditReport {
 export async function executeAuditCommand(
   options: AuditCommandOptions,
 ): Promise<AuditCommandResult> {
+  const quick = options.quick === true;
+  const noState = options.noState === true || quick;
   if (options.json === true && options.ndjson === true) {
     throw new Error("audit accepts only one of --json or --ndjson");
   }
   if (options.redact === true && options.json !== true && options.ndjson !== true) {
     throw new Error("audit --redact requires --json or --ndjson");
   }
-  if (options.noState === true && options.output !== undefined) {
+  if (noState && options.output !== undefined) {
     throw new Error("audit --no-state does not accept --output");
   }
-  if (options.noState === true && options.stateDir !== undefined) {
+  if (noState && options.stateDir !== undefined) {
     throw new Error("audit --no-state does not accept --state-dir");
   }
-  if (options.noState === true && options.json !== true && options.ndjson !== true) {
+  if (noState && options.json !== true && options.ndjson !== true) {
     throw new Error("audit --no-state requires --json or --ndjson");
   }
   const providers = parseAuditProviders(options.providers);
-  if (providers !== undefined && options.noState !== true) {
+  if (providers !== undefined && !noState) {
     throw new Error("audit --providers requires --no-state");
   }
+  if (quick && providers === undefined) {
+    throw new Error("audit --quick requires --providers");
+  }
+  if (quick && options.allowOfflineVacuum === true) {
+    throw new Error("audit --quick does not accept --allow-offline-vacuum");
+  }
+  if (!quick && options.phaseTimeout !== undefined) {
+    throw new Error("audit --phase-timeout requires --quick");
+  }
+  const phaseTimeoutMs = quick ? parseDurationMs(options.phaseTimeout ?? "10s") : undefined;
 
   const clock = options.now ?? (() => new Date());
   const commandId = randomUUID();
@@ -143,22 +159,49 @@ export async function executeAuditCommand(
 
   const home = resolve(options.home);
   const { config } = await loadConfigForHome(home, options.config);
+  const effectiveConfig = quick
+    ? {
+        ...config,
+        audit: {
+          ...config.audit,
+          measureBytes: false,
+        },
+      }
+    : config;
   if (providers !== undefined) {
-    assertAbsoluteSelectedProviderRoots(config, providers);
+    assertAbsoluteSelectedProviderRoots(effectiveConfig, providers);
   }
   const startedAt = clock().toISOString();
   if (options.ndjson === true) {
-    emitEvent("command.started", startedAt, options.redact === true ? { home: "$HOME" } : { home });
+    const data = {
+      home,
+      ...(quick
+        ? {
+            profile: "quick",
+            providers,
+            measureBytes: false,
+            phaseTimeoutMs,
+          }
+        : {}),
+    };
+    emitEvent(
+      "command.started",
+      startedAt,
+      options.redact === true ? redactAuditValue(data, home, salt) : data,
+    );
   }
   try {
     const discoveredReport = await runAudit({
       home,
-      config,
-      adapters: createAuditAdapters(config, process.platform, {
+      config: effectiveConfig,
+      adapters: createAuditAdapters(effectiveConfig, process.platform, {
         allowOfflineVacuum: options.allowOfflineVacuum ?? false,
+        providerQuickInventory: quick,
         ...(providers === undefined ? {} : { providers }),
       }),
       now: clock,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(phaseTimeoutMs === undefined ? {} : { phaseTimeoutMs }),
       ...(options.ndjson === true
         ? {
             onEvent: (event: AuditProgressEvent) => {
@@ -178,7 +221,7 @@ export async function executeAuditCommand(
     const report =
       providers === undefined ? discoveredReport : withoutCandidateActions(discoveredReport);
     let statePath: string | undefined;
-    if (options.noState !== true) {
+    if (!noState) {
       const layout = stateLayout(resolveStateRoot(home, options.stateDir));
       statePath = resolve(layout.audits, `${report.auditId}.json`);
       await writeJsonAtomic(statePath, report, {
