@@ -45,7 +45,7 @@ _agentrinse_completion() {
   fi
 
   case "\${command}" in
-    audit) COMPREPLY=( $(compgen -W "--help --home --config --json --ndjson --redact --output --state-dir --no-state --providers --allow-offline-vacuum" -- "\${current}") ) ;;
+    audit) COMPREPLY=( $(compgen -W "--help --home --config --json --ndjson --redact --output --state-dir --no-state --providers --quick --phase-timeout --allow-offline-vacuum" -- "\${current}") ) ;;
     completion) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.completion.join(" ")}" -- "\${current}") ) ;;
     config) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.config.join(" ")}" -- "\${current}") ) ;;
     lock) COMPREPLY=( $(compgen -W "${SUBCOMMANDS.lock.join(" ")}" -- "\${current}") ) ;;
@@ -72,7 +72,7 @@ ${COMMANDS.map((command) => `    '${command}:${command}'`).join("\n")}
   fi
 
   case "\${words[2]}" in
-    audit) _arguments '--no-state[do not persist audit state]' '--providers[comma-separated provider IDs]:providers:(${PROVIDER_IDS.join(" ")})' '*:argument:_files' ;;
+    audit) _arguments '--no-state[do not persist audit state]' '--providers[comma-separated provider IDs]:providers:(${PROVIDER_IDS.join(" ")})' '--quick[bounded provider inventory without size measurement]' '--phase-timeout[cooperative per-phase quick inventory cutoff]:duration:' '*:argument:_files' ;;
     completion) _values 'shell' ${SUBCOMMANDS.completion.join(" ")} ;;
     config) _values 'config command' ${SUBCOMMANDS.config.join(" ")} ;;
     lock) _values 'lock command' ${SUBCOMMANDS.lock.join(" ")} ;;
@@ -106,6 +106,12 @@ function fishCompletion(): string {
   );
   lines.push(
     `complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l providers -r -a '${PROVIDER_IDS.join(" ")}' -d 'Audit only selected providers'`,
+  );
+  lines.push(
+    "complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l quick -d 'Bounded provider inventory without size measurement'",
+  );
+  lines.push(
+    "complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l phase-timeout -r -d 'Cooperative per-phase quick inventory cutoff'",
   );
   return `${lines.join("\n")}\n`;
 }

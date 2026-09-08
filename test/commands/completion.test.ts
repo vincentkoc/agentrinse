@@ -18,6 +18,8 @@ describe("completion command", () => {
     expect(output).toContain("resource");
     expect(output).toContain(noState);
     expect(output).toContain(providers);
+    expect(output).toContain("quick");
+    expect(output).toContain("phase-timeout");
     expect(output).toContain("cursor");
     expect(output).toContain("copilot");
     expect(output).toContain("opencode");

@@ -42,6 +42,11 @@ export function buildProgram(): Command {
     .option("--ndjson", "stream versioned NDJSON events", false)
     .option("--redact", "redact paths and identifiers in machine output", false)
     .option("--providers <ids>", "audit only comma-separated provider IDs; requires --no-state")
+    .option("--quick", "run bounded provider inventory without size measurement", false)
+    .option(
+      "--phase-timeout <duration>",
+      "cooperative quick inventory cutoff for each provider phase",
+    )
     .option("--no-state", "do not persist audit state; requires JSON or NDJSON")
     .option("--output <path>", "write the JSON report atomically")
     .option("--state-dir <path>", "override the AgentRinse state directory")
@@ -58,19 +63,31 @@ export function buildProgram(): Command {
         ndjson: boolean;
         redact: boolean;
         providers?: string;
+        quick: boolean;
+        phaseTimeout?: string;
         state: boolean;
         output?: string;
         stateDir?: string;
         allowOfflineVacuum: boolean;
       }) => {
-        const result = await executeAuditCommand({
-          ...options,
-          home: options.home ?? homedir(),
-          noState: options.state === false,
-          ...(options.ndjson ? { emit: (output) => process.stdout.write(output) } : {}),
-        });
-        if (result.output !== "") {
-          process.stdout.write(result.output);
+        const controller = new AbortController();
+        const interrupt = () => {
+          controller.abort(new CommandInterruptedError("interrupted by SIGINT"));
+        };
+        process.on("SIGINT", interrupt);
+        try {
+          const result = await executeAuditCommand({
+            ...options,
+            home: options.home ?? homedir(),
+            noState: options.state === false,
+            signal: controller.signal,
+            ...(options.ndjson ? { emit: (output) => process.stdout.write(output) } : {}),
+          });
+          if (result.output !== "") {
+            process.stdout.write(result.output);
+          }
+        } finally {
+          process.removeListener("SIGINT", interrupt);
         }
       },
     );

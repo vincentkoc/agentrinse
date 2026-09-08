@@ -110,6 +110,29 @@ describe("stateless provider audit", () => {
         providers: "cursor",
       }),
     ).rejects.toThrow("--providers requires --no-state");
+    await expect(
+      executeAuditCommand({
+        home: missingHome,
+        quick: true,
+        json: true,
+      }),
+    ).rejects.toThrow("--quick requires --providers");
+    await expect(
+      executeAuditCommand({
+        home: missingHome,
+        json: true,
+        phaseTimeout: "1s",
+      }),
+    ).rejects.toThrow("--phase-timeout requires --quick");
+    await expect(
+      executeAuditCommand({
+        home: missingHome,
+        quick: true,
+        json: true,
+        providers: "codex",
+        allowOfflineVacuum: true,
+      }),
+    ).rejects.toThrow("--quick does not accept --allow-offline-vacuum");
     expect(emitted).toEqual([]);
   });
 
@@ -167,6 +190,89 @@ describe("stateless provider audit", () => {
     expect(Object.hasOwn(result, "statePath")).toBe(false);
     expect(events[0]?.event).toBe("command.started");
     expect(events.at(-1)?.event).toBe("command.completed");
+    await expectMissing(join(home, ".local", "state", "agentrinse"));
+  });
+
+  it("runs quick inventory without recursive measurement or candidate actions", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-quick-home-"));
+    const codexRoot = join(home, "selected-codex");
+    const claudeRoot = join(home, "selected-claude");
+    const sessions = join(codexRoot, "sessions");
+    const configPath = join(home, "config.json");
+    await mkdir(join(sessions, "nested"), { recursive: true });
+    await mkdir(join(claudeRoot, "debug"), { recursive: true });
+    await writeFile(join(sessions, "nested", "session.jsonl"), "synthetic session\n");
+    await writeFile(join(claudeRoot, "debug", "old-session.txt"), "synthetic old debug output\n");
+    await writeFile(
+      configPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        adapters: {
+          codex: { enabled: true, root: codexRoot },
+          claude: { enabled: true, root: claudeRoot },
+          cursor: { enabled: true, root: join(home, "excluded-cursor") },
+        },
+        audit: {
+          maxEntries: 1_000_000,
+          measureBytes: true,
+        },
+      })}\n`,
+    );
+
+    const result = await executeAuditCommand({
+      home,
+      config: configPath,
+      quick: true,
+      ndjson: true,
+      providers: "codex,claude",
+      phaseTimeout: "1s",
+    });
+    const events = result.output
+      .trim()
+      .split("\n")
+      .map((line) => commandEventSchema.parse(JSON.parse(line)));
+
+    expect(Object.hasOwn(result, "statePath")).toBe(false);
+    expect(result.report.probes.map((probe) => probe.adapter)).toEqual(["claude", "codex"]);
+    expect(new Set(result.report.findings.map((finding) => finding.resource.adapter))).toEqual(
+      new Set(["codex", "claude"]),
+    );
+    expect(result.report.findings.every((finding) => finding.measuredBytes === undefined)).toBe(
+      true,
+    );
+    expect(result.report.findings.every((finding) => finding.candidateActions.length === 0)).toBe(
+      true,
+    );
+    expect(result.report.findings.every((finding) => finding.facts.policyId === undefined)).toBe(
+      true,
+    );
+    expect(events[0]).toMatchObject({
+      event: "command.started",
+      data: {
+        profile: "quick",
+        providers: ["codex", "claude"],
+        measureBytes: false,
+        phaseTimeoutMs: 1000,
+      },
+    });
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          event: "phase.started",
+          data: expect.objectContaining({ adapter: "codex", phase: "probe" }),
+        }),
+        expect.objectContaining({
+          event: "phase.completed",
+          data: expect.objectContaining({
+            adapter: "codex",
+            phase: "collect",
+            status: "completed",
+            elapsedMs: expect.any(Number),
+          }),
+        }),
+      ]),
+    );
+    expect(result.output).not.toContain("excluded-cursor");
     await expectMissing(join(home, ".local", "state", "agentrinse"));
   });
 

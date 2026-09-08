@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, opendir, readlink } from "node:fs/promises";
 import { join, relative } from "node:path";
+import type { Stats } from "node:fs";
 
 export type Measurement = {
   bytes: number;
@@ -19,7 +20,43 @@ export type MeasureOptions = {
   excludeRootEntries?: string[];
 };
 
-export async function measurePath(root: string, options: MeasureOptions): Promise<Measurement> {
+type DirectoryEntry = {
+  name: string;
+};
+
+type DirectoryReader = {
+  close(): Promise<void>;
+  [Symbol.asyncIterator](): AsyncIterableIterator<DirectoryEntry>;
+};
+
+export type MeasureDependencies = {
+  inspect?: (path: string) => Promise<Stats>;
+  openDirectory?: (path: string) => Promise<DirectoryReader>;
+  readLink?: (path: string) => Promise<string>;
+};
+
+async function closeDirectory(directory: DirectoryReader): Promise<void> {
+  try {
+    await directory.close();
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ERR_DIR_CLOSED")) {
+      throw error;
+    }
+  }
+}
+
+export async function measurePath(
+  root: string,
+  options: MeasureOptions,
+  dependencies: MeasureDependencies = {},
+): Promise<Measurement> {
+  if (!Number.isInteger(options.maxEntries) || options.maxEntries < 1) {
+    throw new Error("measurePath maxEntries must be a positive integer");
+  }
+
+  const inspect = dependencies.inspect ?? lstat;
+  const openDirectory = dependencies.openDirectory ?? opendir;
+  const readLink = dependencies.readLink ?? readlink;
   const result: Measurement = {
     bytes: 0,
     entries: 0,
@@ -34,6 +71,7 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
   const pending = [root];
   const fingerprint = createHash("sha256");
   let rootDevice: number | undefined;
+  let excludedEntriesRead = 0;
 
   while (pending.length > 0) {
     options.signal?.throwIfAborted();
@@ -48,7 +86,7 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
       break;
     }
 
-    const stats = await lstat(path);
+    const stats = await inspect(path);
     rootDevice ??= stats.dev;
     result.entries += 1;
     result.newestMtimeMs = Math.max(result.newestMtimeMs, stats.mtimeMs);
@@ -67,7 +105,7 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
           : stats.isFile()
             ? "file"
             : "special",
-      ...(stats.isSymbolicLink() ? { link: await readlink(path) } : {}),
+      ...(stats.isSymbolicLink() ? { link: await readLink(path) } : {}),
     };
     fingerprint.update(`${JSON.stringify(identity)}\n`);
 
@@ -91,13 +129,26 @@ export async function measurePath(root: string, options: MeasureOptions): Promis
       continue;
     }
 
-    const directory = await opendir(path);
+    const directory = await openDirectory(path);
     const names: string[] = [];
-    for await (const entry of directory) {
-      if (path === root && options.excludeRootEntries?.includes(entry.name) === true) {
-        continue;
+    try {
+      for await (const entry of directory) {
+        options.signal?.throwIfAborted();
+        if (
+          result.entries + pending.length + names.length + excludedEntriesRead >=
+          options.maxEntries
+        ) {
+          result.truncated = true;
+          break;
+        }
+        if (path === root && options.excludeRootEntries?.includes(entry.name) === true) {
+          excludedEntriesRead += 1;
+          continue;
+        }
+        names.push(entry.name);
       }
-      names.push(entry.name);
+    } finally {
+      await closeDirectory(directory);
     }
     names.sort((left, right) => right.localeCompare(left));
     for (const name of names) {

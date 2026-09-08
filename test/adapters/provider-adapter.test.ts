@@ -9,6 +9,8 @@ import { CODEX_DATABASE_CONTRACTS } from "../../src/adapters/codex-database.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 import type { DatabaseIdentity } from "../../src/contracts/action.js";
+import type { Diagnostic } from "../../src/contracts/diagnostic.js";
+import type { ResourceSnapshot } from "../../src/contracts/resource.js";
 
 function databaseIdentity(path: string): DatabaseIdentity {
   const contract = CODEX_DATABASE_CONTRACTS["state_5.sqlite"];
@@ -67,11 +69,18 @@ describe("ProviderAuditAdapter", () => {
     });
 
     const probe = await adapter.probe(context);
-    const collection = await adapter.collect(context, probe);
+    const reportedResources: ResourceSnapshot[] = [];
+    const reportedDiagnostics: Diagnostic[] = [];
+    const collection = await adapter.collect(context, probe, {
+      reportResource: (resource) => reportedResources.push(resource),
+      reportDiagnostic: (diagnostic) => reportedDiagnostics.push(diagnostic),
+    });
     const finding = await adapter.classify(context, collection.resources[0]!);
 
     expect(probe.status).toBe("available");
     expect(collection.resources).toHaveLength(1);
+    expect(reportedResources).toEqual(collection.resources);
+    expect(reportedDiagnostics).toEqual(collection.diagnostics);
     expect(collection.resources[0]?.resource.displayName).toBe("Codex sessions");
     expect(collection.resources[0]?.measuredBytes).toBe(17);
     expect(finding.state).toBe("protected");
