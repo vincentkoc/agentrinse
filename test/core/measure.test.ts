@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +45,109 @@ describe("measurePath", () => {
 
     expect(result.entries).toBe(1);
     expect(result.truncated).toBe(true);
+  });
+
+  it("bounds lazy enumeration without materializing a large tree", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const template = join(root, "template");
+    await writeFile(template, "x");
+    const rootStats = await lstat(root);
+    const fileStats = await lstat(template);
+    let yielded = 0;
+    let closed = false;
+
+    const result = await measurePath(
+      root,
+      { maxEntries: 4 },
+      {
+        inspect: async (path) => (path === root ? rootStats : fileStats),
+        openDirectory: async () => ({
+          async close() {
+            closed = true;
+          },
+          async *[Symbol.asyncIterator]() {
+            for (let index = 0; index < 1_000_000; index += 1) {
+              yielded += 1;
+              yield { name: `entry-${String(index)}` };
+            }
+          },
+        }),
+      },
+    );
+
+    expect(result.entries).toBe(4);
+    expect(result.truncated).toBe(true);
+    expect(yielded).toBe(4);
+    expect(closed).toBe(true);
+  });
+
+  it("charges excluded names against the enumeration budget", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const rootStats = await lstat(root);
+    let yielded = 0;
+    let closed = false;
+
+    const result = await measurePath(
+      root,
+      {
+        maxEntries: 4,
+        excludeRootEntries: ["ignored"],
+      },
+      {
+        inspect: async () => rootStats,
+        openDirectory: async () => ({
+          async close() {
+            closed = true;
+          },
+          async *[Symbol.asyncIterator]() {
+            for (let index = 0; index < 1_000_000; index += 1) {
+              yielded += 1;
+              yield { name: "ignored" };
+            }
+          },
+        }),
+      },
+    );
+
+    expect(result.entries).toBe(1);
+    expect(result.truncated).toBe(true);
+    expect(yielded).toBe(4);
+    expect(closed).toBe(true);
+  });
+
+  it("closes directory iteration when cancellation arrives", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const rootStats = await lstat(root);
+    const controller = new AbortController();
+    let yielded = 0;
+    let closed = false;
+
+    await expect(
+      measurePath(
+        root,
+        { maxEntries: 100, signal: controller.signal },
+        {
+          inspect: async () => rootStats,
+          openDirectory: async () => ({
+            async close() {
+              closed = true;
+            },
+            async *[Symbol.asyncIterator]() {
+              for (let index = 0; index < 1_000_000; index += 1) {
+                yielded += 1;
+                if (yielded === 3) {
+                  controller.abort(new Error("synthetic cancellation"));
+                }
+                yield { name: `entry-${String(index)}` };
+              }
+            },
+          }),
+        },
+      ),
+    ).rejects.toThrow("synthetic cancellation");
+
+    expect(yielded).toBe(3);
+    expect(closed).toBe(true);
   });
 
   it("reports Unix sockets as unsupported special entries", async () => {

@@ -1,5 +1,5 @@
-import type { Dirent } from "node:fs";
-import { lstat, readdir } from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
+import { lstat, opendir } from "node:fs/promises";
 import { basename, join } from "node:path";
 
 import type { AuditContext, CollectionResult } from "../contracts/adapter.js";
@@ -18,21 +18,57 @@ function isMissing(error: unknown): boolean {
   );
 }
 
+type DebugDirectory = {
+  close(): Promise<void>;
+  [Symbol.asyncIterator](): AsyncIterableIterator<Dirent<string>>;
+};
+
+export type ClaudeDebugDependencies = {
+  inspect?: (path: string) => Promise<Stats>;
+  openDirectory?: (path: string) => Promise<DebugDirectory>;
+};
+
+async function closeDirectory(directory: DebugDirectory): Promise<void> {
+  try {
+    await directory.close();
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ERR_DIR_CLOSED")) {
+      throw error;
+    }
+  }
+}
+
 export async function collectClaudeDebugLogs(
   context: AuditContext,
   ownerRoot: string,
   maxEntries: number,
+  dependencies: ClaudeDebugDependencies = {},
 ): Promise<CollectionResult> {
   const debugRoot = join(ownerRoot, "debug");
   const diagnostics: CollectionResult["diagnostics"] = [];
-  let entries: Dirent<string>[];
+  const inspect = dependencies.inspect ?? lstat;
+  const openDirectory = dependencies.openDirectory ?? opendir;
+  const entries: Dirent<string>[] = [];
+  let truncated = false;
 
   try {
-    const rootStats = await lstat(debugRoot);
+    const rootStats = await inspect(debugRoot);
     if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
       return { resources: [], diagnostics };
     }
-    entries = await readdir(debugRoot, { withFileTypes: true });
+    const directory = await openDirectory(debugRoot);
+    try {
+      for await (const entry of directory) {
+        context.signal?.throwIfAborted();
+        if (entries.length >= maxEntries) {
+          truncated = true;
+          break;
+        }
+        entries.push(entry);
+      }
+    } finally {
+      await closeDirectory(directory);
+    }
   } catch (error) {
     if (isMissing(error)) {
       return { resources: [], diagnostics };
@@ -50,7 +86,7 @@ export async function collectClaudeDebugLogs(
     };
   }
 
-  if (entries.length > maxEntries) {
+  if (truncated) {
     return {
       resources: [],
       diagnostics: [
@@ -75,7 +111,7 @@ export async function collectClaudeDebugLogs(
     }
 
     try {
-      const stats = await lstat(path);
+      const stats = await inspect(path);
       if (!stats.isFile() || stats.isSymbolicLink() || stats.mtimeMs > cutoffMs) {
         continue;
       }

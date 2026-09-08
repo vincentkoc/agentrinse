@@ -1,9 +1,11 @@
-import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import type { Dirent } from "node:fs";
+import { lstat, mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { collectClaudeDebugLogs } from "../../src/adapters/claude-debug.js";
 import { ProviderAuditAdapter } from "../../src/adapters/provider-adapter.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
@@ -100,6 +102,38 @@ describe("Claude debug cleanup", () => {
     expect(collection.diagnostics).toContainEqual(
       expect.objectContaining({ code: "CLAUDE_DEBUG_ENUMERATION_TRUNCATED" }),
     );
+  });
+
+  it("bounds lazy debug enumeration before collecting candidate files", async () => {
+    const context = await fixtureContext();
+    const root = join(context.home, ".claude");
+    const debug = join(root, "debug");
+    await mkdir(debug, { recursive: true });
+    const debugStats = await lstat(debug);
+    let yielded = 0;
+    let closed = false;
+
+    const collection = await collectClaudeDebugLogs(context, root, 3, {
+      inspect: async () => debugStats,
+      openDirectory: async () => ({
+        async close() {
+          closed = true;
+        },
+        async *[Symbol.asyncIterator]() {
+          for (let index = 0; index < 1_000_000; index += 1) {
+            yielded += 1;
+            yield { name: `debug-${String(index)}.txt` } as Dirent<string>;
+          }
+        },
+      }),
+    });
+
+    expect(collection.resources).toEqual([]);
+    expect(collection.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "CLAUDE_DEBUG_ENUMERATION_TRUNCATED" }),
+    );
+    expect(yielded).toBe(4);
+    expect(closed).toBe(true);
   });
 
   it("does not follow a symlinked debug directory", async () => {
