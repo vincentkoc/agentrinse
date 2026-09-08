@@ -370,9 +370,12 @@ agentrinse audit --quick --providers codex,claude --ndjson
 agentrinse audit --quick --providers cursor --phase-timeout 30s --json
 ```
 
-deadline-limited output is degraded and partial. unclassified resources remain
-`unknown` with no candidate actions or reclaim estimate. quick output cannot
-enable apply, and it rejects offline-vacuum proposals and persistence paths.
+deadline-limited output is degraded and partial. resources reported before a
+collection deadline remain `unknown` with no candidate actions or reclaim
+estimate. deadlines bound report latency and request cooperative cancellation;
+signal-ignoring platform calls may settle later, and their late results are
+ignored. quick output cannot enable apply, and it rejects offline-vacuum
+proposals and persistence paths.
 
 create a non-executable report for issue filing:
 

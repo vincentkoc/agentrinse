@@ -19,9 +19,10 @@ The project follows semantic versioning after its first supported release.
   interrupted iterators.
 - Claude debug-log discovery now enforces its entry limit during cancellable
   iteration instead of after full directory enumeration.
-- quick inventory applies per-phase deadlines, preserves incomplete resources
-  as protected unknown findings, strips candidate actions, and rejects
-  persistence and offline-vacuum options.
+- quick inventory applies cooperative per-phase deadlines, preserves resources
+  reported before a collection cutoff as protected unknown findings, ignores
+  late results, strips candidate actions, and rejects persistence and
+  offline-vacuum options.
 
 ## [0.8.2] - 2026-08-25
 

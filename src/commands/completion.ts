@@ -72,7 +72,7 @@ ${COMMANDS.map((command) => `    '${command}:${command}'`).join("\n")}
   fi
 
   case "\${words[2]}" in
-    audit) _arguments '--no-state[do not persist audit state]' '--providers[comma-separated provider IDs]:providers:(${PROVIDER_IDS.join(" ")})' '--quick[bounded provider inventory without size measurement]' '--phase-timeout[per-phase quick inventory deadline]:duration:' '*:argument:_files' ;;
+    audit) _arguments '--no-state[do not persist audit state]' '--providers[comma-separated provider IDs]:providers:(${PROVIDER_IDS.join(" ")})' '--quick[bounded provider inventory without size measurement]' '--phase-timeout[cooperative per-phase quick inventory cutoff]:duration:' '*:argument:_files' ;;
     completion) _values 'shell' ${SUBCOMMANDS.completion.join(" ")} ;;
     config) _values 'config command' ${SUBCOMMANDS.config.join(" ")} ;;
     lock) _values 'lock command' ${SUBCOMMANDS.lock.join(" ")} ;;
@@ -111,7 +111,7 @@ function fishCompletion(): string {
     "complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l quick -d 'Bounded provider inventory without size measurement'",
   );
   lines.push(
-    "complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l phase-timeout -r -d 'Per-phase quick inventory deadline'",
+    "complete -c agentrinse -n '__fish_seen_subcommand_from audit' -l phase-timeout -r -d 'Cooperative per-phase quick inventory cutoff'",
   );
   return `${lines.join("\n")}\n`;
 }

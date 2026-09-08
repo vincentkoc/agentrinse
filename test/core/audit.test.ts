@@ -377,4 +377,113 @@ describe("runAudit", () => {
       }),
     ]);
   });
+
+  it("preserves reported resources and ignores late collection results after a deadline", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-deadline-"));
+    const events: string[] = [];
+    let releaseCollection: (() => void) | undefined;
+    let cancellationRequested = false;
+    let classified = false;
+    const partialResource = {
+      resource: {
+        id: "fixture:partial-resource",
+        adapter: "fixture",
+        kind: "agent-cache" as const,
+        canonicalKey: "fixture:partial-resource",
+        displayName: "Partial resource",
+        path: join(home, "partial-resource"),
+      },
+      observedAt: "2026-09-08T00:00:00.000Z",
+      exists: true,
+      facts: { reportOnly: true },
+    };
+    const lateResource = {
+      ...partialResource,
+      resource: {
+        ...partialResource.resource,
+        id: "fixture:late-resource",
+        canonicalKey: "fixture:late-resource",
+        displayName: "Late resource",
+        path: join(home, "late-resource"),
+      },
+    };
+    const partialDiagnostic = {
+      severity: "warning" as const,
+      code: "FIXTURE_PARTIAL_COLLECTION",
+      message: "one resource was reported before collection stalled",
+      adapter: "fixture",
+    };
+    const adapter: AuditAdapter = {
+      id: "fixture",
+      probe: async () => ({
+        adapter: "fixture",
+        status: "available",
+        detail: "fixture adapter is available",
+        diagnostics: [],
+      }),
+      collect: async (context, _probe, observer) => {
+        observer?.reportDiagnostic(partialDiagnostic);
+        observer?.reportResource(partialResource);
+        context.signal?.addEventListener(
+          "abort",
+          () => {
+            cancellationRequested = true;
+            observer?.reportResource(lateResource);
+          },
+          { once: true },
+        );
+        await new Promise<void>((resolve) => {
+          releaseCollection = resolve;
+        });
+        observer?.reportResource(lateResource);
+        return {
+          resources: [partialResource, lateResource],
+          diagnostics: [partialDiagnostic],
+        };
+      },
+      classify: async () => {
+        classified = true;
+        throw new Error("partial collection resources must not be classified");
+      },
+    };
+
+    const report = await runAudit({
+      home,
+      config: DEFAULT_CONFIG,
+      adapters: [adapter],
+      phaseTimeoutMs: 10,
+      onEvent: (event) => events.push(event.type),
+    });
+
+    expect(cancellationRequested).toBe(true);
+    expect(classified).toBe(false);
+    expect(report.findings).toEqual([
+      expect.objectContaining({
+        resource: expect.objectContaining({ id: "fixture:partial-resource" }),
+        state: "unknown",
+        confidence: "unknown",
+        candidateActions: [],
+        facts: expect.objectContaining({
+          partial: true,
+          incompletePhase: "collect",
+        }),
+      }),
+    ]);
+    expect(report.findings[0]?.estimatedReclaimBytes).toBeUndefined();
+    expect(report.diagnostics).toEqual([
+      partialDiagnostic,
+      expect.objectContaining({
+        code: "AUDIT_PHASE_DEADLINE_EXCEEDED",
+        adapter: "fixture",
+      }),
+    ]);
+
+    const eventCountAtDeadline = events.length;
+    releaseCollection?.();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(report.findings).toHaveLength(1);
+    expect(report.findings[0]?.resource.id).toBe("fixture:partial-resource");
+    expect(events).toHaveLength(eventCountAtDeadline);
+  });
 });

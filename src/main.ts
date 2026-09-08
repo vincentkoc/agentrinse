@@ -43,7 +43,10 @@ export function buildProgram(): Command {
     .option("--redact", "redact paths and identifiers in machine output", false)
     .option("--providers <ids>", "audit only comma-separated provider IDs; requires --no-state")
     .option("--quick", "run bounded provider inventory without size measurement", false)
-    .option("--phase-timeout <duration>", "quick inventory deadline for each provider phase")
+    .option(
+      "--phase-timeout <duration>",
+      "cooperative quick inventory cutoff for each provider phase",
+    )
     .option("--no-state", "do not persist audit state; requires JSON or NDJSON")
     .option("--output <path>", "write the JSON report atomically")
     .option("--state-dir <path>", "override the AgentRinse state directory")

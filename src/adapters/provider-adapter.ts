@@ -1,7 +1,12 @@
 import { lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import type { AuditAdapter, AuditContext, CollectionResult } from "../contracts/adapter.js";
+import type {
+  AuditAdapter,
+  AuditContext,
+  CollectionObserver,
+  CollectionResult,
+} from "../contracts/adapter.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import type { Finding } from "../contracts/finding.js";
 import type { AdapterProbe } from "../contracts/report.js";
@@ -188,7 +193,11 @@ export class ProviderAuditAdapter implements AuditAdapter {
     }
   }
 
-  async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
+  async collect(
+    context: AuditContext,
+    probe: AdapterProbe,
+    observer?: CollectionObserver,
+  ): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
       if (
         probe.status === "degraded" &&
@@ -207,22 +216,41 @@ export class ProviderAuditAdapter implements AuditAdapter {
         this.options.quickInventory !== true &&
         this.options.inventoryResources !== false
       ) {
-        return collectZedRotatedLog(context, {
+        const collection = await collectZedRotatedLog(context, {
           ...(this.options.root === undefined ? {} : { root: this.options.root }),
           ...(this.options.platform === undefined ? {} : { platform: this.options.platform }),
           ...(this.options.environment === undefined
             ? {}
             : { environment: this.options.environment }),
         });
+        for (const resource of collection.resources) {
+          observer?.reportResource(resource);
+        }
+        for (const diagnostic of collection.diagnostics) {
+          observer?.reportDiagnostic(diagnostic);
+        }
+        return collection;
       }
       return { resources: [], diagnostics: [] };
     }
 
     const resources: ResourceSnapshot[] = [];
     const diagnostics: Diagnostic[] = [];
+    const addResources = (...reportedResources: ResourceSnapshot[]): void => {
+      resources.push(...reportedResources);
+      for (const resource of reportedResources) {
+        observer?.reportResource(resource);
+      }
+    };
+    const addDiagnostics = (...reportedDiagnostics: Diagnostic[]): void => {
+      diagnostics.push(...reportedDiagnostics);
+      for (const diagnostic of reportedDiagnostics) {
+        observer?.reportDiagnostic(diagnostic);
+      }
+    };
 
     if (this.options.reachability !== undefined) {
-      diagnostics.push(
+      addDiagnostics(
         ...(await collectProviderReachability(
           this.spec.id,
           context,
@@ -239,7 +267,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
         ? await inspectClaudeNativeRetention(probe.root, this.options.platform ?? process.platform)
         : undefined;
     if (claudeRetention !== undefined) {
-      diagnostics.push(...claudeRetention.diagnostics);
+      addDiagnostics(...claudeRetention.diagnostics);
     }
     const grokOwnerContract =
       this.options.quickInventory !== true && this.spec.id === "grok"
@@ -288,7 +316,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
           continue;
         }
         if (parentInspection.status === "blocked") {
-          diagnostics.push({
+          addDiagnostics({
             severity: "warning",
             code:
               parentInspection.code === "symlink"
@@ -304,7 +332,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
       try {
         const stats = await lstat(path);
         if (stats.isSymbolicLink()) {
-          diagnostics.push({
+          addDiagnostics({
             severity: "warning",
             code: "RESOURCE_SYMLINK_SKIPPED",
             message: "A provider resource symlink was not followed.",
@@ -343,7 +371,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
             ? undefined
             : await inspectCursorDatabaseCompanions(path, this.options.measureBytes);
 
-        resources.push({
+        addResources({
           resource: {
             id: resourceId,
             adapter: this.id,
@@ -405,7 +433,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
               this.options.measureBytes,
             );
             if (cursorDatabaseCompanions.some((companion) => companion.status !== "missing")) {
-              resources.push({
+              addResources({
                 resource: {
                   id: resourceId,
                   adapter: this.id,
@@ -428,7 +456,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
           continue;
         }
 
-        diagnostics.push({
+        addDiagnostics({
           severity: "warning",
           code: "RESOURCE_INSPECTION_FAILED",
           message: error instanceof Error ? error.message : String(error),
@@ -440,10 +468,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
     if (this.options.quickInventory !== true && this.spec.id === "claude") {
       const debugLogs = await collectClaudeDebugLogs(context, probe.root, this.options.maxEntries);
       const changelogCache = await collectClaudeChangelogCache(context, probe.root);
-      resources.push(...debugLogs.resources);
-      resources.push(...changelogCache.resources);
-      diagnostics.push(...debugLogs.diagnostics);
-      diagnostics.push(...changelogCache.diagnostics);
+      addResources(...debugLogs.resources);
+      addResources(...changelogCache.resources);
+      addDiagnostics(...debugLogs.diagnostics);
+      addDiagnostics(...changelogCache.diagnostics);
     }
     if (this.options.quickInventory !== true && this.spec.id === "zed") {
       const rotatedLog = await collectZedRotatedLog(context, {
@@ -453,8 +481,8 @@ export class ProviderAuditAdapter implements AuditAdapter {
           ? {}
           : { environment: this.options.environment }),
       });
-      resources.push(...rotatedLog.resources);
-      diagnostics.push(...rotatedLog.diagnostics);
+      addResources(...rotatedLog.resources);
+      addDiagnostics(...rotatedLog.diagnostics);
     }
 
     return { resources, diagnostics };

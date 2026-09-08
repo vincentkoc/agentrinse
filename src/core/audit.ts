@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { AgentRinseConfig } from "../config/schema.js";
-import type { AuditAdapter, AuditContext } from "../contracts/adapter.js";
+import type { AuditAdapter, AuditContext, CollectionObserver } from "../contracts/adapter.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import type { Finding } from "../contracts/finding.js";
 import { auditReportSchema, type AuditReport } from "../contracts/report.js";
@@ -89,7 +89,45 @@ function phaseDeadlineDiagnostic(error: AuditPhaseDeadlineError): Diagnostic {
     message: error.message,
     adapter: error.adapter,
     ...(error.resourceId === undefined ? {} : { resourceId: error.resourceId }),
-    remediation: "Treat this inventory as partial and rerun after resolving the slow provider.",
+    remediation:
+      "Treat this inventory as partial. Cancellation was requested, but signal-ignoring work may still settle after the deadline.",
+  };
+}
+
+function incompleteFinding(
+  context: AuditContext,
+  resource: ResourceSnapshot,
+  phase: "collect" | "classify",
+  diagnostic: Diagnostic,
+  clock: () => Date,
+): Finding {
+  const observedAt = clock().toISOString();
+  return {
+    schemaVersion: 1,
+    findingId: randomUUID(),
+    auditId: context.auditId,
+    observedAt,
+    resource: resource.resource,
+    state: "unknown",
+    confidence: "unknown",
+    roots: [
+      {
+        code: "audit-phase-deadline",
+        source: "agentrinse",
+        observedAt,
+        detail:
+          phase === "collect"
+            ? "Collection did not complete before the phase deadline."
+            : "Classification did not complete before the phase deadline.",
+      },
+    ],
+    facts: {
+      ...resource.facts,
+      partial: true,
+      incompletePhase: phase,
+    },
+    candidateActions: [],
+    warnings: [diagnostic],
   };
 }
 
@@ -255,6 +293,22 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
     }
 
     let collection: Awaited<ReturnType<AuditAdapter["collect"]>>;
+    const partialResources: ResourceSnapshot[] = [];
+    const partialDiagnostics: Diagnostic[] = [];
+    let acceptPartialCollection = true;
+    let collectionSignal: AbortSignal | undefined;
+    const collectionObserver: CollectionObserver = {
+      reportResource(resource) {
+        if (acceptPartialCollection && collectionSignal?.aborted !== true) {
+          partialResources.push(resource);
+        }
+      },
+      reportDiagnostic(diagnostic) {
+        if (acceptPartialCollection && collectionSignal?.aborted !== true) {
+          partialDiagnostics.push(diagnostic);
+        }
+      },
+    };
     try {
       collection = await runPhase({
         adapter: adapter.id,
@@ -264,20 +318,46 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
         monotonicNow,
         ...(options.phaseTimeoutMs === undefined ? {} : { timeoutMs: options.phaseTimeoutMs }),
         ...(options.onEvent === undefined ? {} : { onEvent: options.onEvent }),
-        operation: (phaseContext) => adapter.collect(phaseContext, probe),
+        operation: (phaseContext) => {
+          collectionSignal = phaseContext.signal;
+          return adapter.collect(phaseContext, probe, collectionObserver);
+        },
       });
     } catch (error) {
+      acceptPartialCollection = false;
       if (!(error instanceof AuditPhaseDeadlineError)) {
         throw error;
       }
       const diagnostic = phaseDeadlineDiagnostic(error);
-      diagnostics.push(diagnostic);
-      options.onEvent?.({
-        type: "diagnostic.reported",
-        timestamp: clock().toISOString(),
-        data: diagnostic,
-      });
+      const deadlineDiagnostics = [...partialDiagnostics, diagnostic];
+      diagnostics.push(...deadlineDiagnostics);
+      for (const reportedDiagnostic of deadlineDiagnostics) {
+        options.onEvent?.({
+          type: "diagnostic.reported",
+          timestamp: clock().toISOString(),
+          data: reportedDiagnostic,
+        });
+      }
+      const uniqueResources = new Map(
+        partialResources.map((resource) => [resource.resource.id, resource]),
+      );
+      for (const resource of uniqueResources.values()) {
+        options.onEvent?.({
+          type: "resource.discovered",
+          timestamp: clock().toISOString(),
+          data: resource,
+        });
+        const finding = incompleteFinding(context, resource, "collect", diagnostic, clock);
+        findings.push(finding);
+        options.onEvent?.({
+          type: "finding.completed",
+          timestamp: clock().toISOString(),
+          data: finding,
+        });
+      }
       continue;
+    } finally {
+      acceptPartialCollection = false;
     }
     diagnostics.push(...collection.diagnostics);
     for (const diagnostic of collection.diagnostics) {
@@ -317,30 +397,7 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
           timestamp: clock().toISOString(),
           data: diagnostic,
         });
-        finding = {
-          schemaVersion: 1,
-          findingId: randomUUID(),
-          auditId: context.auditId,
-          observedAt: clock().toISOString(),
-          resource: resource.resource,
-          state: "unknown",
-          confidence: "unknown",
-          roots: [
-            {
-              code: "audit-phase-deadline",
-              source: "agentrinse",
-              observedAt: clock().toISOString(),
-              detail: "Classification did not complete before the phase deadline.",
-            },
-          ],
-          facts: {
-            ...resource.facts,
-            partial: true,
-            incompletePhase: "classify",
-          },
-          candidateActions: [],
-          warnings: [diagnostic],
-        };
+        finding = incompleteFinding(context, resource, "classify", diagnostic, clock);
       }
       findings.push(finding);
       options.onEvent?.({
