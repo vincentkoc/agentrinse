@@ -19,7 +19,8 @@ import {
 import type { ReachabilityIndex } from "../../core/reachability.js";
 import { isPathInside } from "../../core/safety.js";
 
-type ArtifactOptions = AgentRinseConfig["artifacts"] & AgentRinseConfig["audit"];
+type ArtifactOptions = AgentRinseConfig["artifacts"] &
+  Pick<AgentRinseConfig["audit"], "maxEntries" | "measureBytes">;
 const ARTIFACT_PROTECTION_ROOTS = new Set([
   "active-session",
   "current-worktree",
