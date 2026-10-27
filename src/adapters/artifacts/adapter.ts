@@ -367,8 +367,12 @@ export class ArtifactAuditAdapter implements AuditAdapter {
       .filter((root) => ARTIFACT_PROTECTION_ROOTS.has(root.code));
     if (reachabilityRoots !== undefined && reachabilityRoots.length > 0) {
       roots.push(...reachabilityRoots);
-      if (state === "eligible") {
+      // Authoritative protection (current-worktree, active-session, ...) must win
+      // over uncertain blocks such as process/mount inspection failures. Hard blocks
+      // with certain confidence (symlink, special entry, ...) stay blocked.
+      if (state === "eligible" || confidence === "unknown") {
         state = "protected";
+        confidence = "certain";
       }
     }
     roots.sort((left, right) => {
