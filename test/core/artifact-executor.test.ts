@@ -143,7 +143,9 @@ describe("executeArtifactRemove", () => {
         move: async (source, destination) => {
           await rename(source, destination);
           if (source === value.target) {
-            await writeFile(join(destination, "cache.bin"), "change");
+            // Size must change: same-length overwrites can keep size+mtime (and thus
+            // the measurement fingerprint) identical on coarse-timestamp filesystems.
+            await writeFile(join(destination, "cache.bin"), "changed-content");
           }
         },
         processProbe: async () => ({
