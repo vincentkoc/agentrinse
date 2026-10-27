@@ -83,6 +83,8 @@ describe("loadConfig", () => {
       measureBytes: false,
       gitTimeoutMs: 10_000,
       processOwnershipTimeoutMs: 10_000,
+      deadlineMs: 180_000,
+      phaseTimeoutMs: 30_000,
     });
     expect(config.artifacts.projects).toEqual([
       {
@@ -111,6 +113,20 @@ describe("loadConfig", () => {
       JSON.stringify({
         schemaVersion: 1,
         audit: { gitTimeoutMs: 120_001 },
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it("rejects unbounded audit total deadlines", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-deadline-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        audit: { deadlineMs: 600_001 },
       }),
     );
 
