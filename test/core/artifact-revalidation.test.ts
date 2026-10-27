@@ -92,14 +92,15 @@ describe("revalidateArtifactRemove", () => {
     const value = await fixture();
     await writeFile(join(value.target, "changed.txt"), "changed");
 
-    const result = await revalidateArtifactRemove(value.action, value.home, value.config, {
+    const outcome = await revalidateArtifactRemove(value.action, value.home, value.config, {
       cwd: value.project,
       processProbe: async () => ({ status: "idle", matches: [] }),
     });
-    expect(result.status).toBe("stale");
-    // Some filesystems bump directory mtime (identity); others only change content fingerprint.
+    expect(outcome).toMatchObject({ status: "stale" });
+    // Adding a file can surface as either identity or content drift depending on
+    // which measurement field the revalidator compares first.
     expect(["ARTIFACT_IDENTITY_CHANGED", "ARTIFACT_CONTENT_CHANGED"]).toContain(
-      result.status === "stale" ? result.diagnostic.code : undefined,
+      outcome.status === "stale" ? outcome.diagnostic.code : undefined,
     );
   });
 

@@ -119,6 +119,9 @@ export async function measurePath(
       (stats.isDirectory() || stats.isFile())
     ) {
       result.vcsMetadataEntries += 1;
+      // Do not descend into nested VCS metadata. Walking .git (etc.) can exhaust
+      // the entry budget and mask ARTIFACT_NESTED_VCS with a truncation warning.
+      continue;
     }
 
     if (path !== root && stats.dev !== rootDevice) {

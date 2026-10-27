@@ -19,8 +19,7 @@ import {
 import type { ReachabilityIndex } from "../../core/reachability.js";
 import { isPathInside } from "../../core/safety.js";
 
-type ArtifactOptions = AgentRinseConfig["artifacts"] &
-  Pick<AgentRinseConfig["audit"], "maxEntries" | "measureBytes">;
+type ArtifactOptions = AgentRinseConfig["artifacts"] & AgentRinseConfig["audit"];
 const ARTIFACT_PROTECTION_ROOTS = new Set([
   "active-session",
   "current-worktree",
@@ -404,7 +403,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     if (reachabilityRoots !== undefined && reachabilityRoots.length > 0) {
       roots.push(...reachabilityRoots);
       // Authoritative protection (current-worktree, active-session, ...) must win
-      // over uncertain blocks such as process/mount inspection failures. Hard blocks
+      // over uncertain blocks such as git/mount inspection failures. Hard blocks
       // with certain confidence (symlink, special entry, ...) stay blocked.
       if (state === "eligible" || confidence === "unknown") {
         state = "protected";

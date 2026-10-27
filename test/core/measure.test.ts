@@ -185,6 +185,23 @@ describe("measurePath", () => {
     expect(after.mountBoundaries).toBe(0);
   });
 
+  it("counts nested VCS metadata without descending into it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-vcs-"));
+    await writeFile(join(root, "keep.txt"), "x");
+    const gitDir = join(root, ".git");
+    await mkdir(gitDir);
+    // Enough nested files that descending would exhaust a tight entry budget.
+    for (let index = 0; index < 20; index += 1) {
+      await writeFile(join(gitDir, `object-${index}`), `blob-${index}`);
+    }
+
+    const result = await measurePath(root, { maxEntries: 5 });
+
+    expect(result.vcsMetadataEntries).toBe(1);
+    expect(result.truncated).toBe(false);
+    expect(result.bytes).toBe(1);
+  });
+
   it("can exclude a Git-owned root control entry", async () => {
     const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
     await writeFile(join(root, "data.txt"), "keep");
