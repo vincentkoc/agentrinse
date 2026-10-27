@@ -72,15 +72,15 @@ describe("revalidateArtifactRemove", () => {
     const value = await fixture();
     await writeFile(join(value.target, "changed.txt"), "changed");
 
-    await expect(
-      revalidateArtifactRemove(value.action, value.home, value.config, {
-        cwd: value.project,
-        processProbe: async () => ({ status: "idle", matches: [] }),
-      }),
-    ).resolves.toMatchObject({
-      status: "stale",
-      diagnostic: { code: "ARTIFACT_IDENTITY_CHANGED" },
+    const outcome = await revalidateArtifactRemove(value.action, value.home, value.config, {
+      cwd: value.project,
+      processProbe: async () => ({ status: "idle", matches: [] }),
     });
+    expect(outcome.status).toBe("stale");
+    // Some filesystems bump directory mtime (identity); others only change content fingerprint.
+    expect(["ARTIFACT_IDENTITY_CHANGED", "ARTIFACT_CONTENT_CHANGED"]).toContain(
+      outcome.status === "stale" ? outcome.diagnostic.code : undefined,
+    );
   });
 
   it("rejects an artifact that no longer meets the size threshold", async () => {
