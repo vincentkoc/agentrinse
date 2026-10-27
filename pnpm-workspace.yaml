@@ -1,2 +1,6 @@
+packages:
+  - "."
 allowBuilds:
   koffi: true
+overrides:
+  vite: 8.1.6
