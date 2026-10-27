@@ -65,7 +65,7 @@ export type AuditProgressEvent =
       data: Finding;
     };
 
-class AuditPhaseDeadlineError extends Error {
+export class AuditPhaseDeadlineError extends Error {
   override readonly name = "AuditPhaseDeadlineError";
 
   constructor(
@@ -245,7 +245,21 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
   const diagnostics = [];
 
   for (const adapter of options.adapters) {
-    options.signal?.throwIfAborted();
+    try {
+      options.signal?.throwIfAborted();
+    } catch (error) {
+      if (!(error instanceof AuditPhaseDeadlineError)) {
+        throw error;
+      }
+      const diagnostic = phaseDeadlineDiagnostic(error);
+      diagnostics.push(diagnostic);
+      options.onEvent?.({
+        type: "diagnostic.reported",
+        timestamp: clock().toISOString(),
+        data: diagnostic,
+      });
+      break;
+    }
     let probe: Awaited<ReturnType<AuditAdapter["probe"]>>;
     try {
       probe = await runPhase({

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   cleanCommandExitCode,
@@ -84,6 +84,8 @@ function fixtureConfig(projects: { root: string; names: ["node_modules"] }[]) {
       measureBytes: true,
       gitTimeoutMs: 10_000,
       processOwnershipTimeoutMs: 10_000,
+      deadlineMs: 180_000,
+      phaseTimeoutMs: 30_000,
     },
     artifacts: {
       projects,
@@ -145,13 +147,18 @@ describe("clean closeout profile", () => {
     expect(result.summary.worktrees).toBe(2);
     expect(result.summary.protectedWorktrees).toBe(2);
     expect(result.summary.eligibleActions).toBe(0);
+    expect(result.summary.auditIncomplete).toBe(false);
+    expect(result.summary.auditDeadlineExceeded).toBe(false);
+    expect(result.summary.selectedUnprovenTargets).toBe(0);
     expect(result.summary.mole).toEqual({
       status: "available",
       suggestions: ["mo purge --dry-run", "mo clean --dry-run"],
     });
     expect(artifactFindings).toHaveLength(1);
-    expect(artifactFindings[0]?.state).toBe("protected");
     expect(artifactFindings[0]?.roots.map((root) => root.code)).toContain("current-worktree");
+    // Sandboxes may fail-closed as blocked (e.g. mount inspection); never eligible.
+    expect(artifactFindings[0]?.state).not.toBe("eligible");
+    expect(["protected", "blocked"]).toContain(artifactFindings[0]?.state);
     expect(result.audit.probes.map((probe) => probe.adapter)).not.toContain("cursor");
     expect(envelope.command).toBe("clean");
     expect(result.status).toBe("ok");
@@ -438,4 +445,82 @@ describe("clean fleet profile", () => {
     expect(recoverableResult.output).toContain("GIT_PROBE_FAILED:");
     await expect(access(recoverable.linked)).rejects.toMatchObject({ code: "ENOENT" });
   }, 120_000);
+});
+
+describe("clean audit budget and JSON progress", () => {
+  it("writes JSON progress to stderr without polluting stdout", async () => {
+    const value = await gitFixture();
+    await writeJsonAtomic(value.configPath, fixtureConfig([]));
+    const writes: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(((
+      chunk: unknown,
+      ...rest: unknown[]
+    ) => {
+      writes.push(String(chunk));
+      return originalWrite(chunk as never, ...(rest as never[]));
+    }) as typeof process.stderr.write);
+
+    try {
+      const result = await executeCleanCommand({
+        home: value.home,
+        config: value.configPath,
+        stateDir: value.stateDir,
+        profile: "closeout",
+        cwd: value.linked,
+        apply: false,
+        yes: false,
+        json: true,
+        dependencies: {
+          platform: "linux",
+          now: () => NOW,
+          runCommand: run,
+        },
+      });
+
+      expect(result.output.trim().startsWith("{")).toBe(true);
+      expect(JSON.parse(result.output)).toMatchObject({ command: "clean" });
+      const progress = writes
+        .map((chunk) => chunk.trim())
+        .filter((chunk) => chunk.startsWith("{"))
+        .map((chunk) => JSON.parse(chunk));
+      expect(progress.length).toBeGreaterThan(0);
+      expect(progress.every((event) => event.source === "agentrinse.clean")).toBe(true);
+      expect(progress.some((event) => event.type === "phase.started")).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  }, 30_000);
+
+  it("marks the summary when the total audit deadline is exceeded", async () => {
+    const value = await gitFixture();
+    const config = fixtureConfig([]);
+    config.audit.deadlineMs = 1;
+    config.audit.phaseTimeoutMs = 30_000;
+    await writeJsonAtomic(value.configPath, config);
+
+    const result = await executeCleanCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateDir,
+      profile: "closeout",
+      cwd: value.linked,
+      apply: false,
+      yes: false,
+      json: true,
+      dependencies: {
+        platform: "linux",
+        now: () => NOW,
+        runCommand: run,
+      },
+    });
+
+    expect(result.summary.auditDeadlineExceeded).toBe(true);
+    expect(result.summary.auditIncomplete).toBe(true);
+    expect(
+      result.audit.diagnostics.some(
+        (diagnostic) => diagnostic.code === "AUDIT_PHASE_DEADLINE_EXCEEDED",
+      ),
+    ).toBe(true);
+  }, 30_000);
 });
