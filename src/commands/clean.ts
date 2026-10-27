@@ -584,6 +584,9 @@ export async function executeCleanCommand(
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       dependencies: {
         clock,
+        ...(options.profile === "closeout" && options.cwd !== undefined
+          ? { cwd: options.cwd }
+          : {}),
         loadCurrentConfig: async () =>
           scopedConfig(
             (await loadConfigForHome(home, options.config)).config,

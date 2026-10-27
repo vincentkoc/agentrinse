@@ -76,6 +76,8 @@ export type ApplyResult = {
 
 export type ApplyDependencies = {
   clock?: () => Date;
+  /** Closeout/process cwd used for ARTIFACT_OWNS_CWD revalidation. */
+  cwd?: string;
   createJournal?: typeof createRunJournal;
   loadCurrentConfig?: () => Promise<AgentRinseConfig>;
   revalidate?: (
@@ -189,7 +191,12 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
       const revalidation =
         action.type === "artifacts.remove"
           ? options.dependencies?.revalidate === undefined
-            ? await revalidateArtifactRemove(action, plan.home, config, { now: clock })
+            ? await revalidateArtifactRemove(action, plan.home, config, {
+                now: clock,
+                ...(options.dependencies?.cwd === undefined
+                  ? {}
+                  : { cwd: options.dependencies.cwd }),
+              })
             : await options.dependencies.revalidate(action, plan.home, config)
           : action.type === "worktree.quarantine"
             ? options.dependencies?.revalidateWorktree === undefined

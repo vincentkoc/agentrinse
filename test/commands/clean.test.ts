@@ -229,7 +229,7 @@ describe("clean closeout profile", () => {
       yes: true,
       json: false,
       dependencies: {
-        platform: "linux",
+        platform: process.platform,
         now: () => NOW,
         runCommand: run,
       },
@@ -237,7 +237,10 @@ describe("clean closeout profile", () => {
 
     expect(result.plan.actions).toHaveLength(1);
     expect(result.run?.status).toBe("completed");
-    expect(result.run?.actions[0]?.status).toBe("applied");
+    expect(
+      result.run?.actions[0],
+      `apply action should be applied; got ${JSON.stringify(result.run?.actions[0])}`,
+    ).toMatchObject({ status: "applied" });
     await expect(access(artifact)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(value.main, "README.md"), "utf8")).resolves.toBe("fixture\n");
   }, 30_000);
