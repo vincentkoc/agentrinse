@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
+import { inspectArtifactGitState } from "./artifact-git-state.js";
 import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -162,12 +163,24 @@ export async function revalidateArtifactRemove(
       measurement.bytes !== action.target.measuredBytes ||
       measurement.newestMtimeMs !== action.target.newestMtimeMs ||
       measurement.fingerprint !== action.target.fingerprint ||
-      measurement.mountBoundaries > 0
+      measurement.mountBoundaries > 0 ||
+      measurement.vcsMetadataEntries > 0
     ) {
       return stale(
         action,
         "ARTIFACT_CONTENT_CHANGED",
         "artifact contents changed or could not be measured completely",
+      );
+    }
+
+    const gitState = await inspectArtifactGitState(projectRoot, action.target.name);
+    if (gitState.status !== "clear") {
+      return stale(
+        action,
+        gitState.status === "tracked" ? "ARTIFACT_GIT_TRACKED" : "ARTIFACT_GIT_STATUS_UNKNOWN",
+        gitState.status === "tracked"
+          ? "Git tracks files inside this artifact"
+          : `Git tracking could not be verified: ${gitState.reason}`,
       );
     }
 

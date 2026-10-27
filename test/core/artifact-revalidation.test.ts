@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -9,6 +11,8 @@ import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { ArtifactRemoveAction } from "../../src/contracts/action.js";
 import { measurePath } from "../../src/core/measure.js";
 import { revalidateArtifactRemove } from "../../src/core/artifact-revalidation.js";
+
+const execFileAsync = promisify(execFile);
 
 async function fixture(): Promise<{
   action: ArtifactRemoveAction;
@@ -57,6 +61,22 @@ async function fixture(): Promise<{
 }
 
 describe("revalidateArtifactRemove", () => {
+  it("rejects an artifact that became Git-tracked after planning", async () => {
+    const value = await fixture();
+    await execFileAsync("git", ["-C", value.project, "init", "--quiet"]);
+    await execFileAsync("git", ["-C", value.project, "add", "node_modules/fixture.txt"]);
+
+    await expect(
+      revalidateArtifactRemove(value.action, value.home, value.config, {
+        cwd: value.project,
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_GIT_TRACKED" },
+    });
+  });
+
   it("accepts an unchanged idle artifact", async () => {
     const value = await fixture();
 
@@ -125,6 +145,7 @@ describe("revalidateArtifactRemove", () => {
           entries: 3,
           symlinksSkipped: 0,
           specialEntries: 1,
+          vcsMetadataEntries: 0,
           truncated: false,
           newestMtimeMs: value.action.target.newestMtimeMs,
           fingerprint: value.action.target.fingerprint,

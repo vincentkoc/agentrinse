@@ -4,6 +4,7 @@ import { lstat, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { ArtifactRemoveAction } from "../contracts/action.js";
+import { inspectArtifactGitState } from "./artifact-git-state.js";
 import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -186,6 +187,7 @@ export async function executeArtifactRemove(
     if (
       measurement.truncated ||
       measurement.specialEntries > 0 ||
+      measurement.vcsMetadataEntries > 0 ||
       measurement.mountBoundaries > 0 ||
       measurement.bytes !== action.target.measuredBytes ||
       measurement.newestMtimeMs !== action.target.newestMtimeMs ||
@@ -254,6 +256,19 @@ export async function executeArtifactRemove(
       finalMounts.status === "blocked"
         ? "artifact gained a mount boundary before removal"
         : "mount boundaries became unknown before removal",
+      action,
+      isolationPath,
+      inspect,
+      move,
+    );
+  }
+
+  const gitState = await inspectArtifactGitState(action.target.projectRoot, action.target.name);
+  if (gitState.status !== "clear") {
+    await rollbackBeforeRemoval(
+      gitState.status === "tracked"
+        ? "Git tracks files inside the artifact"
+        : "Git tracking could not be verified before removal",
       action,
       isolationPath,
       inspect,

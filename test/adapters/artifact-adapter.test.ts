@@ -1,8 +1,10 @@
 import { once } from "node:events";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -13,6 +15,7 @@ import type { ProcessOwnershipResult } from "../../src/core/process-ownership.js
 import { ReachabilityIndex } from "../../src/core/reachability.js";
 
 const NOW = new Date("2026-07-23T12:00:00.000Z");
+const execFileAsync = promisify(execFile);
 
 async function fixture(
   ownership: ProcessOwnershipResult = {
@@ -52,6 +55,53 @@ async function fixture(
 }
 
 describe("ArtifactAuditAdapter", () => {
+  it("protects tracked files inside a configured artifact", async () => {
+    const { context, adapter, projectRoot, artifact, artifactFile } = await fixture();
+    await execFileAsync("git", ["-C", projectRoot, "init", "--quiet"]);
+    await execFileAsync("git", ["-C", projectRoot, "add", "node_modules/package.json"]);
+    await utimes(artifactFile, new Date(0), new Date(0));
+    await utimes(artifact, new Date(0), new Date(0));
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("protected");
+    expect(finding.candidateActions).toEqual([]);
+  });
+
+  it("blocks an artifact containing a nested repository", async () => {
+    const { context, adapter, artifact } = await fixture();
+    const gitDirectory = join(artifact, ".git");
+    const gitConfig = join(gitDirectory, "config");
+    await mkdir(gitDirectory);
+    await writeFile(gitConfig, "synthetic repository metadata");
+    await utimes(gitConfig, new Date(0), new Date(0));
+    await utimes(gitDirectory, new Date(0), new Date(0));
+    await utimes(artifact, new Date(0), new Date(0));
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("blocked");
+    expect(finding.warnings[0]?.code).toBe("ARTIFACT_NESTED_VCS");
+    expect(finding.candidateActions).toEqual([]);
+  });
+
+  it("blocks cleanup when Git metadata cannot be read", async () => {
+    const { context, adapter, projectRoot } = await fixture();
+    await writeFile(join(projectRoot, ".git"), "invalid worktree pointer");
+
+    const probe = await adapter.probe(context);
+    const collection = await adapter.collect(context, probe);
+    const finding = await adapter.classify(context, collection.resources[0]!);
+
+    expect(finding.state).toBe("blocked");
+    expect(finding.warnings[0]?.code).toBe("ARTIFACT_GIT_STATUS_UNKNOWN");
+    expect(finding.candidateActions).toEqual([]);
+  });
+
   it("proposes an exact safe action for an idle old artifact", async () => {
     const { context, adapter } = await fixture();
     const probe = await adapter.probe(context);

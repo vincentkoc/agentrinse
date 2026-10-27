@@ -16,6 +16,7 @@ Only `artifacts.remove` mutates:
 - the complete measurement fits within the entry budget
 - the tree contains only directories, regular files, and skipped symlinks;
   sockets, pipes, devices, and other special entries are blocked
+- no file inside the artifact is Git-tracked (including case-only path differences) or contains nested version-control metadata
 - same-user process ownership is proven idle
 - the action risk is `safe`
 

@@ -391,7 +391,7 @@ describe("clean fleet profile", () => {
       yes: true,
       json: true,
       dependencies: {
-        platform: "linux",
+        platform: process.platform,
         now: () => new Date(),
         runCommand: run,
       },

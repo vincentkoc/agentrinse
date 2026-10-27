@@ -1,13 +1,16 @@
 import { createHash } from "node:crypto";
 import { lstat, opendir, readlink } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 import type { Stats } from "node:fs";
+
+const VCS_METADATA_NAMES = new Set([".git", ".hg", ".svn", ".jj"]);
 
 export type Measurement = {
   bytes: number;
   entries: number;
   symlinksSkipped: number;
   specialEntries: number;
+  vcsMetadataEntries: number;
   truncated: boolean;
   newestMtimeMs: number;
   fingerprint: string;
@@ -62,6 +65,7 @@ export async function measurePath(
     entries: 0,
     symlinksSkipped: 0,
     specialEntries: 0,
+    vcsMetadataEntries: 0,
     truncated: false,
     newestMtimeMs: 0,
     fingerprint: "",
@@ -108,6 +112,14 @@ export async function measurePath(
       ...(stats.isSymbolicLink() ? { link: await readLink(path) } : {}),
     };
     fingerprint.update(`${JSON.stringify(identity)}\n`);
+
+    if (
+      path !== root &&
+      VCS_METADATA_NAMES.has(basename(path)) &&
+      (stats.isDirectory() || stats.isFile())
+    ) {
+      result.vcsMetadataEntries += 1;
+    }
 
     if (path !== root && stats.dev !== rootDevice) {
       result.mountBoundaries += 1;

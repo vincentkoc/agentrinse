@@ -434,6 +434,7 @@ describe("GitWorktreeAuditAdapter", () => {
           entries: 3,
           symlinksSkipped: 0,
           specialEntries: 0,
+          vcsMetadataEntries: 0,
           truncated: false,
           newestMtimeMs: Date.parse("2026-07-01T00:00:00.000Z"),
           fingerprint: "c".repeat(64),

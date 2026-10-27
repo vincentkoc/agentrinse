@@ -9,6 +9,7 @@ import type { Finding, RootEvidence } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
+import { inspectArtifactGitState } from "../../core/artifact-git-state.js";
 import { measurePath } from "../../core/measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "../../core/mount-boundaries.js";
 import {
@@ -188,6 +189,10 @@ export class ArtifactAuditAdapter implements AuditAdapter {
                   paths: [],
                   reason: "resource is not a real directory",
                 } satisfies MountBoundaryResult);
+          const gitState =
+            isDirectory && !isSymlink
+              ? await inspectArtifactGitState(projectRoot, name)
+              : { status: "unknown" as const, reason: "resource is not a real directory" };
           const canonicalKey = `artifacts:build-artifact:${path}`;
 
           resources.push({
@@ -218,6 +223,8 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               isSymlink,
               measurementTruncated: measurement?.truncated ?? false,
               specialEntries: measurement?.specialEntries ?? 0,
+              vcsMetadataEntries: measurement?.vcsMetadataEntries ?? 0,
+              gitState,
               mountBoundaries: measurement?.mountBoundaries ?? 0,
               isMountRoot: stats.dev !== projectStats.dev,
               entries: measurement?.entries,
@@ -290,6 +297,15 @@ export class ArtifactAuditAdapter implements AuditAdapter {
         adapter: this.id,
         resourceId: resource.resource.id,
       });
+    } else if (typeof facts.vcsMetadataEntries === "number" && facts.vcsMetadataEntries > 0) {
+      state = "blocked";
+      warnings.push({
+        severity: "warning",
+        code: "ARTIFACT_NESTED_VCS",
+        message: "Artifact contains nested version-control metadata.",
+        adapter: this.id,
+        resourceId: resource.resource.id,
+      });
     } else if (
       facts.isMountRoot === true ||
       facts.mountBoundaryStatus === "blocked" ||
@@ -338,6 +354,26 @@ export class ArtifactAuditAdapter implements AuditAdapter {
           `Artifact is newer than ${this.options.minAgeMinutes} minutes.`,
         ),
       );
+    }
+
+    const gitState = facts.gitState as
+      | Awaited<ReturnType<typeof inspectArtifactGitState>>
+      | undefined;
+    if (state === "eligible" && gitState?.status === "tracked") {
+      state = "protected";
+      roots.push(
+        rootEvidence(context, "git-tracked-artifact", "Git tracks files inside this artifact."),
+      );
+    } else if (state === "eligible" && gitState?.status !== "clear") {
+      state = "blocked";
+      confidence = "unknown";
+      warnings.push({
+        severity: "warning",
+        code: "ARTIFACT_GIT_STATUS_UNKNOWN",
+        message: `Git tracking could not be verified: ${gitState?.status === "unknown" ? gitState.reason : "missing evidence"}`,
+        adapter: this.id,
+        resourceId: resource.resource.id,
+      });
     }
 
     const ownership = facts.processOwnership as ProcessOwnershipResult | undefined;

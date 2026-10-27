@@ -1,7 +1,9 @@
+import { execFile } from "node:child_process";
 import { lstatSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -13,6 +15,8 @@ import {
 } from "../../src/core/artifact-executor.js";
 import { measurePath } from "../../src/core/measure.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
+
+const execFileAsync = promisify(execFile);
 
 async function fixture(): Promise<{
   action: ArtifactRemoveAction;
@@ -64,6 +68,22 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("executeArtifactRemove", () => {
+  it("restores an isolated artifact when Git starts tracking its files", async () => {
+    const value = await fixture();
+    await execFileAsync("git", ["-C", value.project, "init", "--quiet"]);
+    await execFileAsync("git", ["-C", value.project, "add", "node_modules/cache.bin"]);
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        id: () => "tracked-artifact",
+        processProbe: async () => ({ status: "idle", matches: [] }),
+      }),
+    ).rejects.toMatchObject({ outcome: "rolled-back" });
+
+    expect(await readFile(join(value.target, "cache.bin"), "utf8")).toBe("remove");
+    expect(await exists(artifactIsolationPath(value.action, "tracked-artifact"))).toBe(false);
+  });
+
   it("isolates and removes only the planned artifact", async () => {
     const value = await fixture();
     const result = await executeArtifactRemove(value.action, {
