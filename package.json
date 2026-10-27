@@ -61,12 +61,12 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
-    "@types/node": "24.13.3",
-    "oxfmt": "0.64.0",
-    "oxlint": "1.79.0",
-    "publint": "0.3.24",
+    "@types/node": "24.19.2",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "publint": "0.3.25",
     "typescript": "7.0.2",
-    "vitest": "4.1.10"
+    "vitest": "5.0.5"
   },
   "engines": {
     "node": ">=22"
