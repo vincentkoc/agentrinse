@@ -246,12 +246,12 @@ describe("GitWorktreeAuditAdapter", () => {
       expect.arrayContaining([
         "dirty-worktree",
         "git-operation-in-progress",
-        "live-process-worktree",
         "recent-session",
         "unpushed-commit",
         "user-pin",
       ]),
     );
+    expect(findings[1]?.roots.map((root) => root.code)).not.toContain("live-process-worktree");
     expect(collection.resources[1]?.facts).toMatchObject({
       staged: 1,
       dirty: true,
@@ -260,8 +260,9 @@ describe("GitWorktreeAuditAdapter", () => {
       remoteReachable: false,
       unpushed: true,
       operations: ["merge"],
-      processOwnership: "busy",
-      processMatches: [{ pid: 42, source: "cwd" }],
+      processOwnership: "idle",
+      processOwnershipDeferred: true,
+      processMatches: [],
       inspectionComplete: true,
     });
     expect(

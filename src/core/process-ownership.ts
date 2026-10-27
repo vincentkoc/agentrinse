@@ -3,8 +3,8 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import { runBoundedCommand } from "./bounded-command.js";
 
-const LSOF_TIMEOUT_MS = 10_000;
-const LSOF_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
+export const DEFAULT_PROCESS_OWNERSHIP_TIMEOUT_MS = 10_000;
+export const DEFAULT_PROCESS_OWNERSHIP_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 export type ProcessPathMatch = {
   pid: number;
@@ -15,13 +15,20 @@ export type ProcessPathMatch = {
 export type ProcessOwnershipResult =
   | { status: "idle"; matches: [] }
   | { status: "busy"; matches: ProcessPathMatch[] }
-  | { status: "unknown"; matches: ProcessPathMatch[]; reason: string };
+  | {
+      status: "unknown";
+      matches: ProcessPathMatch[];
+      reason: string;
+      scope?: "path" | "host";
+    };
 
 export type ProcessOwnershipOptions = {
   platform?: NodeJS.Platform;
   procRoot?: string;
   uid?: number;
   runLsof?: (target: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
+  timeoutMs?: number;
+  maxOutputBytes?: number;
 };
 
 export type LsofFileRecord = {
@@ -32,7 +39,7 @@ export type LsofFileRecord = {
 
 type LsofInspection =
   | { status: "complete"; records: LsofFileRecord[] }
-  | { status: "unknown"; reason: string };
+  | { status: "unknown"; reason: string; scope: "path" | "host" };
 
 function isInside(root: string, candidate: string): boolean {
   const result = relative(resolve(root), resolve(candidate));
@@ -128,6 +135,7 @@ async function inspectLinux(
       status: "unknown",
       matches: [],
       reason: "current user identity is unavailable",
+      scope: "host",
     };
   }
 
@@ -201,14 +209,19 @@ async function collectLsofInspection(
     const result =
       options.runLsof === undefined
         ? await runBoundedCommand("lsof", args, {
-            maxOutputBytes: LSOF_MAX_OUTPUT_BYTES,
-            timeoutMs: LSOF_TIMEOUT_MS,
+            maxOutputBytes: options.maxOutputBytes ?? DEFAULT_PROCESS_OWNERSHIP_MAX_OUTPUT_BYTES,
+            timeoutMs: options.timeoutMs ?? DEFAULT_PROCESS_OWNERSHIP_TIMEOUT_MS,
           })
         : await options.runLsof(target, args);
     if (result.stderr !== "") {
       return {
         status: "unknown",
         reason: `lsof reported an incomplete scan: ${result.stderr.trim()}`,
+        scope: /permission|not permitted|operation not permitted|access denied/iu.test(
+          result.stderr,
+        )
+          ? "host"
+          : "path",
       };
     }
     return { status: "complete", records: parseLsofFileRecords(result.stdout) };
@@ -225,9 +238,20 @@ async function collectLsofInspection(
     ) {
       return { status: "complete", records: [] };
     }
+    const reason = error instanceof Error ? error.message : String(error);
+    const code =
+      typeof commandError.code === "string" ? commandError.code.toUpperCase() : commandError.code;
     return {
       status: "unknown",
-      reason: error instanceof Error ? error.message : String(error),
+      reason,
+      scope:
+        code === "ETIMEDOUT" || /timed out|timeout/iu.test(reason)
+          ? "path"
+          : code === "EPERM" || code === "EACCES" || code === "ENOENT"
+            ? "host"
+            : /permission|not permitted|operation not permitted|access denied/iu.test(reason)
+              ? "host"
+              : "path",
     };
   }
 }
@@ -237,7 +261,12 @@ function ownershipFromLsofInspection(
   inspection: LsofInspection,
 ): ProcessOwnershipResult {
   if (inspection.status === "unknown") {
-    return { status: "unknown", matches: [], reason: inspection.reason };
+    return {
+      status: "unknown",
+      matches: [],
+      reason: inspection.reason,
+      scope: inspection.scope,
+    };
   }
   const matches: ProcessPathMatch[] = [];
   for (const record of inspection.records) {
@@ -263,7 +292,7 @@ export function createProcessOwnershipProbe(
       return unavailable;
     }
     const result = await findProcessesUsingPath(target, options);
-    if (result.status === "unknown") {
+    if (result.status === "unknown" && result.scope === "host") {
       unavailable = result;
     }
     return result;
@@ -285,6 +314,7 @@ export async function findProcessesUsingPath(
     status: "unknown",
     matches: [],
     reason: `process ownership is unsupported on ${platform}`,
+    scope: "host",
   };
 }
 
@@ -303,5 +333,6 @@ export async function findProcessesUsingFile(
     status: "unknown",
     matches: [],
     reason: `process ownership is unsupported on ${platform}`,
+    scope: "host",
   };
 }

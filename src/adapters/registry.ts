@@ -55,9 +55,12 @@ export function createAuditAdapters(
   options: AuditAdapterRegistryOptions = {},
 ): AuditAdapter[] {
   const reachability = options.reachability ?? new ReachabilityIndex();
-  // One failed ownership scan protects the rest of this audit without retrying lsof.
-  // Revalidation and apply construct fresh probes from current process state.
-  const processProbe = options.processProbe ?? createProcessOwnershipProbe({ platform });
+  const processProbe =
+    options.processProbe ??
+    createProcessOwnershipProbe({
+      platform,
+      timeoutMs: config.audit.processOwnershipTimeoutMs,
+    });
   const providerSelection =
     options.providers === undefined ? undefined : validateProviderSelection(options.providers);
   const exclusiveProviders = providerSelection !== undefined;

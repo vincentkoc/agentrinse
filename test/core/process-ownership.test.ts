@@ -207,12 +207,51 @@ describe("findProcessesUsingPath", () => {
     await expect(probe("/fixture/one")).resolves.toMatchObject({
       status: "unknown",
       reason: "lsof reported an incomplete scan: permission denied",
+      scope: "host",
     });
     await expect(probe("/fixture/two")).resolves.toMatchObject({
       status: "unknown",
       reason: "lsof reported an incomplete scan: permission denied",
     });
     expect(scans).toBe(1);
+  });
+
+  it("does not poison later paths after a path-local lsof timeout", async () => {
+    const targets: string[] = [];
+    const probe = createProcessOwnershipProbe({
+      platform: "darwin",
+      runLsof: async (target) => {
+        targets.push(target);
+        if (targets.length === 1) {
+          throw { code: "ETIMEDOUT", stdout: "", stderr: "" };
+        }
+        return { stdout: "", stderr: "" };
+      },
+    });
+
+    await expect(probe("/fixture/slow")).resolves.toMatchObject({
+      status: "unknown",
+      scope: "path",
+    });
+    await expect(probe("/fixture/fast")).resolves.toEqual({ status: "idle", matches: [] });
+    expect(targets).toHaveLength(2);
+  });
+
+  it("freshly observes the same path instead of caching idle or busy state", async () => {
+    let scans = 0;
+    const probe = createProcessOwnershipProbe({
+      platform: "darwin",
+      runLsof: async () => {
+        scans += 1;
+        return scans === 1
+          ? { stdout: "p42\0cnode\0\nf9\0n/fixture/project/cache\0\n", stderr: "" }
+          : { stdout: "", stderr: "" };
+      },
+    });
+
+    await expect(probe("/fixture/project")).resolves.toMatchObject({ status: "busy" });
+    await expect(probe("/fixture/project")).resolves.toEqual({ status: "idle", matches: [] });
+    expect(scans).toBe(2);
   });
 
   it("starts a fresh target-selected scan after successful audit probes", async () => {

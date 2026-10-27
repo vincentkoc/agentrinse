@@ -94,8 +94,19 @@ export const agentRinseConfigSchema = z
       .object({
         maxEntries: z.number().int().positive().max(1_000_000).default(100_000),
         measureBytes: z.boolean().default(true),
+        gitTimeoutMs: z.number().int().positive().max(120_000).default(10_000),
+        processOwnershipTimeoutMs: z.number().int().positive().max(120_000).default(10_000),
+        deadlineMs: z.number().int().positive().max(600_000).default(180_000),
+        phaseTimeoutMs: z.number().int().positive().max(120_000).default(30_000),
       })
-      .default(() => ({ maxEntries: 100_000, measureBytes: true })),
+      .default(() => ({
+        maxEntries: 100_000,
+        measureBytes: true,
+        gitTimeoutMs: 10_000,
+        processOwnershipTimeoutMs: 10_000,
+        deadlineMs: 180_000,
+        phaseTimeoutMs: 30_000,
+      })),
     artifacts: z
       .object({
         projects: z.array(artifactProjectSchema).default([]),

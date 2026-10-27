@@ -4,7 +4,12 @@ import { basename, resolve } from "node:path";
 import { promisify } from "node:util";
 
 import type { AgentRinseConfig } from "../../config/schema.js";
-import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
+import type {
+  AuditAdapter,
+  AuditContext,
+  CollectionObserver,
+  CollectionResult,
+} from "../../contracts/adapter.js";
 import type { WorktreeQuarantineAction } from "../../contracts/action.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";
 import type { Finding, RootEvidence } from "../../contracts/finding.js";
@@ -19,6 +24,7 @@ import {
   type ProcessOwnershipResult,
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
+import { shouldDeferProcessOwnership } from "./cheap-protection.js";
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "./porcelain.js";
 import { isPushedHead, matchingGitRefPins } from "./refs.js";
 import {
@@ -31,7 +37,8 @@ const execFileAsync = promisify(execFile);
 export type GitRunner = (args: string[]) => Promise<string>;
 export type GitPathExists = (path: string) => Promise<boolean>;
 export type GitProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
-export type GitWorktreeOptions = AgentRinseConfig["audit"] &
+export type GitWorktreeOptions = Pick<AgentRinseConfig["audit"], "maxEntries" | "measureBytes"> &
+  Partial<Pick<AgentRinseConfig["audit"], "gitTimeoutMs">> &
   AgentRinseConfig["worktrees"] & {
     platform: NodeJS.Platform;
   };
@@ -49,16 +56,17 @@ export type GitWorktreeDependencies = {
 const DEFAULT_OPTIONS: GitWorktreeOptions = {
   maxEntries: 100_000,
   measureBytes: true,
+  gitTimeoutMs: 10_000,
   minAgeMinutes: 14 * 24 * 60,
   quarantineTtlMinutes: 7 * 24 * 60,
   platform: process.platform,
 };
 
-async function defaultGitRunner(args: string[]): Promise<string> {
+export async function defaultGitRunner(args: string[], timeoutMs = 10_000): Promise<string> {
   const result = await execFileAsync("git", args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
-    timeout: 10_000,
+    timeout: timeoutMs,
   });
   return result.stdout;
 }
@@ -104,16 +112,19 @@ function upstreamRef(upstream: string | undefined): string | undefined {
 
 export class GitWorktreeAuditAdapter implements AuditAdapter {
   readonly id = "git";
+  private readonly runGit: GitRunner;
 
   constructor(
     private readonly root: string | undefined,
-    private readonly runGit: GitRunner = defaultGitRunner,
+    runGit: GitRunner | undefined = undefined,
     private readonly pathExists: GitPathExists = defaultPathExists,
     private readonly processProbe: GitProcessProbe = (path) => findProcessesUsingPath(path),
     private readonly reachability?: ReachabilityIndex,
     private readonly options: GitWorktreeOptions = DEFAULT_OPTIONS,
     private readonly dependencies: GitWorktreeDependencies = {},
-  ) {}
+  ) {
+    this.runGit = runGit ?? ((args) => defaultGitRunner(args, this.options.gitTimeoutMs ?? 10_000));
+  }
 
   async probe(_context: AuditContext): Promise<AdapterProbe> {
     if (this.root === undefined) {
@@ -180,7 +191,11 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     }
   }
 
-  async collect(context: AuditContext, probe: AdapterProbe): Promise<CollectionResult> {
+  async collect(
+    context: AuditContext,
+    probe: AdapterProbe,
+    observer?: CollectionObserver,
+  ): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
       if (this.dependencies.isolateRepositoryFailure !== true) {
         this.reachability?.protectUnresolvedGitRefs(context.now.toISOString());
@@ -240,7 +255,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         status: "unknown",
         matches: [],
         reason: "worktree does not exist",
+        scope: "path",
       };
+      let processOwnershipDeferred = false;
 
       if (exists) {
         try {
@@ -334,9 +351,36 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           )) {
             operations.add(operation);
           }
-          processOwnership = await this.processProbe(worktreePath);
+          const stagedCount = status?.staged ?? 0;
+          const modifiedCount = status?.modified ?? 0;
+          const untrackedCount = status?.untracked ?? 0;
+          const conflictedCount = status?.conflicted ?? 0;
+          const ignoredCount = status?.ignored ?? 0;
+          const ageMinutes =
+            measurement === undefined
+              ? undefined
+              : Math.max(0, (context.now.getTime() - measurement.newestMtimeMs) / 60_000);
+          const deferOwnership = shouldDeferProcessOwnership({
+            isMain: worktreePath === mainWorktreePath,
+            platform: this.options.platform,
+            bare: record.bare,
+            locked: record.locked,
+            prunable: record.prunable,
+            dirty:
+              stagedCount + modifiedCount + untrackedCount + conflictedCount + ignoredCount > 0,
+            ageMinutes,
+            minAgeMinutes: this.options.minAgeMinutes,
+          });
+          if (deferOwnership) {
+            // Cheap authoritative gates already protect this worktree; skip lsof.
+            // Fail-closed: deferred idle is only used when other classify roots will fire.
+            processOwnership = { status: "idle", matches: [] };
+            processOwnershipDeferred = true;
+          } else {
+            processOwnership = await this.processProbe(worktreePath);
+          }
           if (
-            processOwnership.status === "unknown" ||
+            (!deferOwnership && processOwnership.status === "unknown") ||
             repositoryCommonDir === undefined ||
             stats === undefined
           ) {
@@ -445,9 +489,11 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
                 : "unavailable",
           inspectionComplete,
           reportOnly: true,
+          processOwnershipDeferred,
         },
         ...(measurement === undefined ? {} : { measuredBytes: measurement.bytes }),
       });
+      observer?.reportResource(resources[resources.length - 1]!);
     }
     return { resources, diagnostics };
   }
@@ -678,6 +724,15 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     roots.push(
       ...(this.reachability?.rootsForResource(resource.resource, resource.facts, observedAt) ?? []),
     );
+    if (resource.facts.processOwnershipDeferred === true && roots.length === 0) {
+      roots.push({
+        code: "process-ownership-deferred",
+        source: "process",
+        observedAt,
+        detail:
+          "Process ownership was deferred for a supposedly protected worktree, but no protection root remained.",
+      });
+    }
     roots.sort((left, right) => left.code.localeCompare(right.code));
     const eligible = resource.exists && roots.length === 0;
     const candidateActions: WorktreeQuarantineAction[] = eligible ? [this.actionFor(resource)] : [];

@@ -14,7 +14,7 @@ import type { CleanupPlan } from "../contracts/plan.js";
 import type { AuditReport } from "../contracts/report.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { applyCleanupPlan } from "../core/apply.js";
-import { runAudit } from "../core/audit.js";
+import { AuditPhaseDeadlineError, runAudit, type AuditProgressEvent } from "../core/audit.js";
 import { CommandInterruptedError } from "../core/interruption.js";
 import { createCleanupPlan } from "../core/plan.js";
 import { createCommandEnvelope, jsonDocument } from "../machine-output.js";
@@ -37,7 +37,11 @@ type CleanCommandBaseOptions = {
   dependencies?: {
     platform?: NodeJS.Platform;
     now?: () => Date;
-    runCommand?: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
+    runCommand?: (
+      command: string,
+      args: string[],
+      timeoutMs?: number,
+    ) => Promise<{ stdout: string; stderr: string }>;
   };
 };
 
@@ -69,6 +73,9 @@ type SavedCleanSummary = {
   auditPath: string;
   planPath: string;
   configPath: string;
+  auditIncomplete: boolean;
+  auditDeadlineExceeded: boolean;
+  selectedUnprovenTargets: number;
   run?: RunSummary;
 };
 
@@ -138,11 +145,12 @@ export function cleanCommandStatus(
 async function defaultRunCommand(
   command: string,
   args: string[],
+  timeoutMs = 10_000,
 ): Promise<{ stdout: string; stderr: string }> {
   const result = await execFileAsync(command, args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
-    timeout: 10_000,
+    timeout: timeoutMs,
   });
   return { stdout: result.stdout, stderr: result.stderr };
 }
@@ -174,7 +182,12 @@ function scopedConfig(
 
 async function fleetRepositories(
   repos: readonly string[],
-  runCommand: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string }>,
+  runCommand: (
+    command: string,
+    args: string[],
+    timeoutMs?: number,
+  ) => Promise<{ stdout: string; stderr: string }>,
+  timeoutMs: number,
 ): Promise<{ repositories: FleetRepository[]; worktrees: string[] }> {
   if (repos.some((repo) => !isAbsolute(repo))) {
     throw new Error("clean --profile fleet requires absolute --repo paths");
@@ -198,13 +211,11 @@ async function fleetRepositories(
     let commonDir: string;
     try {
       const commonOutput = (
-        await runCommand("git", [
-          "-C",
-          repo,
-          "rev-parse",
-          "--path-format=absolute",
-          "--git-common-dir",
-        ])
+        await runCommand(
+          "git",
+          ["-C", repo, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+          timeoutMs,
+        )
       ).stdout.trim();
       commonDir = await realpath(commonOutput);
     } catch (error) {
@@ -216,7 +227,7 @@ async function fleetRepositories(
     }
     try {
       const output = (
-        await runCommand("git", ["-C", repo, "worktree", "list", "--porcelain", "-z"])
+        await runCommand("git", ["-C", repo, "worktree", "list", "--porcelain", "-z"], timeoutMs)
       ).stdout;
       valid.set(commonDir, {
         root: repo,
@@ -359,6 +370,66 @@ function interruptionFrom(signal?: AbortSignal): CommandInterruptedError | undef
     : new CommandInterruptedError("clean interrupted");
 }
 
+function auditDeadlineExceeded(audit: AuditReport): boolean {
+  return audit.diagnostics.some(
+    (diagnostic) => diagnostic.code === "AUDIT_PHASE_DEADLINE_EXCEEDED",
+  );
+}
+
+function countSelectedUnprovenTargets(audit: AuditReport, plan: CleanupPlan): number {
+  const eligibleUnproven = new Set(
+    audit.findings
+      .filter(
+        (finding) =>
+          finding.state === "eligible" &&
+          finding.resource.kind === "git-worktree" &&
+          finding.resource.id !== undefined &&
+          (finding.roots.some((root) => root.code === "process-ownership-deferred") ||
+            finding.confidence === "unknown"),
+      )
+      .map((finding) => finding.resource.id),
+  );
+  return plan.actions.filter((action) => eligibleUnproven.has(action.resourceId)).length;
+}
+
+function writeCleanAuditProgress(event: AuditProgressEvent, json: boolean): void {
+  if (json) {
+    process.stderr.write(
+      `${JSON.stringify({
+        source: "agentrinse.clean",
+        type: event.type,
+        timestamp: event.timestamp,
+        data:
+          event.type === "phase.started" || event.type === "phase.completed"
+            ? event.data
+            : event.type === "diagnostic.reported"
+              ? {
+                  code: event.data.code,
+                  severity: event.data.severity,
+                  adapter: event.data.adapter,
+                }
+              : event.type === "finding.completed"
+                ? {
+                    findingId: event.data.findingId,
+                    state: event.data.state,
+                    resourceId: event.data.resource.id,
+                  }
+                : event.type === "resource.discovered"
+                  ? { resourceId: event.data.resource.id, kind: event.data.resource.kind }
+                  : { adapter: event.data.adapter, status: event.data.status },
+      })}\n`,
+    );
+    return;
+  }
+  if (event.type === "phase.started" || event.type === "phase.completed") {
+    const deadline =
+      event.data.deadlineMs === undefined ? "" : ` deadlineMs=${event.data.deadlineMs}`;
+    process.stderr.write(
+      `agentrinse: audit ${event.data.adapter} ${event.data.phase} ${event.type === "phase.started" ? "start" : event.data.status}${deadline}\n`,
+    );
+  }
+}
+
 export function executeCleanCommand(
   options: CloseoutCleanCommandOptions,
 ): Promise<CleanCommandResult<CloseoutSummary>>;
@@ -385,10 +456,17 @@ export async function executeCleanCommand(
       throw new Error("clean --profile fleet supports only --max-risk safe or recoverable");
     }
   }
-  const runCommand = options.dependencies?.runCommand ?? defaultRunCommand;
   const platform = options.dependencies?.platform ?? process.platform;
   const clock = options.dependencies?.now ?? (() => new Date());
   const home = resolve(options.home);
+  if (options.profile === "fleet" && options.repos.some((repo) => !isAbsolute(repo))) {
+    throw new Error("clean --profile fleet requires absolute --repo paths");
+  }
+  const { config } = await loadConfigForHome(home, options.config);
+  const runCommand =
+    options.dependencies?.runCommand ??
+    ((command: string, args: string[], timeoutMs?: number) =>
+      defaultRunCommand(command, args, timeoutMs));
   let repositories: FleetRepository[];
   let worktrees: string[];
   let currentWorktree: string | undefined;
@@ -396,23 +474,30 @@ export async function executeCleanCommand(
   if (options.profile === "closeout") {
     const cwd = resolve(options.cwd ?? process.cwd());
     currentWorktree = (
-      await runCommand("git", ["-C", cwd, "rev-parse", "--show-toplevel"])
+      await runCommand(
+        "git",
+        ["-C", cwd, "rev-parse", "--show-toplevel"],
+        config.audit.gitTimeoutMs,
+      )
     ).stdout.trim();
     if (currentWorktree === "") {
       throw new Error("closeout requires a Git worktree");
     }
     const worktreeOutput = (
-      await runCommand("git", ["-C", currentWorktree, "worktree", "list", "--porcelain", "-z"])
+      await runCommand(
+        "git",
+        ["-C", currentWorktree, "worktree", "list", "--porcelain", "-z"],
+        config.audit.gitTimeoutMs,
+      )
     ).stdout;
     worktrees = parseWorktreePorcelain(worktreeOutput).map((record) => resolve(record.path));
     repositoryRoot = worktrees[0] ?? currentWorktree;
     repositories = [{ root: currentWorktree }];
   } else {
-    const fleet = await fleetRepositories(options.repos, runCommand);
+    const fleet = await fleetRepositories(options.repos, runCommand, config.audit.gitTimeoutMs);
     repositories = fleet.repositories;
     worktrees = fleet.worktrees;
   }
-  const { config } = await loadConfigForHome(home, options.config);
   const maxRisk =
     options.maxRisk === undefined ? undefined : actionRiskSchema.parse(options.maxRisk);
   const scoped = scopedConfig(config, repositories[0]!.root!, worktrees, maxRisk);
@@ -437,17 +522,36 @@ export async function executeCleanCommand(
           },
         ]
       : [];
-  const audit = await runAudit({
-    home,
-    config: scoped,
-    adapters: createAuditAdapters(scoped, platform, {
-      providerInventory: false,
-      roots,
-      ...(options.profile === "fleet" ? { gitRepositories: repositories } : {}),
-    }),
-    now: clock,
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-  });
+  const deadlineMs = scoped.audit.deadlineMs;
+  const phaseTimeoutMs = scoped.audit.phaseTimeoutMs;
+  const deadlineController = new AbortController();
+  const deadlineTimer = setTimeout(() => {
+    deadlineController.abort(new AuditPhaseDeadlineError("agentrinse", "collect", deadlineMs));
+  }, deadlineMs);
+  deadlineTimer.unref?.();
+  const signals = [deadlineController.signal];
+  if (options.signal !== undefined) {
+    signals.push(options.signal);
+  }
+  const auditSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals);
+  let audit: AuditReport;
+  try {
+    audit = await runAudit({
+      home,
+      config: scoped,
+      adapters: createAuditAdapters(scoped, platform, {
+        providerInventory: false,
+        roots,
+        ...(options.profile === "fleet" ? { gitRepositories: repositories } : {}),
+      }),
+      now: clock,
+      signal: auditSignal,
+      phaseTimeoutMs,
+      onEvent: (event) => writeCleanAuditProgress(event, options.json),
+    });
+  } finally {
+    clearTimeout(deadlineTimer);
+  }
   const plan = createCleanupPlan(audit, scoped, clock());
   const layout = stateLayout(resolveStateRoot(home, options.stateDir));
   const auditPath = resolve(layout.audits, `${audit.auditId}.json`);
@@ -480,6 +584,9 @@ export async function executeCleanCommand(
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       dependencies: {
         clock,
+        ...(options.profile === "closeout" && options.cwd !== undefined
+          ? { cwd: options.cwd }
+          : {}),
         loadCurrentConfig: async () =>
           scopedConfig(
             (await loadConfigForHome(home, options.config)).config,
@@ -506,12 +613,18 @@ export async function executeCleanCommand(
             quarantinedBytes: run.quarantinedBytes ?? 0,
           },
         };
+  const deadlineExceeded = auditDeadlineExceeded(audit);
+  const selectedUnprovenTargets = countSelectedUnprovenTargets(audit, plan);
   const savedSummary: SavedCleanSummary = {
     auditId: audit.auditId,
     planId: plan.planId,
     auditPath,
     planPath,
     configPath,
+    auditIncomplete:
+      deadlineExceeded || audit.findings.some((finding) => finding.state === "unknown"),
+    auditDeadlineExceeded: deadlineExceeded,
+    selectedUnprovenTargets,
     ...runSummary,
   };
   const summary: CleanSummary =
