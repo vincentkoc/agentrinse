@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import {
   access,
+  lstat,
   mkdir,
   mkdtemp,
   readFile,
@@ -29,6 +30,7 @@ import {
 import {
   purgeWorktreeQuarantine,
   undoWorktreeQuarantine,
+  type WorktreeRecoveryDependencies,
 } from "../../src/core/worktree-recovery.js";
 import { measurePath } from "../../src/core/measure.js";
 import { renameNoReplace } from "../../src/core/no-clobber-rename.js";
@@ -2713,6 +2715,216 @@ describe("worktree quarantine recovery", () => {
       }),
     ).rejects.toMatchObject({
       code: "WORKTREE_PLATFORM_UNSUPPORTED",
+    });
+    expect(await missing(result.quarantinePath)).toBe(false);
+  });
+});
+
+describe("worktree recovery refusal paths", () => {
+  const idle: Pick<WorktreeRecoveryDependencies, "processProbe" | "mountProbe"> = {
+    processProbe: async () => ({ status: "idle", matches: [] }),
+    mountProbe: async () => ({ status: "clear", paths: [] }),
+  };
+
+  async function quarantined(fixture: Fixture, id: string) {
+    const quarantineDirectory = join(fixture.home, "state", "quarantine");
+    const result = await executeWorktreeQuarantine(fixture.action, {
+      runId: `run-${id}`,
+      entryId: `entry-${id}`,
+      quarantineDirectory,
+      dependencies: { runGit: fixture.runGit },
+    });
+    const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    return { quarantineDirectory, result, manifest };
+  }
+
+  async function persistedStatus(manifestPath: string): Promise<string> {
+    return quarantineEntrySchema.parse(await readJsonFile(manifestPath)).status;
+  }
+
+  async function lockReason(fixture: Fixture, path: string): Promise<string | undefined> {
+    const records = parseWorktreePorcelain(
+      await fixture.runGit([
+        "--git-dir",
+        fixture.action.target.repositoryCommonDir,
+        "worktree",
+        "list",
+        "--porcelain",
+        "-z",
+      ]),
+    );
+    const locked = records.find((record) => record.path === path)?.locked;
+    return typeof locked === "string" ? locked : undefined;
+  }
+
+  it("refuses to purge an unexpired entry without allowUnexpired", async () => {
+    const fixture = await gitFixture();
+    const { quarantineDirectory, result, manifest } = await quarantined(fixture, "unexpired");
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        dependencies: { runGit: fixture.runGit, ...idle },
+      }),
+    ).rejects.toMatchObject({ code: "QUARANTINE_NOT_EXPIRED" });
+
+    expect(await persistedStatus(result.manifestPath)).toBe("quarantined");
+    expect(await missing(result.quarantinePath)).toBe(false);
+    expect(await lockReason(fixture, result.quarantinePath)).toBe(
+      "AgentRinse quarantine entry-unexpired",
+    );
+  });
+
+  it("relocks and keeps the entry when the purge isolation path already exists", async () => {
+    const fixture = await gitFixture();
+    const { quarantineDirectory, result, manifest } = await quarantined(fixture, "isolation");
+    const isolationPath = `${result.quarantinePath}.purging`;
+    await mkdir(isolationPath);
+    await writeFile(join(isolationPath, "occupant.txt"), "keep\n");
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        allowUnexpired: true,
+        dependencies: { runGit: fixture.runGit, ...idle },
+      }),
+    ).rejects.toMatchObject({ code: "QUARANTINE_PURGE_FAILED" });
+
+    expect(await persistedStatus(result.manifestPath)).toBe("quarantined");
+    expect(await missing(result.quarantinePath)).toBe(false);
+    await expect(readFile(join(isolationPath, "occupant.txt"), "utf8")).resolves.toBe("keep\n");
+    expect(await lockReason(fixture, result.quarantinePath)).toBe(
+      "AgentRinse quarantine entry-isolation",
+    );
+  });
+
+  it("rolls isolation back when Git reports removal but the path remains", async () => {
+    const fixture = await gitFixture();
+    const { quarantineDirectory, result, manifest } = await quarantined(fixture, "remove-noop");
+    const runGit = async (args: string[]) =>
+      args.includes("worktree") && args.includes("remove") ? "" : fixture.runGit(args);
+
+    const error = await purgeWorktreeQuarantine(manifest, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      allowUnexpired: true,
+      dependencies: { runGit, ...idle },
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "QUARANTINE_PURGE_FAILED" });
+    expect(await persistedStatus(result.manifestPath)).toBe("quarantined");
+    expect(await missing(result.quarantinePath)).toBe(false);
+    expect(await missing(`${result.quarantinePath}.purging`)).toBe(true);
+    expect(await lockReason(fixture, result.quarantinePath)).toBe(
+      "AgentRinse quarantine entry-remove-noop",
+    );
+  });
+
+  it("records partial state when purge cannot relock after a failed isolation move", async () => {
+    const fixture = await gitFixture();
+    const { quarantineDirectory, result, manifest } = await quarantined(fixture, "purge-partial");
+    const runGit = async (args: string[]) => {
+      if (args.includes("worktree") && args.includes("lock")) {
+        throw new Error("injected relock failure");
+      }
+      return fixture.runGit(args);
+    };
+
+    await expect(
+      purgeWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        allowUnexpired: true,
+        dependencies: {
+          runGit,
+          ...idle,
+          move: async () => {
+            throw new Error("injected isolation move failure");
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "QUARANTINE_PURGE_PARTIAL" });
+
+    const persisted = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    expect(persisted.status).toBe("partial");
+    expect(persisted.diagnostic).toMatchObject({
+      code: "QUARANTINE_PURGE_PARTIAL",
+      message: "purge left partial state: injected relock failure",
+    });
+    expect(await missing(result.quarantinePath)).toBe(false);
+  });
+
+  function occupyOriginalWhileRestoring(fixture: Fixture, manifestPath: string) {
+    let occupied = false;
+    return async (path: string) => {
+      if (!occupied && path === fixture.linked) {
+        const status = quarantineEntrySchema.parse(await readJsonFile(manifestPath)).status;
+        if (status === "restoring") {
+          occupied = true;
+          await mkdir(path);
+          await writeFile(join(path, "occupant.txt"), "arrived during undo\n");
+        }
+      }
+      return lstat(path);
+    };
+  }
+
+  it("relocks and keeps the entry when the original path is taken during undo", async () => {
+    const fixture = await gitFixture();
+    const { quarantineDirectory, result, manifest } = await quarantined(fixture, "undo-occupied");
+
+    const error = await undoWorktreeQuarantine(manifest, {
+      manifestPath: result.manifestPath,
+      quarantineDirectory,
+      dependencies: {
+        runGit: fixture.runGit,
+        ...idle,
+        inspect: occupyOriginalWhileRestoring(fixture, result.manifestPath),
+      },
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toMatchObject({ code: "QUARANTINE_UNDO_FAILED" });
+    expect((error as Error).cause).toMatchObject({
+      message: `original path became occupied before undo: ${fixture.linked}`,
+    });
+    expect(await persistedStatus(result.manifestPath)).toBe("quarantined");
+    await expect(readFile(join(fixture.linked, "occupant.txt"), "utf8")).resolves.toBe(
+      "arrived during undo\n",
+    );
+    expect(await lockReason(fixture, result.quarantinePath)).toBe(
+      "AgentRinse quarantine entry-undo-occupied",
+    );
+  });
+
+  it("records partial state when undo cannot relock after failing", async () => {
+    const fixture = await gitFixture();
+    const { quarantineDirectory, result, manifest } = await quarantined(fixture, "undo-partial");
+    const runGit = async (args: string[]) => {
+      if (args.includes("worktree") && args.includes("lock")) {
+        throw new Error("injected relock failure");
+      }
+      return fixture.runGit(args);
+    };
+
+    await expect(
+      undoWorktreeQuarantine(manifest, {
+        manifestPath: result.manifestPath,
+        quarantineDirectory,
+        dependencies: {
+          runGit,
+          ...idle,
+          inspect: occupyOriginalWhileRestoring(fixture, result.manifestPath),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "QUARANTINE_UNDO_PARTIAL" });
+
+    const persisted = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
+    expect(persisted.status).toBe("partial");
+    expect(persisted.diagnostic).toMatchObject({
+      code: "QUARANTINE_UNDO_PARTIAL",
+      message: "undo failed and rollback was incomplete: injected relock failure",
     });
     expect(await missing(result.quarantinePath)).toBe(false);
   });
