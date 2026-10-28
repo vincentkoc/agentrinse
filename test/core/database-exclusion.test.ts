@@ -33,6 +33,9 @@ describe("database exclusion", () => {
     const exclusion = await acquireDatabaseExclusion([path]);
     expect((await lstat(path)).mode & 0o222).toBe(0);
     await inspectCodexDatabase(path, {}, path, path, exclusion.handles?.get(path));
+    // The sqlite3 CLI's exit status for SQLITE_BUSY varies by version (this
+    // test used to require 5; 3.54.1 exits 1), but every version reports
+    // "database is locked" on stderr.
     await expect(
       execFileAsync("sqlite3", [
         "-batch",
@@ -41,7 +44,7 @@ describe("database exclusion", () => {
         path,
         "SELECT * FROM values_table;",
       ]),
-    ).rejects.toMatchObject({ code: 5 });
+    ).rejects.toMatchObject({ stderr: expect.stringMatching(/database is locked/) });
     const waitingWriteRejection = expect(
       execFileAsync("sqlite3", [
         "-batch",
