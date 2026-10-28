@@ -55,8 +55,9 @@ The project follows semantic versioning after its first supported release.
 
 - runtime: koffi 3.1.6 → 3.3.4 (#54, then a patch bump), zod 4.4.3 → 4.6.7
   (#54); JSON schemas regenerated for the Zod update (#67).
-- development: vitest 5.0.5, vite 8.1.6, oxlint 1.89.0, oxfmt 0.74.0,
-  publint 0.3.25, @types/node 24.19.2 (#61, #66); source-map-js 1.2.2 (#62).
+- development: vitest 5.0.5, vite 8.3.5, oxlint 1.89.0, oxfmt 0.74.0,
+  publint 0.3.25, @types/node 24.19.2 (#61, #66, then vite 8.3.5);
+  source-map-js 1.2.2 (#62).
 
 ## [0.8.2] - 2026-08-25
 
