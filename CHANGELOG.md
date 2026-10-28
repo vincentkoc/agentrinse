@@ -11,6 +11,21 @@ The project follows semantic versioning after its first supported release.
 - `audit --quick --providers <ids>` runs stateless selected-provider inventory
   without recursive byte measurement or action-oriented maintenance collection
   and reports per-phase timing in NDJSON.
+- `audit.gitTimeoutMs` and `audit.processOwnershipTimeoutMs` bound each Git
+  audit/discovery command and each macOS `lsof` probe (default 10 seconds,
+  max 120). A timeout stays unknown and never permits action. (#59)
+- `audit.deadlineMs` (default 180 seconds, max 600) and `audit.phaseTimeoutMs`
+  (default 30 seconds, max 120) bound a whole clean/audit pass and each phase.
+  When the deadline elapses the pass stops and the summary marks results as
+  incomplete or unproven. (#63)
+
+### Changed
+
+- `clean --json` writes progress events to stderr so stdout stays valid JSON.
+  (#63)
+- process ownership checks are deferred until a worktree passes the cheaper
+  main/dirty/age/lock/platform gates, so excluded worktrees no longer spawn
+  `lsof`. (#63)
 
 ### Safety
 
@@ -23,6 +38,25 @@ The project follows semantic versioning after its first supported release.
   reported before a collection cutoff as protected unknown findings, ignores
   late results, strips candidate actions, and rejects persistence and
   offline-vacuum options.
+- an ownership probe failure for one path is now isolated to that path instead
+  of failing the whole audit. (#59)
+- artifact cleanup now protects Git-tracked files (including case-only path
+  matches) and files inside nested repositories. (#60)
+- artifact measurement no longer descends into nested `.git`, `.hg`, `.svn`,
+  or `.jj` directories, so a large nested repository cannot exhaust the entry
+  budget and hide the nested-VCS protection behind truncation. (#64)
+- authoritative protection roots (such as the current worktree) now take
+  precedence over uncertain blocks from failed Git, mount, or process probes.
+  (#64, #68)
+- if deferring ownership checks would leave no protection root, the audit
+  fails closed. (#63)
+
+### Dependencies
+
+- runtime: koffi 3.1.6 → 3.3.3, zod 4.4.3 → 4.6.7 (#54); JSON schemas
+  regenerated for the Zod update (#67).
+- development: vitest 5.0.5, vite 8.1.6, oxlint 1.89.0, oxfmt 0.74.0,
+  publint 0.3.25, @types/node 24.19.2 (#61, #66); source-map-js 1.2.2 (#62).
 
 ## [0.8.2] - 2026-08-25
 
