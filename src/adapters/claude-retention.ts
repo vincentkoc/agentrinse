@@ -8,7 +8,7 @@ import type { Diagnostic } from "../contracts/diagnostic.js";
 
 const MAX_SETTINGS_BYTES = 1024 * 1024;
 
-export const CLAUDE_NATIVE_RETENTION_DEFAULT_DAYS = 30;
+const CLAUDE_NATIVE_RETENTION_DEFAULT_DAYS = 30;
 
 export const claudeNativeRetentionFactsSchema = z.object({
   mechanism: z.literal("cleanupPeriodDays"),

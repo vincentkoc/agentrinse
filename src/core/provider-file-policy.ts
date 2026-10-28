@@ -25,13 +25,13 @@ export type ProviderFilePolicy = {
 
 export const CLAUDE_DEBUG_LOG_POLICY_ID = "claude.debug-log";
 export const CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES = 30 * 24 * 60;
-export const CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
+const CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
 export const CLAUDE_CHANGELOG_CACHE_POLICY_ID = "claude.changelog-cache";
 export const CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES = 30 * 24 * 60;
-export const CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
+const CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
 export const ZED_ROTATED_LOG_POLICY_ID = "zed.rotated-log";
 export const ZED_ROTATED_LOG_MIN_AGE_MINUTES = 30 * 24 * 60;
-export const ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
+const ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES = 7 * 24 * 60;
 
 export function isClaudeDebugLogRelativePath(relativePath: string): boolean {
   const components = relativePath.split(sep);

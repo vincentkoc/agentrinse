@@ -5,9 +5,9 @@ import { sha256Json } from "../../core/digest.js";
 
 const execFileAsync = promisify(execFile);
 
-export const DOCKER_BUILD_CACHE_MINIMUM_AGE_HOURS = 168;
-export const DOCKER_BUILDX_CONTRACT_MIN_VERSION = "0.33.0";
-export const DOCKER_BUILDX_CONTRACT_MAX_VERSION = "0.35.99";
+const DOCKER_BUILD_CACHE_MINIMUM_AGE_HOURS = 168;
+const DOCKER_BUILDX_CONTRACT_MIN_VERSION = "0.33.0";
+const DOCKER_BUILDX_CONTRACT_MAX_VERSION = "0.35.99";
 
 const CACHE_ID_PATTERN = /^[a-z0-9]{20,128}$/u;
 
@@ -79,11 +79,11 @@ export type DockerBuildCacheRecord = {
   fingerprint: string;
 };
 
-export class DockerOwnerContractError extends Error {
+class DockerOwnerContractError extends Error {
   override readonly name = "DockerOwnerContractError";
 }
 
-export async function defaultDockerRunner(args: string[]): Promise<string> {
+async function defaultDockerRunner(args: string[]): Promise<string> {
   return createDockerRunner()(args);
 }
 

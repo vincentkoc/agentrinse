@@ -4,15 +4,9 @@ import { plannedActionSchema } from "./action.js";
 import { diagnosticSchema } from "./diagnostic.js";
 import { resourceRefSchema } from "./resource.js";
 
-export const findingStateSchema = z.enum([
-  "protected",
-  "eligible",
-  "blocked",
-  "unknown",
-  "ignored",
-]);
+const findingStateSchema = z.enum(["protected", "eligible", "blocked", "unknown", "ignored"]);
 
-export const findingConfidenceSchema = z.enum(["certain", "high", "medium", "low", "unknown"]);
+const findingConfidenceSchema = z.enum(["certain", "high", "medium", "low", "unknown"]);
 
 export const rootEvidenceSchema = z.object({
   code: z.string().min(1),

@@ -16,7 +16,7 @@ export type HistoryCommandResult = {
   output: string;
 };
 
-export function renderHistory(runs: CleanupRun[]): string {
+function renderHistory(runs: CleanupRun[]): string {
   if (runs.length === 0) {
     return "No AgentRinse runs found.\n";
   }

@@ -1,6 +1,6 @@
 import { PROVIDER_IDS } from "../adapters/provider-specs.js";
 
-export const completionShells = ["bash", "zsh", "fish"] as const;
+const completionShells = ["bash", "zsh", "fish"] as const;
 export type CompletionShell = (typeof completionShells)[number];
 
 const COMMANDS = [

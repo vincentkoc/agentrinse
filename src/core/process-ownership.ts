@@ -3,8 +3,8 @@ import { isAbsolute, relative, resolve } from "node:path";
 
 import { runBoundedCommand } from "./bounded-command.js";
 
-export const DEFAULT_PROCESS_OWNERSHIP_TIMEOUT_MS = 10_000;
-export const DEFAULT_PROCESS_OWNERSHIP_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
+const DEFAULT_PROCESS_OWNERSHIP_TIMEOUT_MS = 10_000;
+const DEFAULT_PROCESS_OWNERSHIP_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 
 export type ProcessPathMatch = {
   pid: number;

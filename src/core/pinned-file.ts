@@ -158,7 +158,7 @@ async function openPhysicalDirectory(path: string): Promise<number> {
   }
 }
 
-export class PinnedDirectory {
+class PinnedDirectory {
   private closed = false;
 
   constructor(
