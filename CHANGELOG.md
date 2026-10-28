@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-28
+
 ### Added
 
 - `audit --quick --providers <ids>` runs stateless selected-provider inventory
@@ -58,6 +60,12 @@ The project follows semantic versioning after its first supported release.
 - development: vitest 5.0.5, vite 8.3.5, oxlint 1.89.0, oxfmt 0.74.0,
   publint 0.3.25, @types/node 24.19.2 (#61, #66, then vite 8.3.5);
   source-map-js 1.2.2 (#62).
+
+### Maintenance
+
+- CI also runs `pnpm check` on Node 22. (#74)
+- worktree recovery is split into validation, undo and purge modules with
+  added refusal-path tests; module-internal exports are private. (#76-#80)
 
 ## [0.8.2] - 2026-08-25
 
