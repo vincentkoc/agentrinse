@@ -24,7 +24,7 @@ import { reconcileOwnedWorktreeLockClaim, unlockOwnedWorktree } from "./worktree
 
 const execFileAsync = promisify(execFile);
 
-export class WorktreeRecoveryError extends Error {
+class WorktreeRecoveryError extends Error {
   override readonly name = "WorktreeRecoveryError";
 
   constructor(

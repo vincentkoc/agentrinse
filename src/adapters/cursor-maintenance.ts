@@ -41,7 +41,7 @@ const cursorDatabaseCompanionSchema = z.object({
   reason: z.string().min(1).optional(),
 });
 
-export const cursorDatabaseCompanionsSchema = z.array(cursorDatabaseCompanionSchema).length(3);
+const cursorDatabaseCompanionsSchema = z.array(cursorDatabaseCompanionSchema).length(3);
 
 export type CursorDatabaseCompanions = z.infer<typeof cursorDatabaseCompanionsSchema>;
 

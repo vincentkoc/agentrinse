@@ -42,7 +42,7 @@ async function defaultAvailableBytes(path: string): Promise<number> {
   return Number(stats.bavail) * Number(stats.bsize);
 }
 
-export function configuredCodexDatabasePath(
+function configuredCodexDatabasePath(
   action: DatabaseVacuumAction,
   home: string,
   config: AgentRinseConfig,

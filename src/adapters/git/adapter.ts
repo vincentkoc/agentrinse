@@ -62,7 +62,7 @@ const DEFAULT_OPTIONS: GitWorktreeOptions = {
   platform: process.platform,
 };
 
-export async function defaultGitRunner(args: string[], timeoutMs = 10_000): Promise<string> {
+async function defaultGitRunner(args: string[], timeoutMs = 10_000): Promise<string> {
   const result = await execFileAsync("git", args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,

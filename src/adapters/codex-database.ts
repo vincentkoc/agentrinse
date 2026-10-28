@@ -249,7 +249,7 @@ function parseInteger(value: string | undefined, label: string): number {
   return parsed;
 }
 
-export function codexDatabaseContract(path: string): CodexDatabaseContract | undefined {
+function codexDatabaseContract(path: string): CodexDatabaseContract | undefined {
   const filename = codexDatabaseFilenameSchema.safeParse(basename(path));
   return filename.success ? CODEX_DATABASE_CONTRACTS[filename.data] : undefined;
 }

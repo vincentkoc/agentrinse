@@ -22,7 +22,7 @@ const adapterConfigSchema = z.object({
   root: z.string().min(1).optional(),
 });
 
-export const artifactProjectSchema = z.object({
+const artifactProjectSchema = z.object({
   root: z.string().min(1).refine(isAbsolute, "artifact project root must be absolute"),
   names: z
     .array(artifactNameSchema)
@@ -60,7 +60,7 @@ function isValidGitRef(value: string): boolean {
   return true;
 }
 
-export const pinSchema = z.union([
+const pinSchema = z.union([
   z
     .object({
       path: z.string().min(1).refine(isAbsolute, "pin path must be absolute"),
@@ -197,7 +197,6 @@ export const agentRinseConfigSchema = z
   });
 
 export type AdapterId = z.infer<typeof adapterIdSchema>;
-export { artifactNameSchema };
 export type { ArtifactName };
 export type ArtifactProject = z.infer<typeof artifactProjectSchema>;
 export type Pin = z.infer<typeof pinSchema>;

@@ -15,7 +15,7 @@ export type ShowCommandResult<T> = {
   output: string;
 };
 
-export function renderRunDetails(run: CleanupRun): string {
+function renderRunDetails(run: CleanupRun): string {
   const lines = [
     `run ${run.runId}: ${run.status}`,
     `plan ${run.planId}`,

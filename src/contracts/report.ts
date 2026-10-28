@@ -3,13 +3,7 @@ import { z } from "zod";
 import { diagnosticSchema } from "./diagnostic.js";
 import { findingSchema } from "./finding.js";
 
-export const adapterStatusSchema = z.enum([
-  "available",
-  "absent",
-  "degraded",
-  "disabled",
-  "unsupported",
-]);
+const adapterStatusSchema = z.enum(["available", "absent", "degraded", "disabled", "unsupported"]);
 
 export const adapterProbeSchema = z.object({
   adapter: z.string().min(1),

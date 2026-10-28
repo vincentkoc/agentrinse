@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from "node:path";
 
-export const GIT_OPERATION_MARKERS = [
+const GIT_OPERATION_MARKERS = [
   ["merge", "MERGE_HEAD"],
   ["rebase", "rebase-merge"],
   ["rebase", "rebase-apply"],

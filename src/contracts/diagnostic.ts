@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const diagnosticSeveritySchema = z.enum(["info", "warning", "error"]);
+const diagnosticSeveritySchema = z.enum(["info", "warning", "error"]);
 
 export const diagnosticSchema = z.object({
   severity: diagnosticSeveritySchema,

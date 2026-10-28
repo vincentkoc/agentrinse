@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { diagnosticSchema } from "./diagnostic.js";
 
-export const actionExecutionStatusSchema = z.enum([
+const actionExecutionStatusSchema = z.enum([
   "pending",
   "revalidating",
   "skipped-stale",
@@ -58,7 +58,7 @@ export const actionExecutionSchema = z.discriminatedUnion("type", [
   providerFileActionExecutionSchema,
 ]);
 
-export const runStatusSchema = z.enum(["running", "completed", "partial", "failed", "interrupted"]);
+const runStatusSchema = z.enum(["running", "completed", "partial", "failed", "interrupted"]);
 
 export const cleanupRunSchema = z.object({
   schemaVersion: z.literal(1),
