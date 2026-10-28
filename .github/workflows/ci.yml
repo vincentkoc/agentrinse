@@ -46,6 +46,32 @@ jobs:
       - name: Smoke installed package
         run: pnpm smoke:package
 
+  # engines.node is >=22, so also run the source checks on the oldest
+  # supported line. Kept as a separate job so the required `test` check name
+  # is unchanged.
+  test-node22:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check source
+        run: pnpm check
+
   windows-audit-state:
     runs-on: windows-latest
     timeout-minutes: 10
