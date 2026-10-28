@@ -27,11 +27,9 @@ import {
   worktreeQuarantinePath,
   worktreeRecoveryRef,
 } from "../../src/core/worktree-executor.js";
-import {
-  purgeWorktreeQuarantine,
-  undoWorktreeQuarantine,
-  type WorktreeRecoveryDependencies,
-} from "../../src/core/worktree-recovery.js";
+import { purgeWorktreeQuarantine } from "../../src/core/worktree-purge.js";
+import type { WorktreeRecoveryDependencies } from "../../src/core/worktree-recovery.js";
+import { undoWorktreeQuarantine } from "../../src/core/worktree-undo.js";
 import { measurePath } from "../../src/core/measure.js";
 import { renameNoReplace } from "../../src/core/no-clobber-rename.js";
 import { readJsonFile, writeJsonAtomic } from "../../src/state/json-file.js";

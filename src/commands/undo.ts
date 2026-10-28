@@ -15,7 +15,8 @@ import {
   undoProviderFileQuarantine,
   type ProviderFileRecoveryOptions,
 } from "../core/provider-file-recovery.js";
-import { undoWorktreeQuarantine, type WorktreeRecoveryOptions } from "../core/worktree-recovery.js";
+import type { WorktreeRecoveryOptions } from "../core/worktree-recovery.js";
+import { undoWorktreeQuarantine } from "../core/worktree-undo.js";
 import { ensurePrivateDirectory } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 import { acquireApplyLock } from "../state/lock.js";
