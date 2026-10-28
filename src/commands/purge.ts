@@ -26,8 +26,8 @@ import {
   purgeProviderFileQuarantine,
   type ProviderFileRecoveryOptions,
 } from "../core/provider-file-recovery.js";
+import { purgeWorktreeQuarantine } from "../core/worktree-purge.js";
 import {
-  purgeWorktreeQuarantine,
   worktreePurgeIsolationPath,
   type PurgeWorktreeOptions,
 } from "../core/worktree-recovery.js";
