@@ -3,4 +3,4 @@ packages:
 allowBuilds:
   koffi: true
 overrides:
-  vite: 8.1.6
+  vite: 8.3.5
