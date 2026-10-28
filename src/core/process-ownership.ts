@@ -141,15 +141,21 @@ async function inspectLinux(
 
   const matches: ProcessPathMatch[] = [];
   let incomplete = false;
-  const entries = await readdir(procRoot, { withFileTypes: true });
+  // Read names only. procfs reports DT_UNKNOWN for a PID whose task is
+  // exiting, and `withFileTypes` then lstat()s that entry; if the process is
+  // already gone the whole readdir rejects with ENOENT. A vanished PID is
+  // handled per entry below (isGone), and a numeric entry that is not a
+  // process directory fails its status read with ENOTDIR, which marks the
+  // scan incomplete instead of idle.
+  const names = await readdir(procRoot);
 
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) {
+  for (const name of names) {
+    if (!/^\d+$/.test(name)) {
       continue;
     }
 
-    const pid = Number.parseInt(entry.name, 10);
-    const processRoot = resolve(procRoot, entry.name);
+    const pid = Number.parseInt(name, 10);
+    const processRoot = resolve(procRoot, name);
 
     try {
       const processUid = await readProcessUid(resolve(processRoot, "status"));

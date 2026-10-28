@@ -6,6 +6,15 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Linux process-ownership scans no longer abort with `ENOENT lstat /proc/<pid>`
+  when a process exits mid-scan. procfs lists an exiting PID with an unknown
+  file type, which made the typed directory listing fail as a whole; the scan
+  now lists names only and skips a PID that has disappeared, while an entry
+  that cannot be read for any other reason still falls back to `lsof` and
+  fails closed.
+
 ## [0.9.0] - 2026-10-28
 
 ### Added
