@@ -5,10 +5,30 @@ safety boundary, not only their happy path.
 
 ## Setup
 
+Prerequisites:
+
+- Node.js 22 or newer (`engines.node`); CI runs Node 22 and 24.
+- pnpm at the version pinned in `package.json` (`packageManager`), for example
+  through `corepack enable`.
+- Git.
+- `sqlite3` on `PATH`. The Codex database tests skip themselves when it is
+  missing, so a run without it passes while leaving that code untested.
+- `lsof` on macOS for the process-ownership tests.
+
 ```bash
 pnpm install
 pnpm check
 ```
+
+Before opening a pull request, also run the package checks CI runs:
+
+```bash
+pnpm pack:check
+pnpm smoke
+pnpm smoke:package
+```
+
+See [docs/development.md](docs/development.md) for what each check covers.
 
 ## Requirements
 
