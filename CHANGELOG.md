@@ -14,6 +14,10 @@ The project follows semantic versioning after its first supported release.
   now lists names only and skips a PID that has disappeared, while an entry
   that cannot be read for any other reason still falls back to `lsof` and
   fails closed.
+- Claude native version inventory no longer drops every version when one
+  version file is removed while the directory is listed (for example during
+  `claude update`). A vanished entry is skipped; any other inspection error
+  still reports `CLAUDE_RUNTIME_INSPECTION_FAILED`.
 
 ## [0.9.0] - 2026-10-28
 

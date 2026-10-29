@@ -212,22 +212,38 @@ export class RuntimeAuditAdapter implements AuditAdapter {
         });
         return { resources, paths, diagnostics };
       }
-      for (const entry of await readdir(root, { withFileTypes: true })) {
+      // Read names and lstat each entry ourselves. With `withFileTypes`, an
+      // entry whose type the filesystem reports as unknown is lstat()ed inside
+      // readdir, so one version file removed mid-listing (for example by
+      // `claude update`) rejected the whole listing as if the root were
+      // missing. An entry that vanishes is skipped; any other failure still
+      // stops the inspection and reports CLAUDE_RUNTIME_INSPECTION_FAILED.
+      for (const name of await readdir(root)) {
         context.signal?.throwIfAborted();
-        if (!entry.isFile()) {
-          continue;
+        const entryPath = resolve(root, name);
+        let path: string;
+        let stats: Awaited<ReturnType<typeof lstat>>;
+        try {
+          if (!(await lstat(entryPath)).isFile()) {
+            continue;
+          }
+          path = await realpath(entryPath);
+          stats = await lstat(path);
+        } catch (error) {
+          if (isMissing(error)) {
+            continue;
+          }
+          throw error;
         }
-        const path = await realpath(resolve(root, entry.name));
-        const stats = await lstat(path);
         paths.add(path);
         resources.push(
           this.resource(context, {
             tool: "claude",
-            displayName: `Claude Code ${entry.name}`,
+            displayName: `Claude Code ${name}`,
             path,
             measuredBytes: stats.size,
             facts: {
-              version: entry.name,
+              version: name,
               selected: activePath === path,
               installManager: "claude-native",
               recommendation: "Use `claude install stable` to manage this installation.",
