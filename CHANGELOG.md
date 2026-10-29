@@ -19,6 +19,10 @@ The project follows semantic versioning after its first supported release.
   `claude update`). A vanished entry is skipped; any other inspection error
   still reports `CLAUDE_RUNTIME_INSPECTION_FAILED`.
 
+### Dependencies
+
+- development: oxlint 1.89.0 → 1.90.0, oxfmt 0.74.0 → 0.75.0.
+
 ## [0.9.0] - 2026-10-28
 
 ### Added
