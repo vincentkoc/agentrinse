@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-29
+
 ### Fixed
 
 - Linux process-ownership scans no longer abort with `ENOENT lstat /proc/<pid>`
@@ -13,15 +15,15 @@ The project follows semantic versioning after its first supported release.
   file type, which made the typed directory listing fail as a whole; the scan
   now lists names only and skips a PID that has disappeared, while an entry
   that cannot be read for any other reason still falls back to `lsof` and
-  fails closed.
+  fails closed. (#84)
 - Claude native version inventory no longer drops every version when one
   version file is removed while the directory is listed (for example during
   `claude update`). A vanished entry is skipped; any other inspection error
-  still reports `CLAUDE_RUNTIME_INSPECTION_FAILED`.
+  still reports `CLAUDE_RUNTIME_INSPECTION_FAILED`. (#86)
 
 ### Dependencies
 
-- development: oxlint 1.89.0 → 1.90.0, oxfmt 0.74.0 → 0.75.0.
+- development: oxlint 1.89.0 → 1.90.0, oxfmt 0.74.0 → 0.75.0. (#87)
 
 ## [0.9.0] - 2026-10-28
 
