@@ -6,6 +6,12 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Git worktree inspection no longer fails a whole repository with `stdout maxBuffer length
+  exceeded` on large indexes. `git ls-files -z --stage` printed over 4 MiB at about 40k tracked
+  files, so no worktree of such a repository was inventoried. Git output is now capped at 64 MiB.
+
 ## [0.9.1] - 2026-10-29
 
 ### Fixed

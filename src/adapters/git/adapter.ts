@@ -62,10 +62,14 @@ const DEFAULT_OPTIONS: GitWorktreeOptions = {
   platform: process.platform,
 };
 
+// `git ls-files -z --stage` and `-z -v` scale with the index: about 100 bytes per tracked file.
+// 4 MiB failed whole-repository inspection at roughly 40k files.
+export const GIT_OUTPUT_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
 async function defaultGitRunner(args: string[], timeoutMs = 10_000): Promise<string> {
   const result = await execFileAsync("git", args, {
     encoding: "utf8",
-    maxBuffer: 4 * 1024 * 1024,
+    maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
     timeout: timeoutMs,
   });
   return result.stdout;
