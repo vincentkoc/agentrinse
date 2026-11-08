@@ -6,6 +6,17 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- Git inspection no longer fails on repositories with tens of thousands of
+  tracked files. Submodule detection (`git ls-files -z --stage`) and
+  suppressed-entry counting (`git ls-files -z -v`) are now scanned record by
+  record instead of being buffered behind a fixed 4 MiB limit, which made a
+  fleet campaign drop the whole repository with
+  `GIT_REPOSITORY_INSPECTION_FAILED`. Quarantine and undo/purge validation use
+  the same scanner, so recovery keeps working for every worktree discovery can
+  admit. A timed-out listing now names the timeout as its cause.
+
 ## [0.9.1] - 2026-10-29
 
 ### Fixed

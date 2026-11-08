@@ -3,6 +3,11 @@ import type { Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
+import {
+  bufferedGitRecordScanner,
+  type GitRecordScanner,
+  streamingGitRecordScanner,
+} from "../adapters/git/index-scan.js";
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
 import { quarantineEntrySchema, type QuarantineEntry } from "../contracts/quarantine.js";
 import { writeJsonAtomic } from "../state/json-file.js";
@@ -144,7 +149,9 @@ export type ResolvedRecoveryDependencies = Required<
     WorktreeRecoveryDependencies,
     "runGit" | "inspect" | "move" | "measure" | "processProbe" | "mountProbe" | "clock"
   >
->;
+> & {
+  scanGit: GitRecordScanner;
+};
 
 export async function assertNoGitOperations(
   entry: QuarantineEntry,
@@ -206,6 +213,10 @@ export function resolveDependencies(
 ): ResolvedRecoveryDependencies {
   return {
     runGit: options.dependencies?.runGit ?? defaultGitRunner,
+    scanGit:
+      options.dependencies?.runGit === undefined
+        ? streamingGitRecordScanner()
+        : bufferedGitRecordScanner(options.dependencies.runGit),
     inspect: options.dependencies?.inspect ?? lstat,
     move:
       options.dependencies?.move ??

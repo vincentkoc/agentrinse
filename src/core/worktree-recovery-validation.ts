@@ -1,8 +1,6 @@
+import { countIndexStatusSuppressedEntries } from "../adapters/git/index-scan.js";
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
-import {
-  countStatusSuppressedIndexEntries,
-  parseGitStatusPorcelainV2,
-} from "../adapters/git/status.js";
+import { parseGitStatusPorcelainV2 } from "../adapters/git/status.js";
 import type { QuarantineEntry, QuarantineStatus } from "../contracts/quarantine.js";
 import { reconcileOwnedWorktreeLockClaim } from "./worktree-lock.js";
 import {
@@ -123,8 +121,9 @@ export async function validateQuarantinedEntry(
       "--ignored=matching",
     ]),
   );
-  const statusSuppressedEntries = countStatusSuppressedIndexEntries(
-    await dependencies.runGit(["-C", worktreePath, "ls-files", "-z", "-v"]),
+  const statusSuppressedEntries = await countIndexStatusSuppressedEntries(
+    dependencies.scanGit,
+    worktreePath,
   );
   if (
     status.head !== entry.target.head ||
@@ -295,8 +294,9 @@ export async function verifyRecoveryPath(
       "--ignored=matching",
     ]),
   );
-  const statusSuppressedEntries = countStatusSuppressedIndexEntries(
-    await dependencies.runGit(["-C", path, "ls-files", "-z", "-v"]),
+  const statusSuppressedEntries = await countIndexStatusSuppressedEntries(
+    dependencies.scanGit,
+    path,
   );
   if (
     status.head !== entry.target.head ||

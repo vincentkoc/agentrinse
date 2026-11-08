@@ -5,11 +5,14 @@ import { lstat, mkdir, rm } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
-import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
 import {
-  countStatusSuppressedIndexEntries,
-  parseGitStatusPorcelainV2,
-} from "../adapters/git/status.js";
+  bufferedGitRecordScanner,
+  countIndexStatusSuppressedEntries,
+  type GitRecordScanner,
+  streamingGitRecordScanner,
+} from "../adapters/git/index-scan.js";
+import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
+import { parseGitStatusPorcelainV2 } from "../adapters/git/status.js";
 import { isPushedHead } from "../adapters/git/refs.js";
 import type { WorktreeQuarantineAction } from "../contracts/action.js";
 import {
@@ -94,11 +97,13 @@ export type ExecuteWorktreeQuarantineOptions = {
   dependencies?: WorktreeExecutorDependencies;
 };
 
+const GIT_TIMEOUT_MS = 15_000;
+
 async function defaultGitRunner(args: string[]): Promise<string> {
   const result = await execFileAsync("git", args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
-    timeout: 15_000,
+    timeout: GIT_TIMEOUT_MS,
   });
   return result.stdout;
 }
@@ -345,6 +350,7 @@ async function assertCleanPushedGitState(
   worktreePath: string,
   entry: QuarantineEntry,
   runGit: (args: string[]) => Promise<string>,
+  scanGit: GitRecordScanner,
   inspect: (path: string) => Promise<Stats>,
 ): Promise<void> {
   const statusOutput = await runGit([
@@ -358,11 +364,8 @@ async function assertCleanPushedGitState(
     "--ignored=matching",
   ]);
   const status = parseGitStatusPorcelainV2(statusOutput);
-  const indexFlags = await runGit(["-C", worktreePath, "ls-files", "-z", "-v"]);
-  if (
-    !cleanStatusMatches(statusOutput, action) ||
-    countStatusSuppressedIndexEntries(indexFlags) > 0
-  ) {
+  const suppressedEntries = await countIndexStatusSuppressedEntries(scanGit, worktreePath);
+  if (!cleanStatusMatches(statusOutput, action) || suppressedEntries > 0) {
     throw new WorktreeExecutionError(
       "worktree Git state changed before quarantine",
       "skipped-stale",
@@ -407,6 +410,10 @@ export async function executeWorktreeQuarantine(
 ): Promise<WorktreeExecutionResult> {
   const dependencies = options.dependencies ?? {};
   const runGit = dependencies.runGit ?? defaultGitRunner;
+  const scanGit =
+    dependencies.runGit === undefined
+      ? streamingGitRecordScanner({ timeoutMs: GIT_TIMEOUT_MS })
+      : bufferedGitRecordScanner(dependencies.runGit);
   const inspect = dependencies.inspect ?? lstat;
   const platform = dependencies.platform ?? process.platform;
   const move =
@@ -582,7 +589,7 @@ export async function executeWorktreeQuarantine(
         { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
       );
     }
-    await assertCleanPushedGitState(action, action.target.path, entry, runGit, inspect);
+    await assertCleanPushedGitState(action, action.target.path, entry, runGit, scanGit, inspect);
     const boundaryOwnership = await processProbe(action.target.path);
     if (boundaryOwnership.status !== "idle") {
       throw new WorktreeExecutionError(
@@ -665,7 +672,7 @@ export async function executeWorktreeQuarantine(
         { diagnosticCode: "WORKTREE_IDENTITY_CHANGED" },
       );
     }
-    await assertCleanPushedGitState(action, action.target.path, entry, runGit, inspect);
+    await assertCleanPushedGitState(action, action.target.path, entry, runGit, scanGit, inspect);
     const finalBoundaryOwnership = await processProbe(action.target.path);
     if (finalBoundaryOwnership.status !== "idle") {
       throw new WorktreeExecutionError(
@@ -889,11 +896,8 @@ export async function executeWorktreeQuarantine(
       "--untracked-files=all",
       "--ignored=matching",
     ]);
-    const finalIndexFlags = await runGit(["-C", quarantinePath, "ls-files", "-z", "-v"]);
-    if (
-      !cleanStatusMatches(finalStatus, action) ||
-      countStatusSuppressedIndexEntries(finalIndexFlags) > 0
-    ) {
+    const finalSuppressedEntries = await countIndexStatusSuppressedEntries(scanGit, quarantinePath);
+    if (!cleanStatusMatches(finalStatus, action) || finalSuppressedEntries > 0) {
       throw new WorktreeExecutionError(
         "quarantined worktree Git state changed before commit",
         "partially-applied",

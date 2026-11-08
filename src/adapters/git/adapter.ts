@@ -25,13 +25,16 @@ import {
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
 import { shouldDeferProcessOwnership } from "./cheap-protection.js";
+import {
+  bufferedGitRecordScanner,
+  countIndexStatusSuppressedEntries,
+  type GitRecordScanner,
+  indexHasGitlink,
+  streamingGitRecordScanner,
+} from "./index-scan.js";
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "./porcelain.js";
 import { isPushedHead, matchingGitRefPins } from "./refs.js";
-import {
-  countStatusSuppressedIndexEntries,
-  parseGitStatusPorcelainV2,
-  type GitStatusFacts,
-} from "./status.js";
+import { parseGitStatusPorcelainV2, type GitStatusFacts } from "./status.js";
 
 const execFileAsync = promisify(execFile);
 export type GitRunner = (args: string[]) => Promise<string>;
@@ -113,6 +116,7 @@ function upstreamRef(upstream: string | undefined): string | undefined {
 export class GitWorktreeAuditAdapter implements AuditAdapter {
   readonly id = "git";
   private readonly runGit: GitRunner;
+  private readonly scanGit: GitRecordScanner;
 
   constructor(
     private readonly root: string | undefined,
@@ -124,6 +128,10 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     private readonly dependencies: GitWorktreeDependencies = {},
   ) {
     this.runGit = runGit ?? ((args) => defaultGitRunner(args, this.options.gitTimeoutMs ?? 10_000));
+    this.scanGit =
+      runGit === undefined
+        ? streamingGitRecordScanner({ timeoutMs: this.options.gitTimeoutMs ?? 10_000 })
+        : bufferedGitRecordScanner(runGit);
   }
 
   async probe(_context: AuditContext): Promise<AdapterProbe> {
@@ -286,11 +294,10 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
             ])
           ).trim();
           repositoryCommonDir = resolve(worktreePath, commonDirOutput);
-          hasSubmodules = (await this.runGit(["-C", worktreePath, "ls-files", "-z", "--stage"]))
-            .split("\0")
-            .some((entry) => entry.startsWith("160000 "));
-          statusSuppressedEntries = countStatusSuppressedIndexEntries(
-            await this.runGit(["-C", worktreePath, "ls-files", "-z", "-v"]),
+          hasSubmodules = await indexHasGitlink(this.scanGit, worktreePath);
+          statusSuppressedEntries = await countIndexStatusSuppressedEntries(
+            this.scanGit,
+            worktreePath,
           );
           if (this.options.measureBytes) {
             measurement = await (this.dependencies.measure ?? measurePath)(worktreePath, {
