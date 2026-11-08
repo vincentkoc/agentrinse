@@ -6,6 +6,16 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `apply` and `clean --apply` now honor `audit.processOwnershipTimeoutMs` for
+  the process-ownership probes they repeat during artifact revalidation and in
+  the artifact and worktree executors. These probes previously used a fixed
+  10-second budget, so on a loaded macOS host, where `lsof +D` can take longer,
+  every artifact removal was skipped or rolled back even when the audit used a
+  larger budget. A timeout still leaves ownership unknown and never permits
+  action. `undo` and `purge` are unchanged.
+
 ## [0.9.1] - 2026-10-29
 
 ### Fixed
