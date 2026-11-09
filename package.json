@@ -57,17 +57,17 @@
   },
   "dependencies": {
     "commander": "15.0.0",
-    "koffi": "3.3.4",
+    "koffi": "3.3.5",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "24.19.2",
-    "oxfmt": "0.75.0",
-    "oxlint": "1.90.0",
+    "oxfmt": "0.76.0",
+    "oxlint": "1.91.0",
     "publint": "0.3.25",
     "typescript": "7.0.2",
-    "vite": "8.3.5",
-    "vitest": "5.0.5"
+    "vite": "8.3.6",
+    "vitest": "5.1.0"
   },
   "engines": {
     "node": ">=22"
