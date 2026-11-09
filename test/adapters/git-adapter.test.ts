@@ -652,4 +652,69 @@ describe("GitWorktreeAuditAdapter", () => {
       candidateActions: [],
     });
   });
+  it("inspects a repository whose index listing exceeds 4 MiB with the default Git runner", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-large-index-"));
+    const main = join(home, "repo");
+    await execFileAsync("git", ["init", "-b", "main", main]);
+    await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
+    await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
+    await writeFile(join(main, "README.md"), "fixture\n");
+    await execFileAsync("git", ["-C", main, "add", "README.md"]);
+    await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
+    const blob = (
+      await execFileAsync("git", ["-C", main, "rev-parse", "HEAD:README.md"], { encoding: "utf8" })
+    ).stdout.trim();
+    // Index-only entries: `ls-files -z --stage` prints about 110 bytes each, over 5 MiB in
+    // total, without writing 50k files to disk.
+    const prefix = "d".repeat(48);
+    const entries = Array.from(
+      { length: 50_000 },
+      (_, index) => `100644 ${blob}\t${prefix}/${String(index).padStart(8, "0")}.txt\n`,
+    ).join("");
+    await new Promise<void>((resolve, reject) => {
+      const child = execFile("git", ["-C", main, "update-index", "--index-info"], (error) =>
+        error === null ? resolve() : reject(error),
+      );
+      child.stdin?.end(entries);
+    });
+    const listing = (
+      await execFileAsync("git", ["-C", main, "ls-files", "-z", "--stage"], {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      })
+    ).stdout;
+    expect(Buffer.byteLength(listing)).toBeGreaterThan(4 * 1024 * 1024);
+    const adapter = new GitWorktreeAuditAdapter(
+      main,
+      undefined,
+      undefined,
+      async () => ({ status: "idle", matches: [] }),
+      undefined,
+      {
+        maxEntries: 10_000,
+        measureBytes: false,
+        minAgeMinutes: 0,
+        quarantineTtlMinutes: 60,
+        platform: process.platform === "linux" ? "linux" : "darwin",
+      },
+      {
+        mountProbe: async () => ({ status: "clear", paths: [] }),
+      },
+    );
+    const context: AuditContext = {
+      home,
+      now: new Date(),
+      auditId: "audit-large-index",
+    };
+
+    const collection = await adapter.collect(context, await adapter.probe(context));
+
+    expect(collection.diagnostics).toEqual([]);
+    expect(collection.resources).toEqual([
+      expect.objectContaining({
+        facts: expect.objectContaining({ isMain: true, hasSubmodules: false }),
+      }),
+    ]);
+    await rm(home, { force: true, recursive: true });
+  }, 30_000);
 });

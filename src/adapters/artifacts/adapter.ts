@@ -66,6 +66,16 @@ export class ArtifactAuditAdapter implements AuditAdapter {
 
     for (const project of this.options.projects) {
       const root = resolve(project.root);
+      if (root === resolve(context.home)) {
+        diagnostics.push({
+          severity: "error",
+          code: "ARTIFACT_PROJECT_IS_HOME",
+          message: "Artifact project root must be below, not equal to, the audited home.",
+          adapter: this.id,
+          remediation: "Configure an explicit project directory beneath the audited home.",
+        });
+        continue;
+      }
       if (!isPathInside(context.home, root)) {
         diagnostics.push({
           severity: "error",
