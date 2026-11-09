@@ -79,7 +79,7 @@ describe("GitWorktreeAuditAdapter", () => {
     ]);
   });
 
-  it("contains fleet path inspection failures without returning partial resources", async () => {
+  it("protects a fleet worktree when its path inspection fails", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
     const context: AuditContext = {
       home,
@@ -106,10 +106,18 @@ describe("GitWorktreeAuditAdapter", () => {
 
     const collection = await adapter.collect(context, await adapter.probe(context));
 
-    expect(collection.resources).toEqual([]);
+    expect(collection.resources).toHaveLength(1);
+    expect(collection.resources[0]?.facts.inspectionComplete).toBe(false);
+    expect(await adapter.classify(context, collection.resources[0]!)).toMatchObject({
+      state: "unknown",
+      candidateActions: [],
+      roots: expect.arrayContaining([
+        expect.objectContaining({ code: "git-inspection-incomplete" }),
+      ]),
+    });
     expect(collection.diagnostics).toEqual([
       expect.objectContaining({
-        code: "GIT_REPOSITORY_INSPECTION_FAILED",
+        code: "GIT_WORKTREE_INSPECTION_FAILED",
         message: "path inspection failed",
       }),
     ]);

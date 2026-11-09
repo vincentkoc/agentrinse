@@ -8,6 +8,12 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- In fleet campaigns, one worktree's Git inspection failure (for example a
+  `git status` timeout) no longer drops every worktree in that repository.
+  The failed worktree is reported as inspection-incomplete and stays
+  protected, its siblings are still inspected, and repository-level discovery
+  failures still fail the whole repository.
+
 - Git worktree inspection no longer fails a whole repository with `stdout maxBuffer length
   exceeded` on large indexes. `git ls-files -z --stage` printed over 4 MiB at about 40k tracked
   files, so no worktree of such a repository was inventoried. Git output is now capped at 64 MiB.
