@@ -8,6 +8,10 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- Git worktree inspection no longer fails a whole repository with `stdout maxBuffer length
+  exceeded` on large indexes. `git ls-files -z --stage` printed over 4 MiB at about 40k tracked
+  files, so no worktree of such a repository was inventoried. Git output is now capped at 64 MiB.
+
 - An artifact project root equal to the audited home is now refused, at
   discovery (`ARTIFACT_PROJECT_IS_HOME`) and again at apply-time revalidation.
   A home-level root would otherwise make home-level directories with supported
