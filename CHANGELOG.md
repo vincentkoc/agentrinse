@@ -8,6 +8,12 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- An artifact project root equal to the audited home is now refused, at
+  discovery (`ARTIFACT_PROJECT_IS_HOME`) and again at apply-time revalidation.
+  A home-level root would otherwise make home-level directories with supported
+  names, such as `~/.cache`, eligible as "artifacts". Project roots must be
+  strict descendants of the home.
+
 - `apply` and `clean --apply` now honor `audit.processOwnershipTimeoutMs` for
   the process-ownership probes they repeat during artifact revalidation and in
   the artifact and worktree executors. These probes previously used a fixed
