@@ -145,6 +145,8 @@ describe("database vacuum execution and recovery", () => {
     await execFileAsync("sqlite3", [
       originalPath,
       [
+        // Keep deleted pages available even when sqlite3 defaults to auto-vacuum.
+        "PRAGMA auto_vacuum=NONE;",
         "PRAGMA journal_mode=WAL;",
         "CREATE TABLE _sqlx_migrations(version BIGINT PRIMARY KEY, description TEXT NOT NULL, installed_on TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, success BOOLEAN NOT NULL, checksum BLOB NOT NULL, execution_time BIGINT NOT NULL);",
         "INSERT INTO _sqlx_migrations(version, description, success, checksum, execution_time) VALUES(39, 'threads recency at', 1, X'00', 0);",
@@ -156,6 +158,8 @@ describe("database vacuum execution and recovery", () => {
       ].join(" "),
     ]);
     const before = await inspectCodexDatabase(originalPath);
+    expect(before.identity.autoVacuum).toBe(0);
+    expect(before.identity.freelistCount).toBeGreaterThan(0);
     expect(before.estimatedReclaimBytes).toBeGreaterThan(0);
     const selectedAction: DatabaseVacuumAction = {
       ...action(originalPath),
