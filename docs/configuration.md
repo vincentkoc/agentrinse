@@ -87,13 +87,16 @@ overlap.
 
 `gitTimeoutMs` bounds each Git audit/discovery command, including fleet and
 closeout discovery. `processOwnershipTimeoutMs` bounds each macOS `lsof` probe
-created for an audit. Both default to 10 seconds and are capped at 120 seconds;
+created for an audit, and each process-ownership probe that `apply` (and
+`clean --apply`) repeats during artifact revalidation and in the artifact and
+worktree executors. Both default to 10 seconds and are capped at 120 seconds;
 a timeout remains unknown, not permission to act. `deadlineMs` is the total audit
 budget for a clean/audit pass (default 180 seconds, max 600). `phaseTimeoutMs`
 bounds each probe/collect/classify phase (default 30 seconds, max 120). Progress
 events for `--json` clean go to stderr; the final JSON document on stdout includes
-deadline diagnostics and never mixes progress text into stdout. Mutation-time
-revalidation retains its own defaults.
+deadline diagnostics and never mixes progress text into stdout. Other
+mutation-time revalidation, including `undo` and `purge`, retains its own
+defaults.
 
 ## Pins
 

@@ -56,6 +56,14 @@ export async function revalidateArtifactRemove(
   const targetPath = resolve(action.target.path);
   const expectedPath = resolve(join(projectRoot, action.target.name));
 
+  if (projectRoot === resolve(home)) {
+    return stale(
+      action,
+      "ARTIFACT_PROJECT_IS_HOME",
+      "artifact project root must be below, not equal to, the audited home",
+    );
+  }
+
   if (
     !isAbsolute(action.target.projectRoot) ||
     !isAbsolute(action.target.path) ||

@@ -12,6 +12,20 @@ The project follows semantic versioning after its first supported release.
   exceeded` on large indexes. `git ls-files -z --stage` printed over 4 MiB at about 40k tracked
   files, so no worktree of such a repository was inventoried. Git output is now capped at 64 MiB.
 
+- An artifact project root equal to the audited home is now refused, at
+  discovery (`ARTIFACT_PROJECT_IS_HOME`) and again at apply-time revalidation.
+  A home-level root would otherwise make home-level directories with supported
+  names, such as `~/.cache`, eligible as "artifacts". Project roots must be
+  strict descendants of the home.
+
+- `apply` and `clean --apply` now honor `audit.processOwnershipTimeoutMs` for
+  the process-ownership probes they repeat during artifact revalidation and in
+  the artifact and worktree executors. These probes previously used a fixed
+  10-second budget, so on a loaded macOS host, where `lsof +D` can take longer,
+  every artifact removal was skipped or rolled back even when the audit used a
+  larger budget. A timeout still leaves ownership unknown and never permits
+  action. `undo` and `purge` are unchanged.
+
 ## [0.9.1] - 2026-10-29
 
 ### Fixed

@@ -36,6 +36,7 @@ import {
 } from "./database-revalidation.js";
 import { CommandInterruptedError } from "./interruption.js";
 import { verifyCleanupPlan } from "./plan-verification.js";
+import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 import {
   executeProviderFileQuarantine,
   ProviderFileExecutionError,
@@ -140,6 +141,10 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
   throwIfInterrupted(options.signal);
   const clock = options.dependencies?.clock ?? (() => new Date());
   const config = agentRinseConfigSchema.parse(options.config);
+  // Mutation-time ownership probes use the same budget as the audit. A timeout
+  // still leaves ownership unknown, which skips or rolls back the action.
+  const processProbe = (path: string): Promise<ProcessOwnershipResult> =>
+    findProcessesUsingPath(path, { timeoutMs: config.audit.processOwnershipTimeoutMs });
   const plan = verifyCleanupPlan(options.input, config, clock());
   const layout = stateLayout(options.stateRoot);
   const physicalStateRoot = await resolvePhysicalPath(layout.root);
@@ -193,6 +198,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
           ? options.dependencies?.revalidate === undefined
             ? await revalidateArtifactRemove(action, plan.home, config, {
                 now: clock,
+                processProbe,
                 ...(options.dependencies?.cwd === undefined
                   ? {}
                   : { cwd: options.dependencies.cwd }),
@@ -254,6 +260,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
               executeArtifactRemove(selectedAction, {
                 id: () => selectedIsolationId,
                 maxEntries: config.audit.maxEntries,
+                processProbe,
                 authorization: {
                   expiresAtMs: Date.parse(plan.expiresAt),
                   now: clock,
@@ -319,6 +326,7 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             dependencies: {
               clock,
               maxEntries: config.audit.maxEntries,
+              processProbe,
               authorization: {
                 expiresAtMs: Date.parse(plan.expiresAt),
                 now: clock,
