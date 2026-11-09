@@ -219,22 +219,27 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
     for (const record of records) {
       let exists = true;
+      let pathInspectionFailed = false;
       try {
         const stats = await (this.dependencies.inspect ?? lstat)(record.path);
         exists = stats.isDirectory() && !stats.isSymbolicLink();
       } catch (error) {
-        if (!isMissing(error)) {
-          if (this.dependencies.isolateRepositoryFailure === true) {
-            return this.repositoryFailure(context, error, diagnostics);
-          }
-          throw error;
+        if (isMissing(error)) {
+          exists = false;
+        } else {
+          pathInspectionFailed = true;
+          diagnostics.push({
+            severity: "warning",
+            code: "GIT_WORKTREE_INSPECTION_FAILED",
+            message: error instanceof Error ? error.message : String(error),
+            adapter: this.id,
+          });
         }
-        exists = false;
       }
 
       const worktreePath = resolve(record.path);
       const canonicalKey = `git:git-worktree:${worktreePath}`;
-      let inspectionComplete = exists;
+      let inspectionComplete = exists && !pathInspectionFailed;
       let status: GitStatusFacts | undefined;
       let gitRefs: string[] = [];
       let gitRefInspectionComplete = true;
@@ -259,7 +264,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       };
       let processOwnershipDeferred = false;
 
-      if (exists) {
+      if (inspectionComplete) {
         try {
           stats = await (this.dependencies.inspect ?? lstat)(worktreePath);
           await realpath(worktreePath);
@@ -387,9 +392,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
             inspectionComplete = false;
           }
         } catch (error) {
-          if (this.dependencies.isolateRepositoryFailure === true) {
-            return this.repositoryFailure(context, error, diagnostics);
-          }
+          // Discovery succeeded: this failure belongs to one worktree, not its siblings.
           inspectionComplete = false;
           diagnostics.push({
             severity: "warning",

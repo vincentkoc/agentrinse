@@ -6,6 +6,14 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- In fleet campaigns, one worktree's Git inspection failure (for example a
+  `git status` timeout) no longer drops every worktree in that repository.
+  The failed worktree is reported as inspection-incomplete and stays
+  protected, its siblings are still inspected, and repository-level discovery
+  failures still fail the whole repository.
+
 ## [0.9.1] - 2026-10-29
 
 ### Fixed
