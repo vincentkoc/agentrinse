@@ -1701,6 +1701,8 @@ Rules:
 - never delete artifacts in an active worktree
 - recent projects are unselected by default
 - unknown custom directories are not inferred from size alone
+- artifact project roots must be strict descendants of the audited home;
+  discovery and apply-time revalidation refuse the home itself for every name
 - root package-manager stores are separate resources, not child artifacts
 
 Default policy:

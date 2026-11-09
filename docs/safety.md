@@ -7,7 +7,8 @@ its scope, identity, inactivity, and effect are positively known.
 
 Only `artifacts.remove` mutates:
 
-- the project root is explicitly configured
+- the project root is explicitly configured and is a strict descendant of the
+  audited home, never the home itself
 - the artifact name is selected from the fixed supported-name enum
 - the project and artifact are canonical real directories inside the physical
   audited home, with no symlink aliases in their paths
