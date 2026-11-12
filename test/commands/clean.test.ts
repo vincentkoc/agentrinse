@@ -15,12 +15,23 @@ import {
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import { commandEnvelopeSchema } from "../../src/contracts/output.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
+import { runFixtureGit } from "../helpers/git.js";
 
 const execFileAsync = promisify(execFile);
 const NOW = new Date("2026-07-24T12:00:00.000Z");
 
-async function run(command: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
-  const result = await execFileAsync(command, args, { encoding: "utf8" });
+async function run(
+  command: string,
+  args: string[],
+  timeoutMs?: number,
+): Promise<{ stdout: string; stderr: string }> {
+  if (command === "git") {
+    return await runFixtureGit(args);
+  }
+  const result = await execFileAsync(command, args, {
+    encoding: "utf8",
+    timeout: timeoutMs,
+  });
   return { stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -36,21 +47,24 @@ async function gitFixture(): Promise<{
   const linked = join(home, "task");
   const configPath = join(home, "config.json");
   const stateDir = join(home, "state");
-  await run("git", ["init", "-b", "main", main]);
+  await runFixtureGit(["init", "-b", "main", main], { home });
   await writeFile(join(main, "README.md"), "fixture\n");
-  await run("git", ["-C", main, "add", "README.md"]);
-  await run("git", [
-    "-C",
-    main,
-    "-c",
-    "user.name=AgentRinse",
-    "-c",
-    "user.email=fixture@example.invalid",
-    "commit",
-    "-m",
-    "fixture",
-  ]);
-  await run("git", ["-C", main, "worktree", "add", "-b", "task", linked]);
+  await runFixtureGit(["-C", main, "add", "README.md"], { home });
+  await runFixtureGit(
+    [
+      "-C",
+      main,
+      "-c",
+      "user.name=AgentRinse",
+      "-c",
+      "user.email=fixture@example.invalid",
+      "commit",
+      "-m",
+      "fixture",
+    ],
+    { home },
+  );
+  await runFixtureGit(["-C", main, "worktree", "add", "-b", "task", linked], { home });
   return { home, main, linked, configPath, stateDir };
 }
 
@@ -63,11 +77,13 @@ async function pushedGitFixture(): Promise<{
 }> {
   const value = await gitFixture();
   const remote = join(value.home, "remote.git");
-  await run("git", ["init", "--bare", remote]);
-  await run("git", ["-C", value.main, "remote", "add", "origin", remote]);
-  await run("git", ["-C", value.main, "push", "-u", "origin", "main"]);
-  await run("git", ["-C", value.main, "push", "-u", "origin", "task"]);
-  await run("git", ["-C", value.linked, "branch", "--set-upstream-to", "origin/task"]);
+  await runFixtureGit(["init", "--bare", remote], { home: value.home });
+  await runFixtureGit(["-C", value.main, "remote", "add", "origin", remote], { home: value.home });
+  await runFixtureGit(["-C", value.main, "push", "-u", "origin", "main"], { home: value.home });
+  await runFixtureGit(["-C", value.main, "push", "-u", "origin", "task"], { home: value.home });
+  await runFixtureGit(["-C", value.linked, "branch", "--set-upstream-to", "origin/task"], {
+    home: value.home,
+  });
   return value;
 }
 
@@ -82,8 +98,8 @@ function fixtureConfig(projects: { root: string; names: ["node_modules"] }[]) {
     audit: {
       maxEntries: 100,
       measureBytes: true,
-      gitTimeoutMs: 10_000,
-      processOwnershipTimeoutMs: 10_000,
+      gitTimeoutMs: 30_000,
+      processOwnershipTimeoutMs: 30_000,
       deadlineMs: 180_000,
       phaseTimeoutMs: 30_000,
     },
@@ -401,19 +417,24 @@ describe("clean fleet profile", () => {
 
     const recoverable = await pushedGitFixture();
     await writeFile(join(recoverable.main, "KEEP.md"), "keep\n");
-    await run("git", ["-C", recoverable.main, "add", "KEEP.md"]);
-    await run("git", [
-      "-C",
-      recoverable.main,
-      "-c",
-      "user.name=AgentRinse",
-      "-c",
-      "user.email=fixture@example.invalid",
-      "commit",
-      "-m",
-      "pin main",
-    ]);
-    await run("git", ["-C", recoverable.main, "tag", "--no-sign", "keep"]);
+    await runFixtureGit(["-C", recoverable.main, "add", "KEEP.md"], { home: recoverable.home });
+    await runFixtureGit(
+      [
+        "-C",
+        recoverable.main,
+        "-c",
+        "user.name=AgentRinse",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "-m",
+        "pin main",
+      ],
+      { home: recoverable.home },
+    );
+    await runFixtureGit(["-C", recoverable.main, "tag", "--no-sign", "keep"], {
+      home: recoverable.home,
+    });
     const config = fixtureConfig([]);
     config.worktrees.minAgeMinutes = 0;
     config.pins = [{ gitRef: "refs/tags/keep" }];
@@ -526,4 +547,4 @@ describe("clean audit budget and JSON progress", () => {
       ),
     ).toBe(true);
   }, 30_000);
-});
+}, 30_000);

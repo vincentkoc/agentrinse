@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
 import { access, lstat, mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { GitWorktreeAuditAdapter } from "../../src/adapters/git/adapter.js";
 import { parseWorktreePorcelain } from "../../src/adapters/git/porcelain.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
@@ -11,8 +9,7 @@ import { quarantineEntrySchema } from "../../src/contracts/quarantine.js";
 import { executeWorktreeQuarantine } from "../../src/core/worktree-executor.js";
 import type { WorktreeRecoveryDependencies } from "../../src/core/worktree-recovery.js";
 import { readJsonFile } from "../../src/state/json-file.js";
-
-export const execFileAsync = promisify(execFile);
+import { runFixtureGit } from "../helpers/git.js";
 
 export type Fixture = {
   action: WorktreeQuarantineAction;
@@ -27,27 +24,20 @@ export async function gitFixture(): Promise<Fixture> {
   const main = join(home, "repo");
   const linked = join(home, "task");
   const remote = join(home, "remote.git");
-  await execFileAsync("git", ["init", "--bare", remote]);
-  await execFileAsync("git", ["init", "-b", "main", main]);
-  await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
-  await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
+  await runFixtureGit(["init", "--bare", remote], { home });
+  await runFixtureGit(["init", "-b", "main", main], { home });
   await writeFile(join(main, "README.md"), "fixture\n");
   await writeFile(join(main, ".gitignore"), ".env\n");
-  await execFileAsync("git", ["-C", main, "add", "README.md", ".gitignore"]);
-  await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
-  await execFileAsync("git", ["-C", main, "remote", "add", "origin", remote]);
-  await execFileAsync("git", ["-C", main, "push", "-u", "origin", "main"]);
-  await execFileAsync("git", ["-C", main, "branch", "task"]);
-  await execFileAsync("git", ["-C", main, "push", "-u", "origin", "task"]);
-  await execFileAsync("git", ["-C", main, "worktree", "add", linked, "task"]);
+  await runFixtureGit(["-C", main, "add", "README.md", ".gitignore"], { home });
+  await runFixtureGit(["-C", main, "commit", "-m", "fixture"], { home });
+  await runFixtureGit(["-C", main, "remote", "add", "origin", remote], { home });
+  await runFixtureGit(["-C", main, "push", "-u", "origin", "main"], { home });
+  await runFixtureGit(["-C", main, "branch", "task"], { home });
+  await runFixtureGit(["-C", main, "push", "-u", "origin", "task"], { home });
+  await runFixtureGit(["-C", main, "worktree", "add", linked, "task"], { home });
 
   const runGit = async (args: string[]) =>
-    (
-      await execFileAsync("git", args, {
-        encoding: "utf8",
-        maxBuffer: 4 * 1024 * 1024,
-      })
-    ).stdout;
+    (await runFixtureGit(args, { home, maxBuffer: 4 * 1024 * 1024 })).stdout;
   const adapter = new GitWorktreeAuditAdapter(
     main,
     runGit,
@@ -103,7 +93,7 @@ export async function quarantined(fixture: Fixture, id: string) {
     runId: `run-${id}`,
     entryId: `entry-${id}`,
     quarantineDirectory,
-    dependencies: { runGit: fixture.runGit },
+    dependencies: { ...idle, runGit: fixture.runGit },
   });
   const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
   return { quarantineDirectory, result, manifest };

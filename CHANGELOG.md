@@ -8,6 +8,13 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- Tests no longer inherit the host Git signing, LFS, or credential config, which made
+  worktree and Git fixtures slow enough to hit the 10-second timeout under a full
+  suite on a many-core Mac. Those integration tests now allow 30 seconds, worktree
+  fixtures default to idle process and mount probes unless a test injects its own,
+  Vitest is capped at 8 workers, and the real SQLite compact/restore fixture stubs
+  open-handle inspection the same way it already stubs process inspection.
+
 - In fleet campaigns, one worktree's Git inspection failure (for example a
   `git status` timeout) no longer drops every worktree in that repository.
   The failed worktree is reported as inspection-incomplete and stays

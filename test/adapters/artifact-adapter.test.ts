@@ -1,10 +1,8 @@
 import { once } from "node:events";
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -13,9 +11,9 @@ import type { AuditContext } from "../../src/contracts/adapter.js";
 import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";
 import type { ProcessOwnershipResult } from "../../src/core/process-ownership.js";
 import { ReachabilityIndex } from "../../src/core/reachability.js";
+import { runFixtureGit } from "../helpers/git.js";
 
 const NOW = new Date("2026-07-23T12:00:00.000Z");
-const execFileAsync = promisify(execFile);
 
 async function fixture(
   ownership: ProcessOwnershipResult = {
@@ -57,8 +55,10 @@ async function fixture(
 describe("ArtifactAuditAdapter", () => {
   it("protects tracked files inside a configured artifact", async () => {
     const { context, adapter, projectRoot, artifact, artifactFile } = await fixture();
-    await execFileAsync("git", ["-C", projectRoot, "init", "--quiet"]);
-    await execFileAsync("git", ["-C", projectRoot, "add", "node_modules/package.json"]);
+    await runFixtureGit(["-C", projectRoot, "init", "--quiet"], { home: projectRoot });
+    await runFixtureGit(["-C", projectRoot, "add", "node_modules/package.json"], {
+      home: projectRoot,
+    });
     await utimes(artifactFile, new Date(0), new Date(0));
     await utimes(artifact, new Date(0), new Date(0));
 

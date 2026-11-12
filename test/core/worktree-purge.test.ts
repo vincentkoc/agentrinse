@@ -25,7 +25,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-foreign-lock",
       entryId: "entry-foreign-lock",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     await fixture.runGit([
@@ -50,6 +50,7 @@ describe("worktree quarantine purge", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -64,6 +65,7 @@ describe("worktree quarantine purge", () => {
         quarantineDirectory,
         allowUnexpired: true,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -247,7 +249,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-purge-operation",
       entryId: "entry-purge-operation",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const markerPath = (
       await fixture.runGit(["-C", result.quarantinePath, "rev-parse", "--git-path", "rebase-apply"])
@@ -261,6 +263,7 @@ describe("worktree quarantine purge", () => {
         quarantineDirectory,
         allowUnexpired: true,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -283,7 +286,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-purge-relocated",
       entryId: "entry-purge-relocated",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const thirdPath = join(fixture.home, "purge-relocated");
     let removed = false;
@@ -347,7 +350,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-purge-unlock",
       entryId: "entry-purge-unlock",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     await mkdir(fixture.linked);
@@ -393,7 +396,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-purge-ignored-race",
       entryId: "entry-purge-ignored-race",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     const isolationPath = `${result.quarantinePath}.purging`;
@@ -444,6 +447,7 @@ describe("worktree quarantine purge", () => {
       entryId: "entry-resume-purge-isolated",
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-01T00:00:00.000Z"),
       },
@@ -495,7 +499,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-resume-purge-local-race",
       entryId: "entry-resume-purge-local-race",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const isolationPath = `${result.quarantinePath}.purging`;
     await fixture.runGit([
@@ -554,7 +558,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-purge-isolated-operation",
       entryId: "entry-purge-isolated-operation",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const isolationPath = `${result.quarantinePath}.purging`;
     await fixture.runGit([
@@ -580,6 +584,7 @@ describe("worktree quarantine purge", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -616,6 +621,7 @@ describe("worktree quarantine purge", () => {
       entryId: "entry-resume-purge-rollback",
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-01T00:00:00.000Z"),
       },
@@ -641,6 +647,7 @@ describe("worktree quarantine purge", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -683,7 +690,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-purge-isolated-lock",
       entryId: "entry-purge-isolated-lock",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const isolationPath = `${result.quarantinePath}.purging`;
     await fixture.runGit([
@@ -714,6 +721,7 @@ describe("worktree quarantine purge", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -754,7 +762,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-purge-third-path",
       entryId: "entry-purge-third-path",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const thirdPath = join(dirname(result.quarantinePath), "moved-by-operator");
     await fixture.runGit([
@@ -783,7 +791,7 @@ describe("worktree quarantine purge", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         allowUnexpired: true,
-        dependencies: { runGit: fixture.runGit },
+        dependencies: { ...idle, runGit: fixture.runGit },
       }),
     ).rejects.toMatchObject({
       code: "QUARANTINE_REGISTRATION_CHANGED",
@@ -811,6 +819,7 @@ describe("worktree quarantine purge", () => {
       entryId: "entry-resume-purge",
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-01T00:00:00.000Z"),
       },
@@ -853,6 +862,7 @@ describe("worktree quarantine purge", () => {
         protectionChecked = true;
       },
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-24T00:00:00.000Z"),
       },
@@ -873,7 +883,7 @@ describe("worktree quarantine purge", () => {
       runId: "run-resume-purge-protected",
       entryId: "entry-resume-purge-protected",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     await fixture.runGit([
@@ -903,7 +913,7 @@ describe("worktree quarantine purge", () => {
         protectionChecks += 1;
         throw new Error("post-removal protection must not run");
       },
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
 
     expect(purged.entry.status).toBe("purged");
@@ -927,6 +937,7 @@ describe("worktree quarantine purge", () => {
       entryId: "entry-dirty",
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-01T00:00:00.000Z"),
       },
@@ -939,6 +950,7 @@ describe("worktree quarantine purge", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -1049,4 +1061,4 @@ describe("worktree quarantine purge", () => {
     });
     expect(await missing(result.quarantinePath)).toBe(false);
   });
-});
+}, 30000);

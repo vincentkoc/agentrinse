@@ -1,14 +1,11 @@
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
 import { inspectArtifactGitState } from "../../src/core/artifact-git-state.js";
-
-const execFileAsync = promisify(execFile);
+import { runFixtureGit } from "../helpers/git.js";
 
 describe("inspectArtifactGitState", () => {
   it("protects an artifact when Git indexed its name with different casing", async () => {
@@ -16,8 +13,8 @@ describe("inspectArtifactGitState", () => {
     const indexed = join(root, "Node_Modules");
     await mkdir(indexed);
     await writeFile(join(indexed, "tracked.txt"), "synthetic tracked content");
-    await execFileAsync("git", ["-C", root, "init", "--quiet"]);
-    await execFileAsync("git", ["-C", root, "add", "Node_Modules/tracked.txt"]);
+    await runFixtureGit(["-C", root, "init", "--quiet"], { home: root });
+    await runFixtureGit(["-C", root, "add", "Node_Modules/tracked.txt"], { home: root });
     await rename(indexed, join(root, "node_modules"));
 
     await expect(inspectArtifactGitState(root, "node_modules")).resolves.toEqual({
@@ -30,8 +27,8 @@ describe("inspectArtifactGitState", () => {
     const sibling = join(root, "node_modules_old");
     await mkdir(sibling);
     await writeFile(join(sibling, "tracked.txt"), "synthetic tracked content");
-    await execFileAsync("git", ["-C", root, "init", "--quiet"]);
-    await execFileAsync("git", ["-C", root, "add", "node_modules_old/tracked.txt"]);
+    await runFixtureGit(["-C", root, "init", "--quiet"], { home: root });
+    await runFixtureGit(["-C", root, "add", "node_modules_old/tracked.txt"], { home: root });
 
     await expect(inspectArtifactGitState(root, "node_modules")).resolves.toEqual({
       status: "clear",

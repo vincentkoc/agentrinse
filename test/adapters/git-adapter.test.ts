@@ -1,16 +1,13 @@
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
 import { GitWorktreeAuditAdapter } from "../../src/adapters/git/adapter.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 import { ReachabilityIndex } from "../../src/core/reachability.js";
-
-const execFileAsync = promisify(execFile);
+import { runFixtureGit, spawnFixtureGit } from "../helpers/git.js";
 
 describe("GitWorktreeAuditAdapter", () => {
   it("requires an explicit repository root", async () => {
@@ -482,26 +479,19 @@ describe("GitWorktreeAuditAdapter", () => {
     const main = join(home, "repo");
     const linked = join(home, "task");
     const remote = join(home, "remote.git");
-    await execFileAsync("git", ["init", "--bare", remote]);
-    await execFileAsync("git", ["init", "-b", "main", main]);
-    await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
-    await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
+    await runFixtureGit(["init", "--bare", remote], { home });
+    await runFixtureGit(["init", "-b", "main", main], { home });
     await writeFile(join(main, "README.md"), "fixture\n");
     await writeFile(join(main, ".gitignore"), ".env\n");
-    await execFileAsync("git", ["-C", main, "add", "README.md", ".gitignore"]);
-    await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
-    await execFileAsync("git", ["-C", main, "remote", "add", "origin", remote]);
-    await execFileAsync("git", ["-C", main, "push", "-u", "origin", "main"]);
-    await execFileAsync("git", ["-C", main, "branch", "task"]);
-    await execFileAsync("git", ["-C", main, "push", "-u", "origin", "task"]);
-    await execFileAsync("git", ["-C", main, "worktree", "add", linked, "task"]);
+    await runFixtureGit(["-C", main, "add", "README.md", ".gitignore"], { home });
+    await runFixtureGit(["-C", main, "commit", "-m", "fixture"], { home });
+    await runFixtureGit(["-C", main, "remote", "add", "origin", remote], { home });
+    await runFixtureGit(["-C", main, "push", "-u", "origin", "main"], { home });
+    await runFixtureGit(["-C", main, "branch", "task"], { home });
+    await runFixtureGit(["-C", main, "push", "-u", "origin", "task"], { home });
+    await runFixtureGit(["-C", main, "worktree", "add", linked, "task"], { home });
     const runGit = async (args: string[]) =>
-      (
-        await execFileAsync("git", args, {
-          encoding: "utf8",
-          maxBuffer: 4 * 1024 * 1024,
-        })
-      ).stdout;
+      (await runFixtureGit(args, { home, maxBuffer: 4 * 1024 * 1024 })).stdout;
     const adapter = new GitWorktreeAuditAdapter(
       main,
       runGit,
@@ -544,7 +534,7 @@ describe("GitWorktreeAuditAdapter", () => {
         branch: "refs/heads/task",
       },
     });
-    await execFileAsync("git", ["-C", linked, "branch", "--unset-upstream"]);
+    await runFixtureGit(["-C", linked, "branch", "--unset-upstream"], { home });
     const noUpstreamCollection = await adapter.collect(context, await adapter.probe(context));
     const noUpstreamResource = noUpstreamCollection.resources.find(
       (resource) => resource.facts.isMain === false,
@@ -596,7 +586,9 @@ describe("GitWorktreeAuditAdapter", () => {
     });
 
     await rm(join(linked, ".env"));
-    await execFileAsync("git", ["-C", linked, "update-index", "--assume-unchanged", "README.md"]);
+    await runFixtureGit(["-C", linked, "update-index", "--assume-unchanged", "README.md"], {
+      home,
+    });
     const suppressedCollection = await adapter.collect(context, await adapter.probe(context));
     const suppressedResource = suppressedCollection.resources.find(
       (resource) => resource.facts.isMain === false,
@@ -655,14 +647,12 @@ describe("GitWorktreeAuditAdapter", () => {
   it("inspects a repository whose index listing exceeds 4 MiB with the default Git runner", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-git-large-index-"));
     const main = join(home, "repo");
-    await execFileAsync("git", ["init", "-b", "main", main]);
-    await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
-    await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
+    await runFixtureGit(["init", "-b", "main", main], { home });
     await writeFile(join(main, "README.md"), "fixture\n");
-    await execFileAsync("git", ["-C", main, "add", "README.md"]);
-    await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
+    await runFixtureGit(["-C", main, "add", "README.md"], { home });
+    await runFixtureGit(["-C", main, "commit", "-m", "fixture"], { home });
     const blob = (
-      await execFileAsync("git", ["-C", main, "rev-parse", "HEAD:README.md"], { encoding: "utf8" })
+      await runFixtureGit(["-C", main, "rev-parse", "HEAD:README.md"], { home })
     ).stdout.trim();
     // Index-only entries: `ls-files -z --stage` prints about 110 bytes each, over 5 MiB in
     // total, without writing 50k files to disk.
@@ -672,14 +662,20 @@ describe("GitWorktreeAuditAdapter", () => {
       (_, index) => `100644 ${blob}\t${prefix}/${String(index).padStart(8, "0")}.txt\n`,
     ).join("");
     await new Promise<void>((resolve, reject) => {
-      const child = execFile("git", ["-C", main, "update-index", "--index-info"], (error) =>
-        error === null ? resolve() : reject(error),
-      );
+      const child = spawnFixtureGit(["-C", main, "update-index", "--index-info"], { home });
+      child.on("error", reject);
+      child.on("exit", (code, signal) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`git update-index failed: code=${code} signal=${signal}`));
+        }
+      });
       child.stdin?.end(entries);
     });
     const listing = (
-      await execFileAsync("git", ["-C", main, "ls-files", "-z", "--stage"], {
-        encoding: "utf8",
+      await runFixtureGit(["-C", main, "ls-files", "-z", "--stage"], {
+        home,
         maxBuffer: 64 * 1024 * 1024,
       })
     ).stdout;
@@ -717,4 +713,4 @@ describe("GitWorktreeAuditAdapter", () => {
     ]);
     await rm(home, { force: true, recursive: true });
   }, 30_000);
-});
+}, 30_000);

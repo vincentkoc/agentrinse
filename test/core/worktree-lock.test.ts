@@ -1,9 +1,7 @@
-import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { access, mkdtemp, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -14,27 +12,19 @@ import {
   unlockOwnedWorktree,
   WorktreeLockOwnershipError,
 } from "../../src/core/worktree-lock.js";
-
-const execFileAsync = promisify(execFile);
+import { runFixtureGit } from "../helpers/git.js";
 
 async function lockFixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-worktree-lock-")));
   const main = join(root, "repo");
   const linked = join(root, "task");
-  await execFileAsync("git", ["init", "-b", "main", main]);
-  await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
-  await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
+  await runFixtureGit(["init", "-b", "main", main], { home: root });
   await writeFile(join(main, "README.md"), "fixture\n");
-  await execFileAsync("git", ["-C", main, "add", "README.md"]);
-  await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
-  await execFileAsync("git", ["-C", main, "worktree", "add", "-b", "task", linked]);
+  await runFixtureGit(["-C", main, "add", "README.md"], { home: root });
+  await runFixtureGit(["-C", main, "commit", "-m", "fixture"], { home: root });
+  await runFixtureGit(["-C", main, "worktree", "add", "-b", "task", linked], { home: root });
   const runGit = async (args: string[]) =>
-    (
-      await execFileAsync("git", args, {
-        encoding: "utf8",
-        maxBuffer: 4 * 1024 * 1024,
-      })
-    ).stdout;
+    (await runFixtureGit(args, { home: root, maxBuffer: 4 * 1024 * 1024 })).stdout;
   const repositoryCommonDir = resolve(
     main,
     (await runGit(["-C", main, "rev-parse", "--git-common-dir"])).trim(),
@@ -220,4 +210,4 @@ describe("owned worktree lock handoff", () => {
     expect((await readFile(lockPath, "utf8")).trim()).toBe("operator hold");
     expect(await missing(claimPath)).toBe(true);
   });
-});
+}, 30000);

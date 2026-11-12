@@ -99,6 +99,7 @@ describe("worktree quarantine undo", () => {
       manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -165,6 +166,7 @@ describe("worktree quarantine undo", () => {
       manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -235,6 +237,7 @@ describe("worktree quarantine undo", () => {
       manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -253,7 +256,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-rollback-before-repair",
       entryId: "entry-rollback-before-repair",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     await fixture.runGit([
@@ -273,6 +276,7 @@ describe("worktree quarantine undo", () => {
       manifestPath: result.manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -351,6 +355,7 @@ describe("worktree quarantine undo", () => {
         manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -427,6 +432,7 @@ describe("worktree quarantine undo", () => {
         manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -503,6 +509,7 @@ describe("worktree quarantine undo", () => {
         manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -536,6 +543,7 @@ describe("worktree quarantine undo", () => {
       entryId,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-01T00:00:00.000Z"),
         maxEntries: 12_345,
@@ -608,7 +616,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-resume-undo-locked",
       entryId: "entry-resume-undo-locked",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     const restoring = quarantineEntrySchema.parse({ ...manifest, status: "restoring" });
@@ -620,6 +628,7 @@ describe("worktree quarantine undo", () => {
       manifestPath: result.manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -638,7 +647,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-partial-undo-quarantine",
       entryId: "entry-partial-undo-quarantine",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     const partial = quarantineEntrySchema.parse({
@@ -660,6 +669,7 @@ describe("worktree quarantine undo", () => {
       manifestPath: result.manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -725,6 +735,7 @@ describe("worktree quarantine undo", () => {
       manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -761,7 +772,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-partial-undo-isolation",
       entryId: "entry-partial-undo-isolation",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const isolationPath = `${result.quarantinePath}.purging`;
     await fixture.runGit([
@@ -792,6 +803,7 @@ describe("worktree quarantine undo", () => {
       manifestPath: result.manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -810,7 +822,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-resume-undo-moved",
       entryId: "entry-resume-undo-moved",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     await fixture.runGit([
@@ -838,6 +850,7 @@ describe("worktree quarantine undo", () => {
       manifestPath: result.manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -855,7 +868,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-undo-final-process",
       entryId: "entry-undo-final-process",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
     let probes = 0;
@@ -865,6 +878,7 @@ describe("worktree quarantine undo", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () =>
             ++probes === 1
@@ -891,7 +905,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-undo-race",
       entryId: "entry-undo-race",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
 
@@ -900,6 +914,7 @@ describe("worktree quarantine undo", () => {
         manifestPath: result.manifestPath,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -931,7 +946,7 @@ describe("worktree quarantine undo", () => {
       runId: "run-windows",
       entryId: "entry-windows",
       quarantineDirectory,
-      dependencies: { runGit: fixture.runGit },
+      dependencies: { ...idle, runGit: fixture.runGit },
     });
     const manifest = quarantineEntrySchema.parse(await readJsonFile(result.manifestPath));
 
@@ -958,6 +973,7 @@ describe("worktree quarantine undo", () => {
       manifestPath: result.manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         ...idle,
         inspect: occupyOriginalWhileRestoring(fixture, result.manifestPath),
@@ -1007,4 +1023,4 @@ describe("worktree quarantine undo", () => {
     });
     expect(await missing(result.quarantinePath)).toBe(false);
   });
-});
+}, 30000);

@@ -8,6 +8,7 @@ export default defineConfig({
     },
     environment: "node",
     include: ["test/**/*.test.ts"],
+    maxWorkers: 8,
     testTimeout: 10_000,
   },
 });
