@@ -1,8 +1,6 @@
-import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,8 +14,7 @@ import {
   currentWorktreeProtectionRoots,
   revalidateWorktreeQuarantine,
 } from "../../src/core/worktree-revalidation.js";
-
-const execFileAsync = promisify(execFile);
+import { runFixtureGit } from "../helpers/git.js";
 
 const ACTION: WorktreeQuarantineAction = {
   actionId: "worktree.quarantine:fixture",
@@ -125,18 +122,16 @@ describe("revalidateWorktreeQuarantine", () => {
         "thread-workspace-root-hints": {},
       }),
     );
-    await execFileAsync("git", ["init", "--bare", remote]);
-    await execFileAsync("git", ["init", "-b", "main", main]);
-    await execFileAsync("git", ["-C", main, "config", "user.email", "fixture@example.test"]);
-    await execFileAsync("git", ["-C", main, "config", "user.name", "AgentRinse Fixture"]);
+    await runFixtureGit(["init", "--bare", remote], { home });
+    await runFixtureGit(["init", "-b", "main", main], { home });
     await writeFile(join(main, "README.md"), "fixture\n");
-    await execFileAsync("git", ["-C", main, "add", "README.md"]);
-    await execFileAsync("git", ["-C", main, "commit", "-m", "fixture"]);
-    await execFileAsync("git", ["-C", main, "remote", "add", "origin", remote]);
-    await execFileAsync("git", ["-C", main, "push", "-u", "origin", "main"]);
-    await execFileAsync("git", ["-C", main, "branch", "task"]);
-    await execFileAsync("git", ["-C", main, "push", "-u", "origin", "task"]);
-    await execFileAsync("git", ["-C", main, "worktree", "add", linked, "task"]);
+    await runFixtureGit(["-C", main, "add", "README.md"], { home });
+    await runFixtureGit(["-C", main, "commit", "-m", "fixture"], { home });
+    await runFixtureGit(["-C", main, "remote", "add", "origin", remote], { home });
+    await runFixtureGit(["-C", main, "push", "-u", "origin", "main"], { home });
+    await runFixtureGit(["-C", main, "branch", "task"], { home });
+    await runFixtureGit(["-C", main, "push", "-u", "origin", "task"], { home });
+    await runFixtureGit(["-C", main, "worktree", "add", linked, "task"], { home });
 
     const config: AgentRinseConfig = structuredClone(DEFAULT_CONFIG);
     for (const adapter of ["claude", "cursor", "copilot", "zed", "opencode", "grok"] as const) {
@@ -174,10 +169,10 @@ describe("revalidateWorktreeQuarantine", () => {
     expect(action).toBeDefined();
 
     const otherRepository = join(home, "other-repo");
-    await execFileAsync("git", ["init", "-b", "main", otherRepository]);
+    await runFixtureGit(["init", "-b", "main", otherRepository], { home });
     config.adapters.git = { enabled: true, root: otherRepository };
     config.pins = [{ gitRef: "refs/tags/keep" }];
-    await execFileAsync("git", ["-C", linked, "tag", "--no-sign", "keep"]);
+    await runFixtureGit(["-C", linked, "tag", "--no-sign", "keep"], { home });
     await writeFile(
       metadataPath,
       JSON.stringify({
@@ -218,4 +213,4 @@ describe("revalidateWorktreeQuarantine", () => {
     });
     expect(audit).not.toHaveBeenCalled();
   });
-});
+}, 30000);

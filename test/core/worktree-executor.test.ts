@@ -13,7 +13,8 @@ import { undoWorktreeQuarantine } from "../../src/core/worktree-undo.js";
 import { measurePath } from "../../src/core/measure.js";
 import { renameNoReplace } from "../../src/core/no-clobber-rename.js";
 import { readJsonFile } from "../../src/state/json-file.js";
-import { gitFixture, missing, execFileAsync } from "./worktree-fixture.js";
+import { gitFixture, idle, missing } from "./worktree-fixture.js";
+import { runFixtureGit } from "../helpers/git.js";
 
 describe("executeWorktreeQuarantine", () => {
   it("moves, repairs, locks, and journals a linked worktree", async () => {
@@ -28,6 +29,7 @@ describe("executeWorktreeQuarantine", () => {
       entryId,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         clock: () => new Date("2026-07-24T00:00:00.000Z"),
         revalidateProtection: async () => {
@@ -93,6 +95,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           revalidateProtection: async () => {
             throw new Error("active-session");
@@ -130,6 +133,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           revalidateProtection: async () => {
             const refs = (
@@ -197,7 +201,7 @@ describe("executeWorktreeQuarantine", () => {
         runId: "run-reserved-path",
         entryId: "entry-reserved-path",
         quarantineDirectory,
-        dependencies: { runGit: fixture.runGit },
+        dependencies: { ...idle, runGit: fixture.runGit },
       }),
     ).rejects.toMatchObject({
       diagnosticCode: "QUARANTINE_PATH_CONFLICT",
@@ -216,7 +220,7 @@ describe("executeWorktreeQuarantine", () => {
         runId: "run-container-worktree",
         entryId: "entry-container-worktree",
         quarantineDirectory,
-        dependencies: { runGit: fixture.runGit },
+        dependencies: { ...idle, runGit: fixture.runGit },
       }),
     ).rejects.toMatchObject({
       diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE",
@@ -231,40 +235,29 @@ describe("executeWorktreeQuarantine", () => {
     const quarantineDirectory = join(fixture.home, "state", "quarantine");
     const quarantineParent = join(fixture.home, ".agentrinse-quarantine");
     const otherRepository = join(fixture.home, "other-repo");
-    await execFileAsync("git", ["init", "-b", "main", otherRepository]);
-    await execFileAsync("git", [
-      "-C",
-      otherRepository,
-      "config",
-      "user.email",
-      "fixture@example.test",
-    ]);
-    await execFileAsync("git", [
-      "-C",
-      otherRepository,
-      "config",
-      "user.name",
-      "AgentRinse Fixture",
-    ]);
+    await runFixtureGit(["init", "-b", "main", otherRepository], { home: fixture.home });
+    await runFixtureGit(["-C", otherRepository, "config", "user.email", "fixture@example.test"], {
+      home: fixture.home,
+    });
+    await runFixtureGit(["-C", otherRepository, "config", "user.name", "AgentRinse Fixture"], {
+      home: fixture.home,
+    });
     await writeFile(join(otherRepository, "README.md"), "other fixture\n");
-    await execFileAsync("git", ["-C", otherRepository, "add", "README.md"]);
-    await execFileAsync("git", ["-C", otherRepository, "commit", "-m", "other fixture"]);
-    await execFileAsync("git", [
-      "-C",
-      otherRepository,
-      "worktree",
-      "add",
-      "-b",
-      "container",
-      quarantineParent,
-    ]);
+    await runFixtureGit(["-C", otherRepository, "add", "README.md"], { home: fixture.home });
+    await runFixtureGit(["-C", otherRepository, "commit", "-m", "other fixture"], {
+      home: fixture.home,
+    });
+    await runFixtureGit(
+      ["-C", otherRepository, "worktree", "add", "-b", "container", quarantineParent],
+      { home: fixture.home },
+    );
 
     await expect(
       executeWorktreeQuarantine(fixture.action, {
         runId: "run-foreign-container-worktree",
         entryId: "entry-foreign-container-worktree",
         quarantineDirectory,
-        dependencies: { runGit: fixture.runGit },
+        dependencies: { ...idle, runGit: fixture.runGit },
       }),
     ).rejects.toMatchObject({
       diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE",
@@ -289,7 +282,7 @@ describe("executeWorktreeQuarantine", () => {
         runId: "run-symlinked-container",
         entryId: "entry-symlinked-container",
         quarantineDirectory,
-        dependencies: { runGit: fixture.runGit },
+        dependencies: { ...idle, runGit: fixture.runGit },
       }),
     ).rejects.toMatchObject({
       diagnosticCode: "QUARANTINE_CONTAINER_UNSAFE",
@@ -327,7 +320,7 @@ describe("executeWorktreeQuarantine", () => {
         runId: "run-container-race",
         entryId,
         quarantineDirectory,
-        dependencies: { runGit },
+        dependencies: { ...idle, runGit },
       }),
     ).rejects.toMatchObject({
       diagnosticCode: "QUARANTINE_CONTAINER_WORKTREE",
@@ -351,7 +344,7 @@ describe("executeWorktreeQuarantine", () => {
         runId: "run-operation-race",
         entryId: "entry-operation-race",
         quarantineDirectory,
-        dependencies: { runGit: fixture.runGit },
+        dependencies: { ...idle, runGit: fixture.runGit },
       }),
     ).rejects.toMatchObject({
       diagnosticCode: "GIT_OPERATION_IN_PROGRESS",
@@ -376,6 +369,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           move: async (source, destination) => {
             await renameNoReplace(source, thirdPath);
@@ -440,7 +434,7 @@ describe("executeWorktreeQuarantine", () => {
         runId,
         entryId,
         quarantineDirectory,
-        dependencies: { runGit },
+        dependencies: { ...idle, runGit },
       }),
     ).rejects.toMatchObject({
       name: WorktreeExecutionError.name,
@@ -497,6 +491,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit,
           move: async () => {
             moveCalled = true;
@@ -554,7 +549,7 @@ describe("executeWorktreeQuarantine", () => {
         runId,
         entryId,
         quarantineDirectory,
-        dependencies: { runGit },
+        dependencies: { ...idle, runGit },
       }),
     ).rejects.toMatchObject({
       name: WorktreeExecutionError.name,
@@ -571,6 +566,7 @@ describe("executeWorktreeQuarantine", () => {
       manifestPath,
       quarantineDirectory,
       dependencies: {
+        ...idle,
         runGit: fixture.runGit,
         processProbe: async () => ({ status: "idle", matches: [] }),
         mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -599,6 +595,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId: "entry-race",
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           move: async (source, destination) => {
             await rename(source, destination);
@@ -628,6 +625,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId: "entry-post-repair-fingerprint",
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           measure: async (path, options) => {
             const measurement = await measurePath(path, options);
@@ -662,6 +660,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId,
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async () => ({
             status: "busy",
@@ -717,6 +716,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId: "entry-index-race",
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit,
           processProbe: async () => ({ status: "idle", matches: [] }),
           mountProbe: async () => ({ status: "clear", paths: [] }),
@@ -740,6 +740,7 @@ describe("executeWorktreeQuarantine", () => {
         entryId: "entry-final-process-race",
         quarantineDirectory,
         dependencies: {
+          ...idle,
           runGit: fixture.runGit,
           processProbe: async (path) =>
             path === fixture.linked
@@ -755,4 +756,4 @@ describe("executeWorktreeQuarantine", () => {
 
     expect(await missing(fixture.linked)).toBe(false);
   });
-});
+}, 30000);

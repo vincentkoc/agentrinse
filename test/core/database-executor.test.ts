@@ -168,6 +168,7 @@ describe("database vacuum execution and recovery", () => {
     };
     const offline = {
       inspectProcesses: async () => ({ status: "idle" as const, pids: [] as [] }),
+      inspectOpenHandles: async () => ({ status: "idle" as const, pids: [] as [] }),
     };
     let exchanges = 0;
     const exchangeWhileLocked = async (source: string, destination: string) => {

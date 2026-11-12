@@ -1,9 +1,7 @@
-import { execFile } from "node:child_process";
 import { lstatSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
@@ -15,8 +13,7 @@ import {
 } from "../../src/core/artifact-executor.js";
 import { measurePath } from "../../src/core/measure.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
-
-const execFileAsync = promisify(execFile);
+import { runFixtureGit } from "../helpers/git.js";
 
 async function fixture(): Promise<{
   action: ArtifactRemoveAction;
@@ -70,8 +67,10 @@ async function exists(path: string): Promise<boolean> {
 describe("executeArtifactRemove", () => {
   it("restores an isolated artifact when Git starts tracking its files", async () => {
     const value = await fixture();
-    await execFileAsync("git", ["-C", value.project, "init", "--quiet"]);
-    await execFileAsync("git", ["-C", value.project, "add", "node_modules/cache.bin"]);
+    await runFixtureGit(["-C", value.project, "init", "--quiet"], { home: value.project });
+    await runFixtureGit(["-C", value.project, "add", "node_modules/cache.bin"], {
+      home: value.project,
+    });
 
     await expect(
       executeArtifactRemove(value.action, {
