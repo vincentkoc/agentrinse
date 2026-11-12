@@ -19,11 +19,12 @@ import {
   executeArtifactRemove,
   type ArtifactExecutionResult,
 } from "./artifact-executor.js";
+import { currentArtifactProtectionRoots } from "./artifact-protection.js";
 import {
   revalidateArtifactRemove,
   type ArtifactRevalidationResult,
 } from "./artifact-revalidation.js";
-import { sha256 } from "./digest.js";
+import { sha256, sha256Json } from "./digest.js";
 import {
   DatabaseExecutionError,
   executeDatabaseVacuum,
@@ -264,6 +265,39 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
                 authorization: {
                   expiresAtMs: Date.parse(plan.expiresAt),
                   now: clock,
+                },
+                revalidateProtection: async () => {
+                  const currentConfig =
+                    options.dependencies?.loadCurrentConfig === undefined
+                      ? undefined
+                      : agentRinseConfigSchema.parse(
+                          await options.dependencies.loadCurrentConfig(),
+                        );
+                  const configs =
+                    currentConfig === undefined || sha256Json(currentConfig) === plan.configDigest
+                      ? [config]
+                      : [config, currentConfig];
+                  for (const protectionConfig of configs) {
+                    const roots = await currentArtifactProtectionRoots(
+                      action,
+                      plan.home,
+                      protectionConfig,
+                      clock(),
+                    );
+                    if (roots.length > 0) {
+                      const codes = [...new Set(roots.map((root) => root.code))].sort();
+                      throw new ArtifactExecutionError(
+                        `artifact is protected before isolation: ${codes.join(", ")}`,
+                        "skipped-stale",
+                        isolationPath,
+                        {
+                          diagnosticCode: codes.includes("unknown-provider-state")
+                            ? "ARTIFACT_PROTECTION_UNKNOWN"
+                            : "ARTIFACT_PROTECTION_CHANGED",
+                        },
+                      );
+                    }
+                  }
                 },
               }))
           )(action, isolationId);

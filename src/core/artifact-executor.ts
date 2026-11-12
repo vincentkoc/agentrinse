@@ -45,6 +45,7 @@ export type ArtifactExecutorDependencies = {
   measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
+  revalidateProtection?: () => Promise<void>;
   maxEntries?: number;
   authorization?: {
     expiresAtMs: number;
@@ -141,6 +142,20 @@ export async function executeArtifactRemove(
       "skipped-stale",
       isolationPath,
       { diagnosticCode: "PLAN_EXPIRED_DURING_APPLY" },
+    );
+  }
+
+  try {
+    await dependencies.revalidateProtection?.();
+  } catch (error) {
+    if (error instanceof ArtifactExecutionError) {
+      throw error;
+    }
+    throw new ArtifactExecutionError(
+      "artifact protection could not be refreshed before isolation",
+      "skipped-stale",
+      isolationPath,
+      { cause: error, diagnosticCode: "ARTIFACT_PROTECTION_UNKNOWN" },
     );
   }
 

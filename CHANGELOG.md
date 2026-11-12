@@ -39,6 +39,12 @@ The project follows semantic versioning after its first supported release.
   larger budget. A timeout still leaves ownership unknown and never permits
   action. `undo` and `purge` are unchanged.
 
+### Safety
+
+- Artifact removal refreshes provider session roots and user pins immediately
+  before isolation, and skips a saved plan when protection changed or cannot
+  be inspected.
+
 ## [0.9.1] - 2026-10-29
 
 ### Fixed

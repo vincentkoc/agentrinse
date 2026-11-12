@@ -364,6 +364,144 @@ describe("applyCleanupPlan", () => {
     expect(await readJsonFile(result.journalPath)).toEqual(result.run);
   });
 
+  it("skips a saved artifact plan when a Codex workspace becomes active", async () => {
+    const value = await fixture();
+    const codexRoot = join(value.plan.home, ".codex");
+    await mkdir(codexRoot);
+    await writeFile(
+      join(codexRoot, ".codex-global-state.json"),
+      JSON.stringify({
+        "active-workspace-roots": [value.project],
+        "electron-saved-workspace-roots": [],
+        "thread-workspace-root-hints": {},
+      }),
+    );
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidate: async () => ({
+          status: "valid",
+          measurement: await measurePath(value.target, { maxEntries: 100 }),
+        }),
+      },
+    });
+
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: { code: "ARTIFACT_PROTECTION_CHANGED" },
+    });
+    expect(await exists(value.target)).toBe(true);
+    expect(await readFile(join(value.project, "source.ts"), "utf8")).toBe("keep");
+  });
+
+  it("skips artifact removal when the current config adds a pin", async () => {
+    const value = await fixture();
+    const currentConfig = structuredClone(value.config);
+    currentConfig.pins = [{ path: value.project }];
+    const loadCurrentConfig = vi.fn(async () => currentConfig);
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        loadCurrentConfig,
+        revalidate: async () => ({
+          status: "valid",
+          measurement: await measurePath(value.target, { maxEntries: 100 }),
+        }),
+      },
+    });
+
+    expect(loadCurrentConfig).toHaveBeenCalledOnce();
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: { code: "ARTIFACT_PROTECTION_CHANGED" },
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it.each(["missing", "malformed"] as const)(
+    "keeps an artifact when Codex metadata is %s",
+    async (metadata) => {
+      const value = await fixture();
+      const codexRoot = join(value.plan.home, ".codex");
+      await mkdir(codexRoot);
+      if (metadata === "malformed") {
+        await writeFile(join(codexRoot, ".codex-global-state.json"), "invalid JSON");
+      }
+
+      const result = await applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        dependencies: {
+          clock: CLOCK,
+          revalidate: async () => ({
+            status: "valid",
+            measurement: await measurePath(value.target, { maxEntries: 100 }),
+          }),
+        },
+      });
+
+      expect(result.run.actions[0]).toMatchObject({
+        status: "skipped-stale",
+        diagnostic: { code: "ARTIFACT_PROTECTION_UNKNOWN" },
+      });
+      expect(await exists(value.target)).toBe(true);
+    },
+  );
+
+  it("refuses artifact removal when current config cannot be reloaded", async () => {
+    const value = await fixture();
+
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        loadCurrentConfig: async () => {
+          throw new Error("config unavailable");
+        },
+        revalidate: async () => ({
+          status: "valid",
+          measurement: await measurePath(value.target, { maxEntries: 100 }),
+        }),
+      },
+    });
+
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: { code: "ARTIFACT_PROTECTION_UNKNOWN" },
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("applies when no current protection root covers the artifact", async () => {
+    const value = await fixture();
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        revalidate: async () => ({
+          status: "valid",
+          measurement: await measurePath(value.target, { maxEntries: 100 }),
+        }),
+      },
+    });
+
+    expect(result.run.actions[0]?.status).toBe("applied");
+    expect(await exists(value.target)).toBe(false);
+  });
+
   it("dispatches and journals recoverable worktree quarantine", async () => {
     const value = await worktreeFixture();
     const worktreeProtectionRoots = vi.fn(async () => []);
