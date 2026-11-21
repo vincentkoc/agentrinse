@@ -18,12 +18,14 @@ const RUNTIMES = [
   { tool: "cursor", command: "cursor-agent", displayName: "Cursor Agent" },
   { tool: "copilot", command: "copilot", displayName: "GitHub Copilot CLI" },
   { tool: "opencode", command: "opencode", displayName: "OpenCode" },
+  { tool: "openclaw", command: "openclaw", displayName: "OpenClaw" },
   { tool: "grok", command: "grok", displayName: "Grok Build" },
 ] as const;
 
 export type RuntimeVersionRunner = (executable: string) => Promise<string>;
 
 export type RuntimeAdapterOptions = {
+  includeOpenClaw?: boolean;
   environment?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
   runVersion?: RuntimeVersionRunner;
@@ -59,8 +61,13 @@ function versionLine(output: string): string | undefined {
 
 export class RuntimeAuditAdapter implements AuditAdapter {
   readonly id = "runtime";
+  private readonly runtimes;
 
-  constructor(private readonly options: RuntimeAdapterOptions = {}) {}
+  constructor(private readonly options: RuntimeAdapterOptions = {}) {
+    this.runtimes = RUNTIMES.filter(
+      (runtime) => runtime.tool !== "openclaw" || options.includeOpenClaw === true,
+    );
+  }
 
   private executableNames(command: string): string[] {
     return this.options.platform === "win32"
@@ -106,7 +113,7 @@ export class RuntimeAuditAdapter implements AuditAdapter {
   }
 
   private async discovered(context: AuditContext): Promise<boolean> {
-    for (const runtime of RUNTIMES) {
+    for (const runtime of this.runtimes) {
       if ((await this.resolveCommand(runtime.command)) !== undefined) {
         return true;
       }
@@ -272,7 +279,7 @@ export class RuntimeAuditAdapter implements AuditAdapter {
     const resources: ResourceSnapshot[] = [];
     const diagnostics: Diagnostic[] = [];
     const resolved = new Map<string, string>();
-    for (const runtime of RUNTIMES) {
+    for (const runtime of this.runtimes) {
       const executable = await this.resolveCommand(runtime.command);
       if (executable !== undefined) {
         resolved.set(runtime.tool, executable);
@@ -283,7 +290,7 @@ export class RuntimeAuditAdapter implements AuditAdapter {
     resources.push(...claudeNative.resources);
     diagnostics.push(...claudeNative.diagnostics);
 
-    for (const runtime of RUNTIMES) {
+    for (const runtime of this.runtimes) {
       context.signal?.throwIfAborted();
       const launcherPath = resolved.get(runtime.tool);
       if (launcherPath === undefined) {

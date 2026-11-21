@@ -5,7 +5,8 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { ZodType } from "zod";
 
-import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
+import { resolveProviderRoot } from "../adapters/provider-root.js";
+import { isProviderEnabled, PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import { DEFAULT_CONFIG } from "../config/defaults.js";
 import { loadConfigForHome } from "../config/load.js";
 import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
@@ -454,13 +455,14 @@ async function providerChecks(
   home: string,
   config: AgentRinseConfig,
   platform: NodeJS.Platform,
+  environment: NodeJS.ProcessEnv,
 ): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
   for (const spec of Object.values(PROVIDER_SPECS).sort((left, right) =>
     left.id.localeCompare(right.id),
   )) {
     const configured = config.adapters[spec.id];
-    if (configured?.enabled === false) {
+    if (!isProviderEnabled(config, spec.id)) {
       checks.push({
         id: `provider:${spec.id}`,
         status: "pass",
@@ -468,7 +470,25 @@ async function providerChecks(
       });
       continue;
     }
-    const root = resolve(configured?.root ?? spec.defaultRoot(home, platform));
+    let root: string;
+    try {
+      root =
+        spec.id === "openclaw"
+          ? resolveProviderRoot(spec, home, {
+              platform,
+              environment,
+              ...(configured?.root === undefined ? {} : { root: configured.root }),
+            })
+          : resolve(configured?.root ?? spec.defaultRoot(home, platform));
+    } catch (error) {
+      checks.push({
+        id: `provider:${spec.id}`,
+        status: "warning",
+        summary: `${spec.displayName} root is invalid`,
+        detail: errorMessage(error),
+      });
+      continue;
+    }
     try {
       const stats = await lstat(root);
       if (!stats.isDirectory() || stats.isSymbolicLink()) {
@@ -755,7 +775,7 @@ export async function executeDoctorCommand(
     await dockerCheck(loaded.config.adapters.docker?.enabled === true, runCommand),
     await moleCheck(platform, runCommand),
     await databaseMaintenanceCheck(runCommand),
-    ...(await providerChecks(options.home, loaded.config, platform)),
+    ...(await providerChecks(options.home, loaded.config, platform, environment)),
     ...(await artifactChecks(loaded.config)),
     await lockCheck(layout.locks, dependencies.lock),
     await schemaDirectoryCheck("schema:audits", layout.audits, auditReportSchema),

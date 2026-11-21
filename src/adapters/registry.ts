@@ -10,7 +10,12 @@ import { ArtifactAuditAdapter } from "./artifacts/adapter.js";
 import { DockerAuditAdapter } from "./docker/adapter.js";
 import { GitWorktreeAuditAdapter, type GitWorktreeDependencies } from "./git/adapter.js";
 import { ProviderAuditAdapter } from "./provider-adapter.js";
-import { PROVIDER_IDS, PROVIDER_SPECS, type ProviderAdapterId } from "./provider-specs.js";
+import {
+  isProviderEnabled,
+  PROVIDER_IDS,
+  PROVIDER_SPECS,
+  type ProviderAdapterId,
+} from "./provider-specs.js";
 import { RuntimeAuditAdapter } from "./runtime/adapter.js";
 
 const PROVIDER_ID_SET = new Set<string>(PROVIDER_IDS);
@@ -90,7 +95,7 @@ export function createAuditAdapters(
     }
   }
   const providerIds =
-    providerSelection ?? PROVIDER_IDS.filter((id) => config.adapters[id]?.enabled !== false);
+    providerSelection ?? PROVIDER_IDS.filter((id) => isProviderEnabled(config, id));
   const adapters: AuditAdapter[] = providerIds.map(
     (id) =>
       new ProviderAuditAdapter(PROVIDER_SPECS[id], {
@@ -152,6 +157,7 @@ export function createAuditAdapters(
     adapters.push(
       new RuntimeAuditAdapter({
         platform,
+        includeOpenClaw: isProviderEnabled(config, "openclaw"),
         ...(options.environment === undefined ? {} : { environment: options.environment }),
       }),
     );

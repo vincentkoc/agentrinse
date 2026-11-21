@@ -14,6 +14,7 @@ recoverable whole-worktree action when every safety gate is proven.
 | GitHub Copilot | CLI sessions, logs, native maintenance guidance           | all             |
 | Zed            | user-data root and exact rotated-log quarantine           | conditional     |
 | OpenCode       | database, logs, snapshots, native maintenance guidance    | all             |
+| OpenClaw       | opt-in per-agent state, shared state, workspace, and logs | all             |
 | Grok Build     | version-gated owner root and native memory GC guidance    | all             |
 | Runtime        | opt-in selected executable and Claude native versions     | all             |
 | Git            | worktree audit and recoverable linked-worktree quarantine | conditional     |
@@ -153,6 +154,19 @@ sweep. OpenCode Desktop's separate seven-day cleanup applies to its Electron
 user-data log runs, not this server log directory. AgentRinse reports the
 distinction and emits no action for either log surface.
 
+### OpenClaw
+
+The adapter inventories four directories when present under the selected state
+root. `agents/` holds per-agent data including sessions, `state/` holds shared
+state, `workspace/` holds local workspace files, and `logs/` holds profile logs.
+Older layouts with session transcripts below `agents/` are counted in the same
+per-agent total. Each finding is protected and has no candidate actions.
+
+The audit measures filesystem metadata. It does not open databases, read
+transcripts or credentials, or load OpenClaw configuration to discover external
+workspaces or logs. OpenClaw owns session maintenance, including its
+[`openclaw sessions cleanup --dry-run` preview](https://docs.openclaw.ai/cli/sessions).
+
 ### Grok Build
 
 AgentRinse resolves an explicit adapter root first, then an absolute
@@ -215,6 +229,9 @@ Runtime inventory is opt-in. It reports selected Codex, Claude, Cursor,
 Copilot, OpenCode, and Grok executables found on `PATH`. Unknown installation
 managers remain `unknown`; AgentRinse recommends the owning installer or
 package manager and proposes no action.
+
+With both the runtime and OpenClaw adapters enabled, runtime inventory also
+reports the selected `openclaw` executable and its version.
 
 For Claude's documented native macOS/Linux layout, AgentRinse inventories
 regular files under `$HOME/.local/share/claude/versions` and marks the version

@@ -11,6 +11,7 @@ export const adapterIdSchema = z.enum([
   "copilot",
   "zed",
   "opencode",
+  "openclaw",
   "grok",
   "runtime",
   "git",

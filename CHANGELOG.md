@@ -6,6 +6,11 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in OpenClaw inventory reports per-agent state, shared state, the workspace
+  and logs under the selected profile. Its findings are report-only.
+
 ### Fixed
 
 - Tests no longer inherit the host Git signing, LFS, or credential config, which made

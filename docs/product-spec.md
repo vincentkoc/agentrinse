@@ -2258,6 +2258,13 @@ network filesystems make SQLite ownership especially important.
 Any future compaction follows the same offline backup, integrity, and rollback
 requirements as Codex and Cursor.
 
+## OpenClaw Adapter
+
+OpenClaw is an opt-in, report-only provider. Inventory covers the selected
+state root's `agents`, `state`, `workspace`, and `logs` directories as separate
+resources. Configuration, authentication, session contents, and external
+workspaces stay owner-managed. The adapter emits no cleanup action.
+
 ## Grok Build Adapter
 
 ### Ownership boundary
