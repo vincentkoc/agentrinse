@@ -39,7 +39,7 @@ describe("runAudit", () => {
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).not.toContain("grok");
   });
 
-  it("requires opt-in for OpenClaw and inventories only its local state directories", async () => {
+  it("requires opt-in for OpenClaw and keeps transcripts and credentials protected", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-openclaw-"));
     const root = join(home, ".openclaw");
     await mkdir(join(root, "agents", "main", "sessions"), { recursive: true });
@@ -56,11 +56,16 @@ describe("runAudit", () => {
       config,
       adapters: createAuditAdapters(config, process.platform, { environment: {} }),
     });
-    expect(report.findings).toHaveLength(1);
-    expect(report.findings[0]).toMatchObject({
-      resource: { adapter: "openclaw", path: join(root, "agents"), kind: "agent-session-store" },
+    expect(report.findings).toHaveLength(2);
+    expect(report.findings.find((f) => f.resource.kind === "agent-session-store")).toMatchObject({
+      facts: { format: "transcript" },
+      resource: { adapter: "openclaw", kind: "agent-session-store" },
       state: "protected",
       measuredBytes: 18,
+      candidateActions: [],
+    });
+    expect(report.findings.find((f) => f.facts.openClawSurface === "credentials")).toMatchObject({
+      state: "protected",
       candidateActions: [],
     });
     expect(report.diagnostics).toContainEqual(

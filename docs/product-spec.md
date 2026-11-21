@@ -2260,10 +2260,12 @@ requirements as Codex and Cursor.
 
 ## OpenClaw Adapter
 
-OpenClaw is an opt-in, report-only provider. Inventory covers the selected
-state root's `agents`, `state`, `workspace`, and `logs` directories as separate
-resources. Configuration, authentication, session contents, and external
-workspaces stay owner-managed. The adapter emits no cleanup action.
+The opt-in adapter inventories per-agent and shared databases, session artifacts,
+memory, managed worktrees, logs, caches and credentials. OpenClaw's registry and
+literal configured owner paths protect overlapping Git and artifact targets.
+Only a verified generated exec shell snapshot older than 30 days can enter
+recoverable provider-file quarantine. The adapter matrix specifies the storage
+contracts, refusal paths and recovery window.
 
 ## Grok Build Adapter
 

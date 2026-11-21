@@ -8,8 +8,10 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
-- Opt-in OpenClaw inventory reports per-agent state, shared state, the workspace
-  and logs under the selected profile. Its findings are report-only.
+- Opt-in OpenClaw inventory classifies sessions, memory, credentials, worktrees,
+  logs and caches. Configured owner paths and registered checkouts protect Git
+  and artifact targets. Verified generated shell snapshots older than 30 days
+  can enter recoverable quarantine.
 
 ### Fixed
 

@@ -54,6 +54,19 @@ describe("provider process inspection", () => {
     ).resolves.toMatchObject({ status: "unknown" });
   });
 
+  it("distinguishes OpenClaw owners from tools reviewing the repository", async () => {
+    const processes = [
+      "401 openclaw-gateway",
+      "402 /usr/bin/node /opt/node_modules/openclaw/openclaw.mjs agent",
+      "403 /Applications/OpenClaw.app/Contents/MacOS/OpenClaw",
+      "404 node review.js --target-repo /project/openclaw --target-dir /tmp/checks",
+      "405 bash stage-runtime.sh /staging/OpenClaw.app/Contents/Resources",
+    ];
+    expect(
+      await inspectProviderProcesses("openclaw", { runPs: async () => processes.join("\n") }),
+    ).toEqual({ status: "busy", pids: [401, 402, 403] });
+  });
+
   it("reports idle only after parsing a complete nonmatching process list", async () => {
     await expect(
       inspectProviderProcesses("grok", {

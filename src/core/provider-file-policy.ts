@@ -1,7 +1,8 @@
-import { realpath } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 
 import { resolveProviderRoot } from "../adapters/provider-root.js";
+import { hasOpenClawJournal } from "../adapters/openclaw-database.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { ProviderFileQuarantineAction, ProviderMutationId } from "../contracts/action.js";
@@ -19,6 +20,7 @@ export type ProviderFilePolicy = {
   rootCode: string;
   rootDetail: string;
   tooRecentDetail: string;
+  contentPrefix?: string;
   matchesRelativePath(relativePath: string): boolean;
   validateAction(action: ProviderFileQuarantineAction, now: Date): string | undefined;
 };
@@ -102,6 +104,39 @@ function validateAgeAndRecoveryWindow(
 
 export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [
   {
+    id: "openclaw.shell-snapshot",
+    provider: "openclaw",
+    ownerRoot: "provider-root",
+    resourceKind: "agent-cache",
+    displayName: "OpenClaw generated shell snapshot",
+    minAgeMinutes: 30 * 24 * 60,
+    quarantineTtlMinutes: 7 * 24 * 60,
+    description: "Quarantine a generated OpenClaw shell snapshot after 30 days",
+    rootCode: "openclaw-shell-snapshot-retention",
+    rootDetail:
+      "OpenClaw regenerates exec shell snapshots and sweeps stale captures after three days.",
+    tooRecentDetail: "The shell snapshot is inside the 30-day quarantine threshold.",
+    contentPrefix: "# OpenClaw exec shell snapshot. Generated; do not edit.\n",
+    matchesRelativePath(relativePath) {
+      const parts = relativePath.split(sep);
+      return (
+        parts.length === 3 &&
+        parts[0] === "cache" &&
+        parts[1] === "shell-snapshots" &&
+        /^[a-f0-9]{64}\.sh$/u.test(parts[2]!)
+      );
+    },
+    validateAction(action, now) {
+      return validateAgeAndRecoveryWindow(
+        action,
+        now,
+        "OpenClaw shell snapshots",
+        this.minAgeMinutes,
+        this.quarantineTtlMinutes,
+      );
+    },
+  },
+  {
     id: CLAUDE_DEBUG_LOG_POLICY_ID,
     provider: "claude",
     ownerRoot: "provider-root",
@@ -184,6 +219,9 @@ export async function authorizeProviderFileAction(
   now: Date = new Date(),
 ): Promise<void> {
   const explicitRoot = config.adapters[action.adapter]?.root;
+  if (action.adapter === "openclaw" && config.adapters.openclaw?.enabled !== true) {
+    throw new Error("OpenClaw snapshot quarantine requires the OpenClaw adapter to be enabled");
+  }
   const policy = PROVIDER_FILE_POLICIES.find(
     (candidate) => candidate.id === action.policyId && candidate.provider === action.adapter,
   );
@@ -198,6 +236,13 @@ export async function authorizeProviderFileAction(
     environment,
   });
   const physicalRoot = await realpath(configuredRoot);
+  if (
+    action.adapter === "openclaw" &&
+    (!(await lstat(configuredRoot)).isDirectory() ||
+      (await hasOpenClawJournal(join(physicalRoot, "state", "openclaw.sqlite"))))
+  ) {
+    throw new Error("OpenClaw profile changed or its shared database has a pending journal");
+  }
   if (action.target.ownerRoot !== physicalRoot) {
     throw new Error(`provider-file target is outside the configured ${action.adapter} root`);
   }

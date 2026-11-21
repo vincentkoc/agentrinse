@@ -237,6 +237,16 @@ export const PROVIDER_SPECS: Record<ProviderAdapterId, ProviderSpec> = {
       { relativePath: "state", displayName: "OpenClaw shared state", kind: "agent-home" },
       { relativePath: "workspace", displayName: "OpenClaw workspace", kind: "agent-home" },
       { relativePath: "logs", displayName: "OpenClaw logs", kind: "agent-log-store" },
+      {
+        relativePath: "worktrees",
+        displayName: "OpenClaw worktree storage",
+        kind: "agent-snapshot-store",
+      },
+      { relativePath: "cache", displayName: "OpenClaw cache", kind: "agent-cache" },
+      { relativePath: "credentials", displayName: "OpenClaw credentials", kind: "agent-home" },
+      { relativePath: "client", displayName: "OpenClaw client state", kind: "agent-home" },
+      { relativePath: "memory", displayName: "OpenClaw memory", kind: "agent-home" },
+      { relativePath: "media", displayName: "OpenClaw media", kind: "agent-home" },
     ],
   },
 };

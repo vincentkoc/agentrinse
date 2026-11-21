@@ -58,6 +58,20 @@ async function fixture(): Promise<{
 }
 
 describe("revalidateArtifactRemove", () => {
+  it("checks OpenClaw ownership added after the artifact was planned", async () => {
+    const value = await fixture();
+    const root = join(value.home, ".openclaw");
+    value.config.adapters.openclaw = { enabled: true, root };
+    await mkdir(root);
+    await writeFile(
+      join(root, "openclaw.json"),
+      JSON.stringify({ agents: { defaults: { workspace: value.project } } }),
+    );
+    expect(await revalidateArtifactRemove(value.action, value.home, value.config)).toMatchObject({
+      status: "stale",
+      diagnostic: { code: "OPENCLAW_ARTIFACT_PROTECTED" },
+    });
+  });
   it("rejects an artifact that became Git-tracked after planning", async () => {
     const value = await fixture();
     await runFixtureGit(["-C", value.project, "init", "--quiet"], { home: value.project });

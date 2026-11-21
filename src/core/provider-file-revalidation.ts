@@ -2,7 +2,7 @@ import type { ProviderFileQuarantineAction } from "../contracts/action.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import { inspectProviderFile, providerFileIdentityMatches } from "./provider-file-identity.js";
-import { authorizeProviderFileAction } from "./provider-file-policy.js";
+import { authorizeProviderFileAction, PROVIDER_FILE_POLICIES } from "./provider-file-policy.js";
 import { inspectProviderProcesses, type ProviderProcessResult } from "./provider-processes.js";
 import { findProcessesUsingFile, type ProcessOwnershipResult } from "./process-ownership.js";
 
@@ -73,6 +73,7 @@ export async function revalidateProviderFileQuarantine(
       action.target.path,
       action.target.ownerRoot,
       action.target.provider,
+      PROVIDER_FILE_POLICIES.find((policy) => policy.id === action.policyId)?.contentPrefix,
     );
     if (!providerFileIdentityMatches(actual, action.target)) {
       return stale(action, "PROVIDER_FILE_IDENTITY_CHANGED", "provider file identity changed");

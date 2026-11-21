@@ -56,6 +56,8 @@ import {
   opencodeNativeMaintenanceFor,
 } from "./opencode-maintenance.js";
 import { collectProviderReachability } from "./provider-reachability.js";
+import { collectOpenClaw, openClawProtection } from "./openclaw.js";
+import { OPENCLAW_OWNER_UNKNOWN } from "./openclaw-ownership.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
 import { collectZedRotatedLog } from "./zed-logs.js";
@@ -199,6 +201,13 @@ export class ProviderAuditAdapter implements AuditAdapter {
     observer?: CollectionObserver,
   ): Promise<CollectionResult> {
     if (probe.status !== "available" || probe.root === undefined) {
+      if (this.id === "openclaw" && probe.status === "degraded") {
+        this.options.reachability?.addGlobal({
+          code: OPENCLAW_OWNER_UNKNOWN,
+          source: this.id,
+          detail: "OpenClaw ownership could not be inspected.",
+        });
+      }
       if (
         probe.status === "degraded" &&
         this.options.reachability !== undefined &&
@@ -249,6 +258,22 @@ export class ProviderAuditAdapter implements AuditAdapter {
       }
     };
 
+    if (this.id === "openclaw" && this.options.quickInventory !== true) {
+      try {
+        await collectOpenClaw(context, probe.root, this.options, {
+          reportResource: addResources,
+          reportDiagnostic: addDiagnostics,
+        });
+      } catch (error) {
+        this.options.reachability?.addGlobal({
+          code: OPENCLAW_OWNER_UNKNOWN,
+          source: this.id,
+          detail: "OpenClaw inventory did not complete.",
+        });
+        throw error;
+      }
+      return { resources, diagnostics };
+    }
     if (this.options.reachability !== undefined) {
       addDiagnostics(
         ...(await collectProviderReachability(
@@ -881,6 +906,7 @@ export class ProviderAuditAdapter implements AuditAdapter {
         warnings: [],
       };
     }
+    const protection = this.id === "openclaw" ? openClawProtection(resource) : undefined;
     return {
       schemaVersion: 1,
       findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
@@ -891,10 +917,11 @@ export class ProviderAuditAdapter implements AuditAdapter {
       confidence: "certain",
       roots: [
         {
-          code: "provider-owned-report-only",
+          code: protection?.code ?? "provider-owned-report-only",
           source: this.id,
           observedAt,
-          detail: "This adapter inventories provider state but does not clean it.",
+          detail:
+            protection?.detail ?? "This adapter inventories provider state but does not clean it.",
         },
       ],
       facts: resource.facts,

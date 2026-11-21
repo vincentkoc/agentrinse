@@ -96,6 +96,9 @@ export function createAuditAdapters(
   }
   const providerIds =
     providerSelection ?? PROVIDER_IDS.filter((id) => isProviderEnabled(config, id));
+  const needsOwnership =
+    options.reachability !== undefined ||
+    (!exclusiveProviders && (gitEnabled || config.artifacts.projects.length > 0));
   const adapters: AuditAdapter[] = providerIds.map(
     (id) =>
       new ProviderAuditAdapter(PROVIDER_SPECS[id], {
@@ -103,7 +106,7 @@ export function createAuditAdapters(
         platform,
         measureBytes: config.audit.measureBytes,
         maxEntries: config.audit.maxEntries,
-        reachability,
+        ...(id !== "openclaw" || needsOwnership ? { reachability } : {}),
         inventoryResources: options.providerInventory ?? true,
         quickInventory: options.providerQuickInventory ?? false,
         allowOfflineVacuum: options.allowOfflineVacuum ?? false,

@@ -167,7 +167,6 @@ function scopedConfig(
   maxRisk: ActionRisk | undefined,
 ): AgentRinseConfig {
   const scoped = structuredClone(config);
-  delete scoped.adapters.openclaw;
   for (const id of ["cursor", "copilot", "zed", "opencode", "grok", "runtime", "docker"] as const) {
     scoped.adapters[id] = { enabled: false };
   }

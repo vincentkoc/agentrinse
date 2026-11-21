@@ -140,7 +140,7 @@ use `FLATPAK_XDG_DATA_HOME/zed/logs`, then `XDG_DATA_HOME/zed/logs`, then the
 platform default; environment paths must be absolute. Only the exact stale
 `Zed.log.old` file can produce an action.
 
-Claude and Zed provider-file quarantine require
+Claude, Zed and OpenClaw provider-file quarantine require
 `plan --max-risk recoverable` and matching apply authorization. Missing
 default roots mean the provider is absent, not broken. Codex can propose
 offline database maintenance only with

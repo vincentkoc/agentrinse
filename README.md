@@ -75,7 +75,7 @@ logical memory records.
 | <img width="48px" src="docs/client-copilot.png" alt="GitHub Copilot CLI" /> | [GitHub Copilot CLI](https://github.com/github/copilot-cli) | audit + native guidance | local sessions, process logs, and provider-owned maintenance        |
 | <img width="48px" src="docs/client-zed.svg" alt="Zed" />                    | [Zed](https://zed.dev/docs/ai/overview)                     | audit + quarantine      | local agent state and the exact stale rotated application log       |
 | <img width="48px" src="docs/client-opencode.png" alt="OpenCode" />          | [OpenCode](https://opencode.ai/)                            | audit + native guidance | local state, snapshot GC, and server-log retention                  |
-| <img width="48px" src="docs/client-openclaw.svg" alt="OpenClaw" />          | [OpenClaw](https://docs.openclaw.ai/)                       | audit-only, opt-in      | per-agent and shared state, workspace, and logs                     |
+| <img width="48px" src="docs/client-openclaw.svg" alt="OpenClaw" />          | [OpenClaw](https://docs.openclaw.ai/)                       | audit + quarantine      | opt-in sessions, memory, managed worktrees, logs, and shell cache   |
 | <img width="48px" src="docs/client-grok-build.svg" alt="Grok Build" />      | [Grok Build](https://docs.x.ai/build/overview)              | audit + native guidance | sessions, memory, logs, worktrees, caches, and owner maintenance    |
 
 To audit one OpenClaw profile, run `agentrinse audit --providers openclaw --no-state --json`.
