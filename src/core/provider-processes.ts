@@ -15,6 +15,13 @@ export type ProviderProcessOptions = {
 };
 
 const COMMAND_PATTERNS: Record<ProviderMutationId, RegExp[]> = {
+  openclaw: [
+    /^(?:\S*[/\\])?openclaw(?:-gateway|-node|\.mjs|\.exe)?(?:\s|$)/iu,
+    /(?:^|[\s/\\])openclaw\.mjs(?:\s|$)/iu,
+    /(?:^|[/\\])(?:\.bin|bin)[/\\]openclaw(?:\.exe)?(?:\s|$)/iu,
+    /(?:^|[/\\])openclaw[/\\](?:dist|src)[/\\]entry\.[mc]?[jt]s(?:\s|$)/iu,
+    /(?:^|[/\\])OpenClaw\.app[/\\]Contents[/\\]MacOS[/\\]OpenClaw(?:\s|$)/iu,
+  ],
   claude: [
     /(?:^|\s)(?:\S*[/\\])?claude(?:\.exe)?(?:\s|$)/iu,
     /(?:^|\s)(?:\S*[/\\])?claude-code(?:\.exe)?(?:\s|$)/iu,

@@ -65,6 +65,18 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("executeArtifactRemove", () => {
+  it("restores an isolated artifact if its provider claims it before removal", async () => {
+    const value = await fixture();
+    await expect(
+      executeArtifactRemove(value.action, {
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        revalidateProtection: async () => {
+          throw new Error("OpenClaw claimed the workspace");
+        },
+      }),
+    ).rejects.toMatchObject({ outcome: "rolled-back" });
+    expect(await readFile(join(value.target, "cache.bin"), "utf8")).toBe("remove");
+  });
   it("restores an isolated artifact when Git starts tracking its files", async () => {
     const value = await fixture();
     await runFixtureGit(["-C", value.project, "init", "--quiet"], { home: value.project });

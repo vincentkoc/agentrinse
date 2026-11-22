@@ -2,6 +2,7 @@ import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
 import type { AgentRinseConfig } from "../config/schema.js";
+import { openClawPathProtection } from "../adapters/openclaw-ownership.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
@@ -55,7 +56,6 @@ export async function revalidateArtifactRemove(
   const projectRoot = resolve(action.target.projectRoot);
   const targetPath = resolve(action.target.path);
   const expectedPath = resolve(join(projectRoot, action.target.name));
-
   if (projectRoot === resolve(home)) {
     return stale(
       action,
@@ -77,6 +77,16 @@ export async function revalidateArtifactRemove(
       "ARTIFACT_SCOPE_CHANGED",
       "artifact path is no longer within the exact configured cleanup scope",
     );
+  }
+
+  if (config.adapters.openclaw?.enabled === true) {
+    const reason = await openClawPathProtection(
+      home,
+      config,
+      [targetPath],
+      dependencies.now?.() ?? new Date(),
+    );
+    if (reason) return stale(action, "OPENCLAW_ARTIFACT_PROTECTED", reason);
   }
 
   const cwd = resolve(dependencies.cwd ?? process.cwd());

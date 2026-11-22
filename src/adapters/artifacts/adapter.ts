@@ -22,6 +22,8 @@ import { isPathInside } from "../../core/safety.js";
 type ArtifactOptions = AgentRinseConfig["artifacts"] &
   Pick<AgentRinseConfig["audit"], "maxEntries" | "measureBytes">;
 const ARTIFACT_PROTECTION_ROOTS = new Set([
+  "openclaw-owned-path",
+  "openclaw-ownership-incomplete",
   "active-session",
   "current-worktree",
   "provider-managed-worktree",

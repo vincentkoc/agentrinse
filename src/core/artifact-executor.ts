@@ -37,6 +37,7 @@ export type ArtifactExecutionResult = {
 };
 
 export type ArtifactExecutorDependencies = {
+  revalidateProtection?: (isolationPath: string) => Promise<void>;
   id?: () => string;
   inspect?: (path: string) => Promise<Stats>;
   finalInspect?: (path: string) => Stats;
@@ -276,6 +277,20 @@ export async function executeArtifactRemove(
     );
   }
 
+  if (dependencies.revalidateProtection) {
+    try {
+      await dependencies.revalidateProtection(isolationPath);
+    } catch (error) {
+      await rollbackBeforeRemoval(
+        "artifact ownership changed before removal",
+        action,
+        isolationPath,
+        inspect,
+        move,
+        error,
+      );
+    }
+  }
   if (
     dependencies.authorization !== undefined &&
     dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs

@@ -2258,6 +2258,15 @@ network filesystems make SQLite ownership especially important.
 Any future compaction follows the same offline backup, integrity, and rollback
 requirements as Codex and Cursor.
 
+## OpenClaw Adapter
+
+The opt-in adapter inventories per-agent and shared databases, session artifacts,
+memory, managed worktrees, logs, caches and credentials. OpenClaw's registry and
+literal configured owner paths protect overlapping Git and artifact targets.
+Only a verified generated exec shell snapshot older than 30 days can enter
+recoverable provider-file quarantine. The adapter matrix specifies the storage
+contracts, refusal paths and recovery window.
+
 ## Grok Build Adapter
 
 ### Ownership boundary

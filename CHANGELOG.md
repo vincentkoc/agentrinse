@@ -6,6 +6,13 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in OpenClaw inventory classifies sessions, memory, credentials, worktrees,
+  logs and caches. Configured owner paths and registered checkouts protect Git
+  and artifact targets. Verified generated shell snapshots older than 30 days
+  can enter recoverable quarantine.
+
 ### Fixed
 
 - Tests no longer inherit the host Git signing, LFS, or credential config, which made
