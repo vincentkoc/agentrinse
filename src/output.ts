@@ -15,6 +15,13 @@ export function formatBytes(bytes: number): string {
   return `${value.toFixed(precision)} ${UNITS[unit]}`;
 }
 
+export function formatReclaimBytes(bytes: number, actions: readonly { type: string }[]): string {
+  const artifacts = actions.filter((action) => action.type === "artifacts.remove").length;
+  if (artifacts === 0) return `${bytes} bytes`;
+  if (artifacts === actions.length) return `${bytes} logical artifact bytes`;
+  return `${bytes} bytes (includes logical artifact bytes)`;
+}
+
 export function renderAudit(report: AuditReport): string {
   const actionCount = report.findings.reduce(
     (total, finding) => total + finding.candidateActions.length,

@@ -472,7 +472,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
       adapter: "artifacts",
       resourceId: resource.resource.id,
       risk: "safe",
-      description: `Remove rebuildable ${target.name} from ${target.projectRoot}`,
+      description: `Remove rebuildable ${target.name} from ${target.projectRoot} (${target.measuredBytes} logical artifact bytes)`,
       expectedReclaimBytes: target.measuredBytes,
       target,
     };
