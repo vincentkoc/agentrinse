@@ -15,6 +15,9 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- Full audits now honor the configured total and per-phase time budgets and
+  report incomplete inventory when a deadline expires.
+
 - Tests no longer inherit the host Git signing, LFS, or credential config, which made
   worktree and Git fixtures slow enough to hit the 10-second timeout under a full
   suite on a many-core Mac. Those integration tests now allow 30 seconds, worktree

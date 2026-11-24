@@ -14,7 +14,7 @@ import type { CleanupPlan } from "../contracts/plan.js";
 import type { AuditReport } from "../contracts/report.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { applyCleanupPlan } from "../core/apply.js";
-import { AuditPhaseDeadlineError, runAudit, type AuditProgressEvent } from "../core/audit.js";
+import { runFullAudit, type AuditProgressEvent } from "../core/audit.js";
 import { CommandInterruptedError } from "../core/interruption.js";
 import { createCleanupPlan } from "../core/plan.js";
 import { createCommandEnvelope, jsonDocument } from "../machine-output.js";
@@ -522,36 +522,18 @@ export async function executeCleanCommand(
           },
         ]
       : [];
-  const deadlineMs = scoped.audit.deadlineMs;
-  const phaseTimeoutMs = scoped.audit.phaseTimeoutMs;
-  const deadlineController = new AbortController();
-  const deadlineTimer = setTimeout(() => {
-    deadlineController.abort(new AuditPhaseDeadlineError("agentrinse", "collect", deadlineMs));
-  }, deadlineMs);
-  deadlineTimer.unref?.();
-  const signals = [deadlineController.signal];
-  if (options.signal !== undefined) {
-    signals.push(options.signal);
-  }
-  const auditSignal = signals.length === 1 ? signals[0]! : AbortSignal.any(signals);
-  let audit: AuditReport;
-  try {
-    audit = await runAudit({
-      home,
-      config: scoped,
-      adapters: createAuditAdapters(scoped, platform, {
-        providerInventory: false,
-        roots,
-        ...(options.profile === "fleet" ? { gitRepositories: repositories } : {}),
-      }),
-      now: clock,
-      signal: auditSignal,
-      phaseTimeoutMs,
-      onEvent: (event) => writeCleanAuditProgress(event, options.json),
-    });
-  } finally {
-    clearTimeout(deadlineTimer);
-  }
+  const audit = await runFullAudit({
+    home,
+    config: scoped,
+    adapters: createAuditAdapters(scoped, platform, {
+      providerInventory: false,
+      roots,
+      ...(options.profile === "fleet" ? { gitRepositories: repositories } : {}),
+    }),
+    now: clock,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    onEvent: (event) => writeCleanAuditProgress(event, options.json),
+  });
   const plan = createCleanupPlan(audit, scoped, clock());
   const layout = stateLayout(resolveStateRoot(home, options.stateDir));
   const auditPath = resolve(layout.audits, `${audit.auditId}.json`);
