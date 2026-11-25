@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -37,6 +37,41 @@ describe("runAudit", () => {
     config.adapters.grok = { enabled: false };
 
     expect(createAuditAdapters(config).map((adapter) => adapter.id)).not.toContain("grok");
+  });
+
+  it("requires opt-in for OpenClaw and keeps transcripts and credentials protected", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-openclaw-"));
+    const root = join(home, ".openclaw");
+    await mkdir(join(root, "agents", "main", "sessions"), { recursive: true });
+    await writeFile(join(root, "agents", "main", "sessions", "thread.jsonl"), "private transcript");
+    await mkdir(join(root, "credentials"));
+    await symlink(join(root, "credentials"), join(root, "workspace"));
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.openclaw = { root };
+    expect(createAuditAdapters(config).map((adapter) => adapter.id)).not.toContain("openclaw");
+
+    config.adapters.openclaw.enabled = true;
+    const report = await runAudit({
+      home,
+      config,
+      adapters: createAuditAdapters(config, process.platform, { environment: {} }),
+    });
+    expect(report.findings).toHaveLength(2);
+    expect(report.findings.find((f) => f.resource.kind === "agent-session-store")).toMatchObject({
+      facts: { format: "transcript" },
+      resource: { adapter: "openclaw", kind: "agent-session-store" },
+      state: "protected",
+      measuredBytes: 18,
+      candidateActions: [],
+    });
+    expect(report.findings.find((f) => f.facts.openClawSurface === "credentials")).toMatchObject({
+      state: "protected",
+      candidateActions: [],
+    });
+    expect(report.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "RESOURCE_SYMLINK_SKIPPED", adapter: "openclaw" }),
+    );
+    expect(JSON.stringify(report)).not.toContain("private transcript");
   });
 
   it("instantiates only explicitly selected providers", () => {

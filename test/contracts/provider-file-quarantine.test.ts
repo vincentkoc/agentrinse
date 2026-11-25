@@ -93,6 +93,7 @@ describe("provider-file quarantine contracts", () => {
       "zed:zed",
       "opencode:opencode",
       "grok:grok",
+      "openclaw:openclaw",
     ]);
     for (const path of ["schemas/plan.schema.json", "schemas/audit.schema.json"]) {
       const schema = JSON.parse(await readFile(path, "utf8")) as unknown;

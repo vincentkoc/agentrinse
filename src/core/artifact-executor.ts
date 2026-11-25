@@ -37,6 +37,8 @@ export type ArtifactExecutionResult = {
 };
 
 export type ArtifactExecutorDependencies = {
+  revalidateBeforeIsolation?: () => Promise<void>;
+  revalidateProtection?: (isolationPath: string) => Promise<void>;
   id?: () => string;
   inspect?: (path: string) => Promise<Stats>;
   finalInspect?: (path: string) => Stats;
@@ -45,7 +47,6 @@ export type ArtifactExecutorDependencies = {
   measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
-  revalidateProtection?: () => Promise<void>;
   maxEntries?: number;
   authorization?: {
     expiresAtMs: number;
@@ -134,7 +135,7 @@ export async function executeArtifactRemove(
   }
 
   try {
-    await dependencies.revalidateProtection?.();
+    await dependencies.revalidateBeforeIsolation?.();
   } catch (error) {
     if (error instanceof ArtifactExecutionError) {
       throw error;
@@ -292,6 +293,20 @@ export async function executeArtifactRemove(
     );
   }
 
+  if (dependencies.revalidateProtection) {
+    try {
+      await dependencies.revalidateProtection(isolationPath);
+    } catch (error) {
+      await rollbackBeforeRemoval(
+        "artifact ownership changed before removal",
+        action,
+        isolationPath,
+        inspect,
+        move,
+        error,
+      );
+    }
+  }
   if (
     dependencies.authorization !== undefined &&
     dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs

@@ -65,6 +65,18 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("executeArtifactRemove", () => {
+  it("restores an isolated artifact if its provider claims it before removal", async () => {
+    const value = await fixture();
+    await expect(
+      executeArtifactRemove(value.action, {
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        revalidateProtection: async () => {
+          throw new Error("OpenClaw claimed the workspace");
+        },
+      }),
+    ).rejects.toMatchObject({ outcome: "rolled-back" });
+    expect(await readFile(join(value.target, "cache.bin"), "utf8")).toBe("remove");
+  });
   it("restores an isolated artifact when Git starts tracking its files", async () => {
     const value = await fixture();
     await runFixtureGit(["-C", value.project, "init", "--quiet"], { home: value.project });
@@ -86,15 +98,21 @@ describe("executeArtifactRemove", () => {
   it("isolates and removes only the planned artifact", async () => {
     const value = await fixture();
     let nowMs = 0;
+    const checkedPaths: string[] = [];
     const result = await executeArtifactRemove(value.action, {
       id: () => "success",
       authorization: { expiresAtMs: 2, now: () => new Date(nowMs) },
-      revalidateProtection: async () => {
+      revalidateBeforeIsolation: async () => {
+        checkedPaths.push(value.target);
         nowMs = 1;
+      },
+      revalidateProtection: async (isolated) => {
+        checkedPaths.push(isolated);
       },
       processProbe: async () => ({ status: "idle", matches: [] }),
     });
 
+    expect(checkedPaths).toEqual([value.target, result.isolationPath]);
     expect(await exists(value.target)).toBe(false);
     expect(await exists(result.isolationPath)).toBe(false);
     expect(await readFile(join(value.project, "source.ts"), "utf8")).toBe("keep");
@@ -297,7 +315,7 @@ describe("executeArtifactRemove", () => {
     await expect(
       executeArtifactRemove(value.action, {
         authorization: { expiresAtMs: 1, now: () => new Date(nowMs) },
-        revalidateProtection: async () => {
+        revalidateBeforeIsolation: async () => {
           nowMs = 1;
         },
         move: async () => {

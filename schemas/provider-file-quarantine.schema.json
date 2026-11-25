@@ -63,7 +63,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -177,7 +177,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -308,7 +308,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -422,7 +422,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -554,7 +554,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -668,7 +668,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -800,7 +800,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -914,7 +914,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -1045,7 +1045,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -1159,7 +1159,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -1291,7 +1291,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -1405,7 +1405,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -1536,7 +1536,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",
@@ -1650,7 +1650,7 @@
             },
             "provider": {
               "type": "string",
-              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok"]
+              "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
             },
             "device": {
               "type": "integer",

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 
-import type { AdapterId } from "../config/schema.js";
+import { DEFAULT_CONFIG } from "../config/defaults.js";
+import type { AdapterId, AgentRinseConfig } from "../config/schema.js";
 import type { ResourceKind } from "../contracts/resource.js";
 
 export type ProviderAdapterId = Exclude<AdapterId, "git" | "docker" | "runtime">;
@@ -223,6 +224,35 @@ export const PROVIDER_SPECS: Record<ProviderAdapterId, ProviderSpec> = {
       },
     ],
   },
+  openclaw: {
+    id: "openclaw",
+    displayName: "OpenClaw",
+    defaultRoot: homePath(".openclaw"),
+    resources: [
+      {
+        relativePath: "agents",
+        displayName: "OpenClaw per-agent state",
+        kind: "agent-session-store",
+      },
+      { relativePath: "state", displayName: "OpenClaw shared state", kind: "agent-home" },
+      { relativePath: "workspace", displayName: "OpenClaw workspace", kind: "agent-home" },
+      { relativePath: "logs", displayName: "OpenClaw logs", kind: "agent-log-store" },
+      {
+        relativePath: "worktrees",
+        displayName: "OpenClaw worktree storage",
+        kind: "agent-snapshot-store",
+      },
+      { relativePath: "cache", displayName: "OpenClaw cache", kind: "agent-cache" },
+      { relativePath: "credentials", displayName: "OpenClaw credentials", kind: "agent-home" },
+      { relativePath: "client", displayName: "OpenClaw client state", kind: "agent-home" },
+      { relativePath: "memory", displayName: "OpenClaw memory", kind: "agent-home" },
+      { relativePath: "media", displayName: "OpenClaw media", kind: "agent-home" },
+    ],
+  },
 };
 
 export const PROVIDER_IDS = Object.freeze(Object.keys(PROVIDER_SPECS) as ProviderAdapterId[]);
+
+export function isProviderEnabled(config: AgentRinseConfig, id: ProviderAdapterId): boolean {
+  return config.adapters[id]?.enabled ?? DEFAULT_CONFIG.adapters[id]?.enabled ?? false;
+}

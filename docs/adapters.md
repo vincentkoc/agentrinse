@@ -1,8 +1,8 @@
 # Adapter Matrix
 
 Provider and Docker adapters are read-only except for versioned Codex database
-maintenance, exact Claude debug-log and changelog-cache quarantine, and the
-exact stale Zed rotated application log. Artifact cleanup is scoped to
+maintenance and recoverable quarantine of exact Claude debug logs and changelog
+caches, the stale Zed rotated log, and generated OpenClaw shell snapshots. Artifact cleanup is scoped to
 explicitly configured rebuildable directories. The Git adapter can emit one
 recoverable whole-worktree action when every safety gate is proven.
 
@@ -14,6 +14,7 @@ recoverable whole-worktree action when every safety gate is proven.
 | GitHub Copilot | CLI sessions, logs, native maintenance guidance           | all             |
 | Zed            | user-data root and exact rotated-log quarantine           | conditional     |
 | OpenCode       | database, logs, snapshots, native maintenance guidance    | all             |
+| OpenClaw       | sessions, memory, worktrees, logs, shell cache quarantine | conditional     |
 | Grok Build     | version-gated owner root and native memory GC guidance    | all             |
 | Runtime        | opt-in selected executable and Claude native versions     | all             |
 | Git            | worktree audit and recoverable linked-worktree quarantine | conditional     |
@@ -153,6 +154,43 @@ sweep. OpenCode Desktop's separate seven-day cleanup applies to its Electron
 user-data log runs, not this server log directory. AgentRinse reports the
 distinction and emits no action for either log surface.
 
+### OpenClaw
+
+Run `agentrinse audit --providers openclaw --no-state --json` for a one-time
+inventory. The full audit distinguishes the following OpenClaw resources.
+
+| Resource                        | Evidence and cleanup decision                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Per-agent SQLite                | `agents/<id>/agent/openclaw-agent.sqlite` holds sessions, transcripts, memory and auth. Each stored session has a protected finding with its pinned, running and archived flags. The report also counts transcript events, memory sources and embedding-cache entries. Raw deletion or vacuum affects the whole store. OpenClaw provides `openclaw sessions cleanup --all-agents --dry-run --json` for its current retention decisions. |
+| Legacy sessions                 | The index, JSONL transcripts, reset/deleted archives and other files in `agents/<id>/sessions/` can still be migration inputs or recovery history.                                                                                                                                                                                                                                                                                      |
+| Worktrees                       | The shared database's `worktrees` rows identify the checkout and source repository, owner kind, removal status and snapshot presence. Both paths are protected, including old or external locations. On-disk checkouts and shared preparation templates are inventoried even when registry rows are unavailable. OpenClaw coordinates allocation and restoration. `openclaw worktrees list --json` shows its registry.                  |
+| Workspace and memory            | Local workspace files, `MEMORY.md`, `memory/` and profile memory stores are durable user or agent data. Local workspace byte totals exclude the separately reported memory.                                                                                                                                                                                                                                                             |
+| Logs                            | Dated gateway logs and numbered rotations in the profile log directory or its state-local temporary fallback carry the 24-hour rolling retention signal. Custom log paths and audit trails have different lifetimes. OpenClaw owns rotation.                                                                                                                                                                                            |
+| Credentials, media and recovery | Client credentials, pairing records, agent auth, configuration and backups, database sidecars and recovery stores stay protected. Attachments can still belong to a session or a pending delivery.                                                                                                                                                                                                                                      |
+| Caches                          | OpenClaw refreshes exec shell snapshots and sweeps captures older than three days. Other cache files, temporary writes and unknown assets have no independently verified removal policy.                                                                                                                                                                                                                                                |
+
+AgentRinse can propose **recoverable quarantine** for one exact cache format on
+macOS and Linux: a regular, single-link `cache/shell-snapshots/<64 lowercase hex>.sh`
+with OpenClaw's generated header and a minimum age of 30 days. The provider must
+be enabled in config for apply. The safe risk ceiling excludes the action. Apply
+checks the approved path, content identity, age, owner processes and open handles.
+The original is retained for seven days and can be restored with `agentrinse undo`.
+
+Database counts use SQLite immutable reads for the OpenClaw 2026.11.6 contracts
+(agent schema 38 and global schema 36). The audit reads bounded, non-content
+columns and reports truncation. Outstanding WAL or rollback data, unsupported
+schemas and changing files withhold logical counts. A direct JSON configuration
+can identify additional owner paths. External configs, includes, unresolved
+paths and non-SQLite configurations leave ownership incomplete. Git and artifact
+cleanup stay protected when the adapter cannot resolve ownership. External
+registry and config references carry no measured byte total. The quick audit
+only probes known top-level paths.
+
+Source contracts: [database layout](https://github.com/openclaw/openclaw/blob/v2026.11.6/docs/reference/database-schemas/layout.md),
+[managed worktrees](https://github.com/openclaw/openclaw/blob/v2026.11.6/docs/concepts/managed-worktrees.md),
+[rolling logs](https://github.com/openclaw/openclaw/blob/v2026.11.6/docs/logging.md) and
+[exec shell snapshots](https://github.com/openclaw/openclaw/blob/v2026.11.6/src/agents/shell-snapshot.ts).
+
 ### Grok Build
 
 AgentRinse resolves an explicit adapter root first, then an absolute
@@ -215,6 +253,9 @@ Runtime inventory is opt-in. It reports selected Codex, Claude, Cursor,
 Copilot, OpenCode, and Grok executables found on `PATH`. Unknown installation
 managers remain `unknown`; AgentRinse recommends the owning installer or
 package manager and proposes no action.
+
+With both the runtime and OpenClaw adapters enabled, runtime inventory also
+reports the selected `openclaw` executable and its version.
 
 For Claude's documented native macOS/Linux layout, AgentRinse inventories
 regular files under `$HOME/.local/share/claude/versions` and marks the version

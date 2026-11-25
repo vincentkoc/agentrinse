@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { openClawPathProtection } from "../adapters/openclaw-ownership.js";
 
 import { agentRinseConfigSchema, type AgentRinseConfig } from "../config/schema.js";
 import type {
@@ -260,13 +261,26 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             ((selectedAction, selectedIsolationId) =>
               executeArtifactRemove(selectedAction, {
                 id: () => selectedIsolationId,
+                ...(config.adapters.openclaw?.enabled === true
+                  ? {
+                      revalidateProtection: async (isolated: string) => {
+                        const reason = await openClawPathProtection(
+                          plan.home,
+                          config,
+                          [selectedAction.target.path, isolated],
+                          clock(),
+                        );
+                        if (reason) throw new Error(reason);
+                      },
+                    }
+                  : {}),
                 maxEntries: config.audit.maxEntries,
                 processProbe,
                 authorization: {
                   expiresAtMs: Date.parse(plan.expiresAt),
                   now: clock,
                 },
-                revalidateProtection: async () => {
+                revalidateBeforeIsolation: async () => {
                   const currentConfig =
                     options.dependencies?.loadCurrentConfig === undefined
                       ? undefined

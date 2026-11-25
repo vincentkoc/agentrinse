@@ -42,6 +42,7 @@ export async function inspectProviderFile<T extends ProviderMutationId>(
   path: string,
   ownerRoot: string,
   provider: T,
+  contentPrefix?: string,
 ): Promise<ProviderFileIdentity & { provider: T }> {
   const handle = await openPinnedProviderFile(path, ownerRoot);
   let after: Stats;
@@ -53,6 +54,14 @@ export async function inspectProviderFile<T extends ProviderMutationId>(
     }
     if (before.nlink !== 1) {
       throw new Error(`provider cleanup target has multiple hard links: ${path}`);
+    }
+    if (contentPrefix !== undefined) {
+      const expected = Buffer.from(contentPrefix);
+      const prefix = Buffer.alloc(expected.length);
+      const { bytesRead } = await handle.read(prefix, 0, prefix.length, 0);
+      if (bytesRead !== expected.length || !prefix.equals(expected)) {
+        throw new Error("The file lacks the owner's generated-file header.");
+      }
     }
     contentSha256 = await hashFileDescriptor(handle, before.size);
     after = await handle.stat();

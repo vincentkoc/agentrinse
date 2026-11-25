@@ -4,6 +4,36 @@ import { resolveProviderRoot } from "../../src/adapters/provider-root.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 
 describe("resolveProviderRoot", () => {
+  it("resolves one OpenClaw state directory in profile, state and explicit-root order", () => {
+    const spec = PROVIDER_SPECS.openclaw;
+    const home = "/fixture/home";
+    const environment = { OPENCLAW_HOME: "/fixture/custom", OPENCLAW_PROFILE: "Work-2" };
+    expect(resolveProviderRoot(spec, home, { environment: {} })).toBe("/fixture/home/.openclaw");
+    expect(
+      resolveProviderRoot(spec, home, {
+        environment: { ...environment, OPENCLAW_PROFILE: "DEFAULT" },
+      }),
+    ).toBe("/fixture/custom/.openclaw");
+    expect(resolveProviderRoot(spec, home, { environment })).toBe(
+      "/fixture/custom/.openclaw-Work-2",
+    );
+    const overrides = { ...environment, OPENCLAW_STATE_DIR: "/fixture/state" };
+    expect(resolveProviderRoot(spec, home, { environment: overrides })).toBe("/fixture/state");
+    expect(
+      resolveProviderRoot(spec, home, { environment: overrides, root: "/fixture/explicit" }),
+    ).toBe("/fixture/explicit");
+  });
+
+  it.each([
+    { OPENCLAW_STATE_DIR: "relative" },
+    { OPENCLAW_HOME: "relative" },
+    { OPENCLAW_PROFILE: "../other" },
+  ])("refuses an ambiguous OpenClaw root (%j)", (environment) => {
+    expect(() =>
+      resolveProviderRoot(PROVIDER_SPECS.openclaw, "/fixture/home", { environment }),
+    ).toThrow();
+  });
+
   it("prefers an explicit root over the Claude environment", () => {
     expect(
       resolveProviderRoot(PROVIDER_SPECS.claude, "/fixture/home", {

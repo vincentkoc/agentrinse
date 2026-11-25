@@ -124,6 +124,7 @@ export const providerMutationIdSchema = z.enum([
   "zed",
   "opencode",
   "grok",
+  "openclaw",
 ]);
 
 export const providerFileIdentitySchema = z.object({
@@ -170,6 +171,7 @@ export const providerFileQuarantineActionSchema = z.discriminatedUnion("adapter"
   providerFileQuarantineActionFor("zed"),
   providerFileQuarantineActionFor("opencode"),
   providerFileQuarantineActionFor("grok"),
+  providerFileQuarantineActionFor("openclaw"),
 ]);
 
 export const plannedActionSchema = z.union([

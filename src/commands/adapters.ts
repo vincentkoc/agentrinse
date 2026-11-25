@@ -9,7 +9,9 @@ export function renderAdapters(): string {
       .map((spec) =>
         spec.id === "codex"
           ? `${spec.id.padEnd(10)} experimental ${spec.displayName} (offline DB vacuum)`
-          : `${spec.id.padEnd(10)} audit-only   ${spec.displayName}`,
+          : spec.id === "openclaw"
+            ? `${spec.id.padEnd(10)} recoverable  ${spec.displayName} (opt-in shell snapshot quarantine)`
+            : `${spec.id.padEnd(10)} audit-only   ${spec.displayName}`,
       ),
     "",
     "git        audit-only  Git worktrees (explicit root)",

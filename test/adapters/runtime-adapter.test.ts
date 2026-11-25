@@ -109,6 +109,21 @@ describe("RuntimeAuditAdapter", () => {
     expect(collection.resources[0]?.facts.launcherPath).toBe(selected);
   });
 
+  it("includes the OpenClaw launcher only when its provider is enabled", async () => {
+    const context = await fixtureContext();
+    await writeFile(join(context.home, "openclaw"), "#!/bin/sh\n", { mode: 0o700 });
+    const options = {
+      environment: { PATH: context.home },
+      runVersion: async () => "OpenClaw fixture",
+    };
+    const disabled = new RuntimeAuditAdapter(options);
+    expect((await disabled.probe(context)).status).toBe("absent");
+
+    const enabled = new RuntimeAuditAdapter({ ...options, includeOpenClaw: true });
+    const result = await enabled.collect(context, await enabled.probe(context));
+    expect(result.resources.map((resource) => resource.facts.tool)).toEqual(["openclaw"]);
+  });
+
   it("reports an absent isolated PATH without diagnostics", async () => {
     const context = await fixtureContext();
     const adapter = new RuntimeAuditAdapter({

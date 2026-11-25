@@ -38,6 +38,7 @@ An explicitly requested missing or invalid file is an error.
     "copilot": { "enabled": true },
     "zed": { "enabled": true },
     "opencode": { "enabled": true },
+    "openclaw": { "enabled": false },
     "grok": { "enabled": true },
     "runtime": { "enabled": false },
     "git": { "enabled": false, "root": "/absolute/repository" },
@@ -125,13 +126,21 @@ an explicit adapter `root`, then absolute `$GROK_HOME`, then `$HOME/.grok`; a
 relative value degrades only the Grok adapter. The same resolution is repeated
 before any provider-file action is authorized.
 
+OpenClaw inventory requires `adapters.openclaw.enabled: true` or a one-time
+`audit --providers openclaw --no-state --json`. An explicit adapter `root`
+selects the state directory directly, followed by `OPENCLAW_STATE_DIR`.
+Otherwise, the adapter uses `.openclaw` under `OPENCLAW_HOME` or the audited
+home. A named `OPENCLAW_PROFILE` selects `.openclaw-<profile>` there.
+Use absolute paths for overrides. A relative path or invalid profile degrades
+the adapter.
+
 Zed uses `$HOME/Library/Logs/Zed` as the native macOS log root. An explicit
 Zed adapter `root` uses its `logs` child. Linux and other Unix-like defaults
 use `FLATPAK_XDG_DATA_HOME/zed/logs`, then `XDG_DATA_HOME/zed/logs`, then the
 platform default; environment paths must be absolute. Only the exact stale
 `Zed.log.old` file can produce an action.
 
-Claude and Zed provider-file quarantine require
+Claude, Zed and OpenClaw provider-file quarantine require
 `plan --max-risk recoverable` and matching apply authorization. Missing
 default roots mean the provider is absent, not broken. Codex can propose
 offline database maintenance only with
