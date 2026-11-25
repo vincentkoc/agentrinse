@@ -266,9 +266,10 @@ After acquiring the exclusive lock, every action rechecks:
 8. current working directory ownership
 9. same-user process cwd and file-descriptor ownership
 10. absence of root or nested filesystem mount boundaries
-11. unexpired plan authorization immediately before isolation
-12. current provider session roots and user pins immediately before artifact
-    isolation, including configuration reloaded after planning
+11. current provider session roots and user pins, including configuration
+    reloaded after planning
+12. unexpired plan authorization after refreshing protection and immediately
+    before isolation
 
 Any uncertainty produces `skipped-stale`. Apply never widens the action or
 substitutes another target.

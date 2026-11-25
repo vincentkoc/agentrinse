@@ -42,8 +42,8 @@ The project follows semantic versioning after its first supported release.
 ### Safety
 
 - Artifact removal refreshes provider session roots and user pins immediately
-  before isolation, and skips a saved plan when protection changed or cannot
-  be inspected.
+  before isolation, and skips a saved plan when protection changed, cannot be
+  inspected, or the plan expires during the refresh.
 
 ## [0.9.1] - 2026-10-29
 

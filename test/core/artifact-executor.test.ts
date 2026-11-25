@@ -85,8 +85,13 @@ describe("executeArtifactRemove", () => {
 
   it("isolates and removes only the planned artifact", async () => {
     const value = await fixture();
+    let nowMs = 0;
     const result = await executeArtifactRemove(value.action, {
       id: () => "success",
+      authorization: { expiresAtMs: 2, now: () => new Date(nowMs) },
+      revalidateProtection: async () => {
+        nowMs = 1;
+      },
       processProbe: async () => ({ status: "idle", matches: [] }),
     });
 
@@ -279,6 +284,30 @@ describe("executeArtifactRemove", () => {
         },
       }),
     ).rejects.toMatchObject({ outcome: "skipped-stale" });
+
+    expect(moved).toBe(false);
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("skips isolation when authorization expires during the protection refresh", async () => {
+    const value = await fixture();
+    let nowMs = 0;
+    let moved = false;
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        authorization: { expiresAtMs: 1, now: () => new Date(nowMs) },
+        revalidateProtection: async () => {
+          nowMs = 1;
+        },
+        move: async () => {
+          moved = true;
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "PLAN_EXPIRED_DURING_APPLY",
+    });
 
     expect(moved).toBe(false);
     expect(await exists(value.target)).toBe(true);

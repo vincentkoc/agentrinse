@@ -133,18 +133,6 @@ export async function executeArtifactRemove(
     );
   }
 
-  if (
-    dependencies.authorization !== undefined &&
-    dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
-  ) {
-    throw new ArtifactExecutionError(
-      "cleanup plan authorization expired before artifact isolation",
-      "skipped-stale",
-      isolationPath,
-      { diagnosticCode: "PLAN_EXPIRED_DURING_APPLY" },
-    );
-  }
-
   try {
     await dependencies.revalidateProtection?.();
   } catch (error) {
@@ -156,6 +144,19 @@ export async function executeArtifactRemove(
       "skipped-stale",
       isolationPath,
       { cause: error, diagnosticCode: "ARTIFACT_PROTECTION_UNKNOWN" },
+    );
+  }
+
+  // Refreshing protection can outlast the plan. Check its deadline at the move.
+  if (
+    dependencies.authorization !== undefined &&
+    dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
+  ) {
+    throw new ArtifactExecutionError(
+      "cleanup plan authorization expired before artifact isolation",
+      "skipped-stale",
+      isolationPath,
+      { diagnosticCode: "PLAN_EXPIRED_DURING_APPLY" },
     );
   }
 
