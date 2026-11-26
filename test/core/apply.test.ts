@@ -392,6 +392,40 @@ describe("applyCleanupPlan", () => {
     expect(await readFile(join(value.project, "source.ts"), "utf8")).toBe("keep");
   });
 
+  it.each(["exact", "ancestor"] as const)(
+    "refuses a saved artifact plan after a new Claude %s project registration",
+    async (relation) => {
+      const value = await fixture();
+      await mkdir(join(value.plan.home, ".claude"));
+      const path = relation === "exact" ? value.project : value.plan.home;
+      await writeFile(
+        join(value.plan.home, ".claude.json"),
+        JSON.stringify({ projects: { [path]: {} } }),
+      );
+      const result = await applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        dependencies: {
+          clock: CLOCK,
+          revalidate: async () => ({
+            status: "valid",
+            measurement: await measurePath(value.target, { maxEntries: 100 }),
+          }),
+        },
+      });
+      const code = relation === "exact" ? "registered-project" : "registered-project-ancestor";
+      expect(result.run.actions[0]).toMatchObject({
+        status: "skipped-stale",
+        diagnostic: {
+          code: "ARTIFACT_PROTECTION_CHANGED",
+          message: expect.stringMatching(new RegExp(code + "$")),
+        },
+      });
+      expect(await exists(value.target)).toBe(true);
+    },
+  );
+
   it.each(["scope", "size", "age"] as const)(
     "keeps the artifact when current %s policy invalidates its plan",
     async (change) => {

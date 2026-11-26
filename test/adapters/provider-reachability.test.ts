@@ -140,7 +140,19 @@ describe("provider reachability metadata", () => {
     const roots = reachability.rootsFor(project, context.now.toISOString());
 
     expect(collection.diagnostics).toEqual([]);
-    expect(roots.map((root) => root.code)).toEqual(["recent-session"]);
+    expect(roots).toMatchObject([{ code: "registered-project", source: "claude" }]);
+    const within = reachability.rootsFor(join(project, "worktree"), context.now.toISOString());
+    const containing = reachability.rootsFor(join(context.home, "src"), context.now.toISOString());
+    expect(within).toMatchObject([
+      { code: "registered-project-ancestor", evidenceRef: roots[0]?.evidenceRef },
+    ]);
+    expect(containing).toMatchObject([
+      { code: "registered-project-descendant", evidenceRef: roots[0]?.evidenceRef },
+    ]);
+    expect(
+      reachability.rootsFor(join(context.home, "src", "project-other"), context.now.toISOString()),
+    ).toEqual([]);
+    expect(JSON.stringify([...roots, ...within, ...containing])).not.toContain(context.home);
     expect(JSON.stringify(roots)).not.toContain("private-session-id");
     expect(JSON.stringify(roots)).not.toContain("never emit this transcript");
   });

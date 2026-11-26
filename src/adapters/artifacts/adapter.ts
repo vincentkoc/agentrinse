@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { collectProjectCaches, classifyProjectCache } from "../../rules/build/project-cache.js";
 import { hasCacheTag, requiresCacheTag } from "../../rules/build/cache-tag.js";
 import { artifactDecisionBeforeHolderProbe } from "../../rules/build/inspection.js";
+import { projectRegistrationCodes } from "../../rules/claude/project-registration.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import { artifactNameSchema, type ArtifactRemoveAction } from "../../contracts/action.js";
@@ -26,6 +27,7 @@ import { isPathInside } from "../../core/safety.js";
 type ArtifactOptions = AgentRinseConfig["artifacts"] &
   Pick<AgentRinseConfig["audit"], "maxEntries" | "measureBytes">;
 const ARTIFACT_PROTECTION_ROOTS = new Set([
+  ...projectRegistrationCodes,
   "openclaw-owned-path",
   "openclaw-ownership-incomplete",
   "active-session",
