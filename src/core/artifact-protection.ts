@@ -39,6 +39,7 @@ export async function currentArtifactProtectionRoots(
   home: string,
   config: AgentRinseConfig,
   now: Date,
+  isolationPath?: string,
 ): Promise<RootEvidence[]> {
   const reachability = new ReachabilityIndex();
   const adapters = createAuditAdapters(config, process.platform, {
@@ -54,16 +55,20 @@ export async function currentArtifactProtectionRoots(
 
   const observedAt = now.toISOString();
   await bindArtifactGitRefPins(reachability, action.target.projectRoot, observedAt);
-  return reachability.rootsForResource(
-    {
-      id: action.resourceId,
-      adapter: action.adapter,
-      kind: "build-artifact",
-      canonicalKey: action.target.path,
-      displayName: action.target.name,
-      path: action.target.path,
-    },
-    {},
-    observedAt,
+  const paths =
+    isolationPath === undefined ? [action.target.path] : [action.target.path, isolationPath];
+  return paths.flatMap((path) =>
+    reachability.rootsForResource(
+      {
+        id: action.resourceId,
+        adapter: action.adapter,
+        kind: "build-artifact",
+        canonicalKey: path,
+        displayName: action.target.name,
+        path,
+      },
+      {},
+      observedAt,
+    ),
   );
 }

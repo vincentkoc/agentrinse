@@ -306,9 +306,9 @@ export async function executeArtifactRemove(
     );
   }
 
-  if (dependencies.revalidateProtection) {
+  const checkProtection = async () => {
     try {
-      await dependencies.revalidateProtection(isolationPath);
+      await dependencies.revalidateProtection?.(isolationPath);
     } catch (error) {
       await rollbackBeforeRemoval(
         "artifact ownership changed before removal",
@@ -319,7 +319,8 @@ export async function executeArtifactRemove(
         error,
       );
     }
-  }
+  };
+  await checkProtection();
   // A nested directory can change while owner and mount probes run without changing the root mtime.
   try {
     await checkContents();
@@ -334,6 +335,7 @@ export async function executeArtifactRemove(
       error,
     );
   }
+  await checkProtection();
   if (
     dependencies.authorization !== undefined &&
     dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs

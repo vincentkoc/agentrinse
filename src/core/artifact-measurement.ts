@@ -1,3 +1,4 @@
+import { isOpenClawProfileName } from "../rules/openclaw/profile.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { Measurement } from "./measure.js";
 
@@ -13,7 +14,12 @@ const agentStateRoots = new Set([
 ]);
 
 export function isArtifactAgentState(name: string): boolean {
-  return agentStateRoots.has(name.toLowerCase());
+  const key = name.toLowerCase();
+  const prefix = ".openclaw-";
+  return (
+    agentStateRoots.has(key) ||
+    (key.startsWith(prefix) && isOpenClawProfileName(name.slice(prefix.length)))
+  );
 }
 
 // Both before isolation and immediately before removal, prove the measured tree still matches the plan.

@@ -457,6 +457,27 @@ describe("applyCleanupPlan", () => {
     expect(await exists(value.target)).toBe(true);
   });
 
+  it("restores an isolated artifact when current configuration pins its original path", async () => {
+    const value = await fixture();
+    const changed = structuredClone(value.config);
+    changed.pins = [{ path: value.target }];
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        loadCurrentConfig: async () => ((await exists(value.target)) ? value.config : changed),
+        revalidate: async () => ({
+          status: "valid",
+          measurement: await measurePath(value.target, { maxEntries: 100 }),
+        }),
+      },
+    });
+    expect(result.run.actions[0]?.status).toBe("rolled-back");
+    expect(await exists(value.target)).toBe(true);
+  });
+
   it("binds Git ref pins to the artifact's owning worktree", async () => {
     const value = await fixture();
     const git = (...args: string[]) =>

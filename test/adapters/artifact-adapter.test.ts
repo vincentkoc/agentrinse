@@ -165,6 +165,18 @@ describe("ArtifactAuditAdapter", () => {
     });
   });
 
+  it.each([
+    [".openclaw-dev", true],
+    [".openclaw-a_b-2", true],
+    [".openclaw-~", false],
+    [".openclaw-" + "x".repeat(65), false],
+  ] as const)("recognizes bounded profile root %s", async (name, protectedRoot) => {
+    const { context, adapter, artifact } = await fixture();
+    await mkdir(join(artifact, name));
+    const { resources } = await adapter.collect(context, await adapter.probe(context));
+    expect(resources[0]?.facts.protectedAgentEntries).toBe(protectedRoot ? 1 : 0);
+  });
+
   it("blocks an artifact containing a nested repository", async () => {
     const { context, adapter, artifact } = await fixture();
     const gitDirectory = join(artifact, ".git");
