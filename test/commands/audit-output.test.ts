@@ -1,4 +1,5 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,8 +11,8 @@ import { auditReportSchema } from "../../src/contracts/report.js";
 
 describe("audit machine output", () => {
   it("wraps JSON output while persisting the exact report", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-output-"));
-    const stateDir = await mkdtemp(join(tmpdir(), "agentrinse-audit-state-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-output-"));
+    const stateDir = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-state-"));
     const result = await executeAuditCommand({
       home,
       stateDir,
@@ -28,8 +29,8 @@ describe("audit machine output", () => {
   });
 
   it("emits ordered NDJSON lifecycle records", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-output-"));
-    const stateDir = await mkdtemp(join(tmpdir(), "agentrinse-audit-state-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-output-"));
+    const stateDir = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-state-"));
     const result = await executeAuditCommand({
       home,
       stateDir,
@@ -48,8 +49,8 @@ describe("audit machine output", () => {
   });
 
   it("redacts stdout without changing persisted evidence", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-private-home-"));
-    const stateDir = await mkdtemp(join(tmpdir(), "agentrinse-audit-state-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-private-home-"));
+    const stateDir = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-state-"));
     const result = await executeAuditCommand({
       home,
       stateDir,
@@ -64,8 +65,8 @@ describe("audit machine output", () => {
   });
 
   it("emits a failed terminal NDJSON event when persistence fails", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-output-"));
-    const stateDir = await mkdtemp(join(tmpdir(), "agentrinse-audit-state-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-output-"));
+    const stateDir = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-state-"));
     const records: string[] = [];
 
     await expect(
@@ -89,7 +90,7 @@ describe("audit machine output", () => {
   });
 
   it("rejects ambiguous or non-machine redaction modes", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-output-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-output-"));
 
     await expect(executeAuditCommand({ home, json: true, ndjson: true })).rejects.toThrow(
       "only one",

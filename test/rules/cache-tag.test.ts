@@ -1,17 +1,8 @@
 import { execFileSync } from "node:child_process";
-import {
-  link,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { link, lstat, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { describe, expect, it } from "vitest";
 import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
@@ -21,7 +12,7 @@ import { hasCacheTag } from "../../src/rules/build/cache-tag.js";
 
 const signature = "Signature: 8a477f597d28d172789f06886806bc55";
 async function fixture() {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-tag-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-tag-")));
   const project = join(home, "project");
   const dir = join(project, ".pytest_cache");
   await mkdir(dir, { recursive: true });

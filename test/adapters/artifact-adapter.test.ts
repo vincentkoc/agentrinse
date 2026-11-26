@@ -1,5 +1,6 @@
 import { once } from "node:events";
-import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +25,7 @@ async function fixture(
   mounts: MountBoundaryResult = { status: "clear", paths: [] },
 ) {
   const temporaryRoot = process.platform === "darwin" ? "/tmp" : tmpdir();
-  const home = await realpath(await mkdtemp(join(temporaryRoot, "agentrinse-artifact-")));
+  const home = await realpath(createFixtureDirectory(join(temporaryRoot, "agentrinse-artifact-")));
   const projectRoot = join(home, "project");
   const artifact = join(projectRoot, "node_modules");
   const artifactFile = join(artifact, "package.json");
@@ -357,7 +358,7 @@ describe("ArtifactAuditAdapter", () => {
   );
 
   it("blocks symlinked artifacts", async () => {
-    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-")));
+    const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-artifact-")));
     const projectRoot = join(home, "project");
     const target = join(home, "outside");
     await mkdir(projectRoot, { recursive: true });
@@ -389,8 +390,12 @@ describe("ArtifactAuditAdapter", () => {
   });
 
   it("rejects project roots outside the audited home", async () => {
-    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-home-")));
-    const outside = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-outside-")));
+    const home = await realpath(
+      createFixtureDirectory(join(tmpdir(), "agentrinse-artifact-home-")),
+    );
+    const outside = await realpath(
+      createFixtureDirectory(join(tmpdir(), "agentrinse-artifact-outside-")),
+    );
     const context: AuditContext = {
       home,
       now: NOW,
@@ -412,7 +417,9 @@ describe("ArtifactAuditAdapter", () => {
   });
 
   it("rejects project roots reached through a symlink alias", async () => {
-    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-artifact-home-")));
+    const home = await realpath(
+      createFixtureDirectory(join(tmpdir(), "agentrinse-artifact-home-")),
+    );
     const physicalParent = join(home, "physical");
     const aliasParent = join(home, "alias");
     const physicalProject = join(physicalParent, "project");

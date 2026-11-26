@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +13,7 @@ import { runAudit } from "../../src/core/audit.js";
 
 describe("runAudit", () => {
   it("returns a stable report over a synthetic home", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-"));
     const sessions = join(home, ".copilot", "session-state");
     await mkdir(sessions, { recursive: true });
     await writeFile(join(sessions, "session.json"), "{}");
@@ -41,7 +42,7 @@ describe("runAudit", () => {
   });
 
   it("requires opt-in for OpenClaw and keeps transcripts and credentials protected", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-openclaw-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-openclaw-"));
     const root = join(home, ".openclaw");
     await mkdir(join(root, "agents", "main", "sessions"), { recursive: true });
     await writeFile(join(root, "agents", "main", "sessions", "thread.jsonl"), "private transcript");
@@ -111,8 +112,8 @@ describe("runAudit", () => {
   });
 
   it("honors configured roots when selection overrides a disabled provider", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-provider-select-home-"));
-    const cursorRoot = await mkdtemp(join(tmpdir(), "agentrinse-provider-select-cursor-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-provider-select-home-"));
+    const cursorRoot = createFixtureDirectory(join(tmpdir(), "agentrinse-provider-select-cursor-"));
     const config = structuredClone(DEFAULT_CONFIG);
     config.adapters.cursor = { enabled: false, root: cursorRoot };
 
@@ -208,7 +209,7 @@ describe("runAudit", () => {
   });
 
   it("streams collection diagnostics even when no resources are discovered", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-diagnostic-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-diagnostic-"));
     const events: string[] = [];
     const adapter: AuditAdapter = {
       id: "fixture",
@@ -253,7 +254,7 @@ describe("runAudit", () => {
   });
 
   it("returns a protected partial finding when classification exceeds its deadline", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-deadline-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-deadline-"));
     const events: Array<{ type: string; data: unknown }> = [];
     const adapter: AuditAdapter = {
       id: "fixture",
@@ -338,7 +339,7 @@ describe("runAudit", () => {
   it.each(["probe", "collect"] as const)(
     "retains dependent workspace paths when ownership %s times out",
     async (phase) => {
-      const home = await mkdtemp(join(tmpdir(), "agentrinse-ownership-deadline-"));
+      const home = createFixtureDirectory(join(tmpdir(), "agentrinse-ownership-deadline-"));
       await mkdir(join(home, ".codex"));
       const reachability = new ReachabilityIndex();
       const adapters = createAuditAdapters(DEFAULT_CONFIG, process.platform, {
@@ -360,7 +361,7 @@ describe("runAudit", () => {
   );
 
   it("returns a degraded probe when probing exceeds its deadline", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-deadline-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-deadline-"));
     let collected = false;
     const adapter: AuditAdapter = {
       id: "fixture",
@@ -397,7 +398,7 @@ describe("runAudit", () => {
   });
 
   it("returns a degraded partial report when collection exceeds its deadline", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-deadline-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-deadline-"));
     let classified = false;
     const adapter: AuditAdapter = {
       id: "fixture",
@@ -439,7 +440,7 @@ describe("runAudit", () => {
   });
 
   it("preserves reported resources and ignores late collection results after a deadline", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-deadline-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-deadline-"));
     const events: string[] = [];
     let releaseCollection: (() => void) | undefined;
     let cancellationRequested = false;

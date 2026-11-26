@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -166,7 +167,7 @@ async function stateFixture(entries: QuarantineEntry[]): Promise<{
   home: string;
   stateRoot: string;
 }> {
-  const home = await mkdtemp(join(tmpdir(), "agentrinse-quarantine-command-"));
+  const home = createFixtureDirectory(join(tmpdir(), "agentrinse-quarantine-command-"));
   const stateRoot = join(home, "state");
   const layout = stateLayout(stateRoot);
   for (const value of entries) {
@@ -263,7 +264,7 @@ describe("undo command", () => {
   });
 
   it("resolves a relative home before loading quarantine state", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-relative-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-relative-home-"));
     const value = entry("relative-home", "run-1", "2026-08-01T00:00:00.000Z");
     const layout = stateLayout(join(home, ".local", "state", "agentrinse"));
     await writeJsonAtomic(join(layout.quarantine, `${value.entryId}.json`), value, {

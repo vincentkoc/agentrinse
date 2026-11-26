@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, symlink } from "node:fs/promises";
+import { mkdir, realpath, symlink } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
 
@@ -14,7 +15,7 @@ import {
 
 describe("assertAuditRoot", () => {
   it("accepts an absolute synthetic root", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-fixture-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-fixture-"));
 
     await expect(assertAuditRoot(root)).resolves.toBe(await realpath(root));
   });
@@ -26,7 +27,7 @@ describe("assertAuditRoot", () => {
   });
 
   it("rejects a symlink alias to the filesystem root", async () => {
-    const parent = await mkdtemp(join(tmpdir(), "agentrinse-root-link-"));
+    const parent = createFixtureDirectory(join(tmpdir(), "agentrinse-root-link-"));
     const link = join(parent, "root");
     await symlink(parse(parent).root, link, "dir");
 
@@ -62,10 +63,10 @@ describe("isPathInside", () => {
 describe("assertDestructiveFixtureRoot", () => {
   it("accepts a resolved child of the selected temporary root", async () => {
     const temporaryRoot = await realpath(
-      await mkdtemp(join(tmpdir(), "agentrinse-destructive-root-")),
+      createFixtureDirectory(join(tmpdir(), "agentrinse-destructive-root-")),
     );
     const candidate = await realpath(
-      await mkdtemp(join(temporaryRoot, "agentrinse-destructive-fixture-")),
+      createFixtureDirectory(join(temporaryRoot, "agentrinse-destructive-fixture-")),
     );
     const repositoryRoot = join(temporaryRoot, "repo");
     const realHome = join(temporaryRoot, "home");
@@ -82,7 +83,9 @@ describe("assertDestructiveFixtureRoot", () => {
   });
 
   it("rejects the temporary root, real home, repository overlap, and outside paths", async () => {
-    const parent = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-destructive-parent-")));
+    const parent = await realpath(
+      createFixtureDirectory(join(tmpdir(), "agentrinse-destructive-parent-")),
+    );
     const temporaryRoot = join(parent, "temporary");
     const outside = join(parent, "outside");
     const repositoryRoot = join(temporaryRoot, "repo", "checkout");
@@ -112,7 +115,9 @@ describe("assertDestructiveFixtureRoot", () => {
   });
 
   it("rejects a symlink that resolves outside the selected temporary root", async () => {
-    const parent = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-destructive-link-")));
+    const parent = await realpath(
+      createFixtureDirectory(join(tmpdir(), "agentrinse-destructive-link-")),
+    );
     const temporaryRoot = join(parent, "temporary");
     const outside = join(parent, "outside");
     const link = join(temporaryRoot, "fixture-link");

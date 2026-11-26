@@ -1,6 +1,7 @@
-import { link, mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { link, mkdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { describe, expect, it, vi } from "vitest";
 import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import * as projectFiles from "../../src/core/project-file.js";
@@ -9,7 +10,7 @@ import { artifactNameSchema } from "../../src/contracts/action.js";
 import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";
 
 async function fixture() {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-vite-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-vite-")));
   const project = join(home, "app");
   const modules = join(project, "node_modules");
   const dir = join(modules, ".vite");

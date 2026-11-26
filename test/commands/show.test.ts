@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -88,7 +88,7 @@ const AUDIT: AuditReport = {
 
 describe("show commands", () => {
   it("shows runs with partial recovery guidance", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "agentrinse-show-"));
+    const stateRoot = createFixtureDirectory(join(tmpdir(), "agentrinse-show-"));
     const layout = stateLayout(stateRoot);
     await writeJsonAtomic(join(layout.runs, "run-1.json"), RUN);
 
@@ -103,7 +103,7 @@ describe("show commands", () => {
   });
 
   it("shows plans by id and resources from the latest audit", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "agentrinse-show-"));
+    const stateRoot = createFixtureDirectory(join(tmpdir(), "agentrinse-show-"));
     const layout = stateLayout(stateRoot);
     await writeJsonAtomic(join(layout.plans, "plan-1.json"), PLAN);
     await writeJsonAtomic(join(layout.audits, "audit-1.json"), AUDIT);

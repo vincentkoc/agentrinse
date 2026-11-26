@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -13,7 +14,7 @@ const NOW = new Date("2026-07-27T00:00:00.000Z");
 
 async function fixtureContext(): Promise<AuditContext> {
   return {
-    home: await mkdtemp(join(tmpdir(), "agentrinse-claude-cache-")),
+    home: createFixtureDirectory(join(tmpdir(), "agentrinse-claude-cache-")),
     now: NOW,
     auditId: "audit-claude-cache",
   };
@@ -108,7 +109,7 @@ describe("Claude changelog cache cleanup", () => {
   it("does not follow a symlinked cache directory or changelog file", async () => {
     const directoryContext = await fixtureContext();
     const root = join(directoryContext.home, ".claude");
-    const target = await mkdtemp(join(tmpdir(), "agentrinse-claude-cache-target-"));
+    const target = createFixtureDirectory(join(tmpdir(), "agentrinse-claude-cache-target-"));
     await mkdir(root);
     await writeFile(join(target, "changelog.md"), "outside");
     await symlink(target, join(root, "cache"));

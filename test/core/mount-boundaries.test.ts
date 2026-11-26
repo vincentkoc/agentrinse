@@ -1,4 +1,5 @@
-import { mkdtemp, realpath } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +9,7 @@ import { findMountBoundaries } from "../../src/core/mount-boundaries.js";
 
 describe("findMountBoundaries", () => {
   it("detects same-device Linux bind mount paths", async () => {
-    const target = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-mount-")));
+    const target = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-mount-")));
     const nested = join(target, "nested bind");
     const mountInfo = [
       "21 1 8:1 / / rw - ext4 /dev/root rw",
@@ -27,7 +28,7 @@ describe("findMountBoundaries", () => {
   });
 
   it("detects macOS mount paths and fails closed on warnings", async () => {
-    const target = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-mount-")));
+    const target = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-mount-")));
     const nested = join(target, "volume");
 
     await expect(

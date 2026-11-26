@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +15,7 @@ async function fixture(): Promise<{
   path: string;
   owner: ApplyLockOwner;
 }> {
-  const home = await mkdtemp(join(tmpdir(), "agentrinse-lock-command-"));
+  const home = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-command-"));
   const stateRoot = join(home, "state");
   const path = join(stateLayout(stateRoot).locks, "apply.lock");
   const owner: ApplyLockOwner = {
