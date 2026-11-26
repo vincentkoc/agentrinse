@@ -25,7 +25,7 @@ import {
   type ProcessOwnershipResult,
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
-import { shouldDeferProcessOwnership } from "./cheap-protection.js";
+import { registrationProtections, shouldDeferProcessOwnership } from "./cheap-protection.js";
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "./porcelain.js";
 import { isPushedHead, matchingGitRefPins } from "./refs.js";
 import {
@@ -529,41 +529,13 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const observedAt = context.now.toISOString();
-    const roots: RootEvidence[] = [];
-
-    if (resource.facts.isMain === true) {
-      roots.push({
-        code: "main-worktree",
-        source: "git",
-        observedAt,
-        detail: "The main worktree is always protected.",
-      });
-    }
-
-    if (!["darwin", "linux"].includes(String(resource.facts.platform))) {
-      roots.push({
-        code: "worktree-mutation-unsupported",
-        source: "git",
-        observedAt,
-        detail: "Recoverable worktree quarantine is supported only on macOS and Linux.",
-      });
-    }
-    if (resource.facts.bare === true || resource.facts.prunable !== undefined) {
-      roots.push({
-        code: "worktree-registration-unsafe",
-        source: "git",
-        observedAt,
-        detail: "Bare or prunable worktree registrations are not quarantine candidates.",
-      });
-    }
-    if (resource.facts.locked !== undefined) {
-      roots.push({
-        code: "git-lock",
-        source: "git",
-        observedAt,
-        detail: "Git reports this worktree as locked.",
-      });
-    }
+    const roots: RootEvidence[] = registrationProtections({
+      isMain: resource.facts.isMain === true,
+      platform: String(resource.facts.platform),
+      bare: resource.facts.bare === true,
+      prunable: resource.facts.prunable,
+      locked: resource.facts.locked,
+    }).map(({ code, detail }) => ({ code, source: "git", observedAt, detail }));
 
     if (
       Number(resource.facts.staged ?? 0) +
