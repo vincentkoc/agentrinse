@@ -353,7 +353,7 @@ it("reports withheld staging entries when the only child is linked or mounted", 
   });
 });
 
-it("requires the receipt's stable volume and birth time even on the same current device", async () => {
+async function stableStagingFixture() {
   const home = await fixture(),
     root = join(home, "staging"),
     item = await capsule(root),
@@ -371,8 +371,13 @@ it("requires the receipt's stable volume and birth time even on the same current
     ino: String(child.ino),
     stable: { path: payload, birthtimeNs: String(child.birthtimeNs), volume: uuid },
   };
-  const entry = { path: item.path, name: "unused", stats },
-    owner = { rootIdentity, payloadIdentity };
+  const entry = { path: item.path, name: "unused", stats };
+  return { entry, rootIdentity, payloadIdentity, stats, uuid };
+}
+
+it("requires the receipt's stable volume and birth time even on the same current device", async () => {
+  const { entry, rootIdentity, payloadIdentity, stats, uuid } = await stableStagingFixture();
+  const owner = { rootIdentity, payloadIdentity };
   expect(await currentStagingIdentity(entry, owner, local, 0n, async () => uuid)).toBe(true);
   expect(await currentStagingIdentity(entry, owner, local, 0n, async () => undefined)).toBe(false);
   expect(
@@ -380,4 +385,46 @@ it("requires the receipt's stable volume and birth time even on the same current
   ).toBe(false);
   rootIdentity.stable.birthtimeNs = String(stats.birthtimeNs + 1n);
   expect(await currentStagingIdentity(entry, owner, local, 0n, async () => uuid)).toBe(false);
+});
+
+it("recognizes a renumbered device only with a matching stable volume identity", async () => {
+  const { entry, rootIdentity, payloadIdentity, stats, uuid } = await stableStagingFixture();
+  const previousDevice = String(stats.dev + 1n);
+  const afterRemount = {
+    rootIdentity: { ...rootIdentity, dev: previousDevice },
+    payloadIdentity: { ...payloadIdentity, dev: previousDevice },
+  };
+  const matchesPrevious = (root: typeof rootIdentity, volume: string | undefined) =>
+    currentStagingIdentity(
+      entry,
+      { ...afterRemount, rootIdentity: root },
+      local,
+      0n,
+      async () => volume,
+    );
+  expect(await matchesPrevious(afterRemount.rootIdentity, uuid)).toBe(true);
+  expect(await matchesPrevious(afterRemount.rootIdentity, undefined)).toBe(false);
+  expect(await matchesPrevious(afterRemount.rootIdentity, "uuid:" + randomUUID())).toBe(false);
+  expect(
+    await matchesPrevious({ ...afterRemount.rootIdentity, ino: String(stats.ino + 1n) }, uuid),
+  ).toBe(false);
+  expect(
+    await matchesPrevious(
+      {
+        ...afterRemount.rootIdentity,
+        stable: { ...rootIdentity.stable, volume: "device:" + previousDevice },
+      },
+      uuid,
+    ),
+  ).toBe(false);
+  const legacyRoot = { dev: previousDevice, ino: rootIdentity.ino };
+  expect(
+    await currentStagingIdentity(
+      entry,
+      { ...afterRemount, rootIdentity: legacyRoot },
+      local,
+      stats.birthtimeNs,
+      async () => uuid,
+    ),
+  ).toBe(false);
 });
