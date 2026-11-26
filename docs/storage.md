@@ -15,6 +15,10 @@ The [owner catalog](../src/rules/storage/catalog.ts) lists conventional location
 
 `--volume /absolute/path` with `--family mounts` uses only the host mount table without opening that path. APFS and Btrfs may share extents. Linux mount propagation is separate from extent sharing. AFP, SMB, NFS, automounts and unknown filesystems are withheld from filesystem inspection. The command never derives physical reclaim from logical or allocated byte counts.
 
+## Select more locations
+
+Run `agentrinse storage-rules` to list registered paths, their owners and inspection methods. The JSON catalog also lists operator-supplied paths and native evidence. Use `--rule` for an opt-in location, `--system` for system-owned Apple locations, and `--at npm.rescue=/absolute/path` for a retained root. `--project /absolute/project` checks the exact vendored-source and experimental transform directories by metadata. `--native-volume /mountpoint` requests native counters for an already mounted local APFS or Btrfs filesystem.
+
 ## Git pack storage
 
 Pass one or more durable repository roots explicitly. For example, `agentrinse storage --family git --repo /work/projects/one --repo /work/projects/two --json`. Bare common directories also work. A linked checkout reports that it needs its durable owner. The inventory reads metadata for direct regular files in the owner's `objects/pack` directory. It does not read objects, follow alternates, or run Git maintenance.

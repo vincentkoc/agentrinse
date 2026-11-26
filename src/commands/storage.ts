@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
-import { isAbsolute, resolve, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { createCommandEnvelope, jsonDocument } from "../machine-output.js";
 import { redactAuditValue } from "../core/redaction.js";
 import { readStorageMounts, coveringMount, type StorageMount } from "../core/storage-mounts.js";
 import { observeArea, type AreaReport } from "../core/storage-area.js";
 import { protectedStorageName } from "../core/storage-measurement.js";
+import { literal, selectStorageLocations } from "./storage-selection.js";
+import { inspectNativeVolume } from "../rules/storage/native-volume.js";
 import { storageFamily } from "../rules/storage/location.js";
 import { localStorageLocations } from "../rules/storage/catalog.js";
 import { formatStorageReport } from "./storage-output.js";
@@ -17,9 +19,13 @@ export type StorageOptions = {
   home: string;
   family?: string[];
   retainedRoot?: string[];
+  at?: string[];
+  project?: string[];
+  system?: boolean;
   repo?: string[];
   crabboxRoot?: string[];
   volume?: string[];
+  nativeVolume?: string[];
   maxEntries?: string;
   measure?: boolean;
   rule?: string[];
@@ -28,17 +34,19 @@ export type StorageOptions = {
 };
 type Dependencies = {
   platform?: NodeJS.Platform;
+  systemRoot?: string;
   readMounts?: (platform: NodeJS.Platform) => Promise<StorageMount[] | undefined>;
 };
-function literal(path: string): string {
-  if (!isAbsolute(path) || /\p{Cc}/u.test(path) || resolve(path) !== path)
-    throw new Error("Storage paths must be absolute and normalized");
-  return path;
-}
-
 export async function inventoryStorage(options: StorageOptions, deps: Dependencies = {}) {
   const home = literal(options.home);
-  const families = options.family ?? [];
+  const nativeOnly =
+    options.nativeVolume?.length &&
+    !options.family?.length &&
+    !options.rule?.length &&
+    !options.at?.length &&
+    !options.project?.length &&
+    !options.system;
+  const families = nativeOnly ? ["mounts"] : (options.family ?? []);
   const allowed = ["developer", "retained", "vm", "mounts", "crabbox", "git"];
   if (families.some((f) => !allowed.includes(f)))
     throw new Error("Unknown storage family; choose " + allowed.join(", "));
@@ -48,16 +56,29 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
     throw new Error("--max-entries must be between 1 and 100000");
   const budget = { remaining: Number(limit) };
   const platform = deps.platform ?? process.platform;
-  const catalog = localStorageLocations(home, platform);
-  const rules = new Set(options.rule);
-  if ([...rules].some((id) => !catalog.some((entry) => entry.id === id)))
-    throw new Error("Unknown storage rule on this platform");
+  const catalog = localStorageLocations(home, platform, deps.systemRoot);
+  const { rules, supplied, projects, projectAreas, explicitLocations } = selectStorageLocations(
+    options,
+    home,
+    catalog,
+  );
   const mounts = await (deps.readMounts ?? readStorageMounts)(platform);
   const retained = [...new Set((options.retainedRoot ?? []).map(literal))];
   const volumes = [...new Set((options.volume ?? []).map(literal))];
+  const nativeVolumes = [...new Set((options.nativeVolume ?? []).map(literal))];
+  if (nativeVolumes.length > 8) throw new Error("At most eight native volumes may be requested");
   const repos = [...new Set((options.repo ?? []).map(literal))];
   const staging = [...new Set((options.crabboxRoot ?? []).map(literal))];
-  if (retained.length + volumes.length + repos.length + staging.length > 64)
+  if (
+    retained.length +
+      projects.length +
+      supplied.length +
+      nativeVolumes.length +
+      volumes.length +
+      repos.length +
+      staging.length >
+    64
+  )
     throw new Error("At most 64 explicit storage paths are supported");
   for (const path of [...repos, ...staging]) {
     if (
@@ -112,7 +133,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   const receiptBudget = { remaining: 256 };
   for (const root of staging.length
     ? staging
-    : families.includes("crabbox") || (!rules.size && selected("crabbox"))
+    : families.includes("crabbox") || (!explicitLocations && selected("crabbox"))
       ? [join(home, ".cache/openclaw/crabbox-sync")]
       : []) {
     crabbox.push(
@@ -127,12 +148,17 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
     );
   }
   const areas: AreaReport[] = [];
-  for (const { id, owner, path, scope, reason, measureTree } of catalog) {
-    if (rules.size && !rules.has(id)) continue;
+  for (const { id, owner, path, scope, reason, measureTree, optIn, base, selectFile } of catalog) {
+    const requested = rules.has(id) || (base === "system" && options.system);
+    if (!requested && (explicitLocations || optIn)) continue;
     if (!selected(storageFamily(scope))) continue;
     const area = { rule: id, owner, path, scope, reason };
     const measure = Boolean(options.measure && measureTree);
-    if (mounts && coveringMount(home, mounts) !== coveringMount(path, mounts)) {
+    if (
+      base !== "system" &&
+      mounts &&
+      coveringMount(home, mounts) !== coveringMount(path, mounts)
+    ) {
       areas.push({
         ...area,
         filesystem: coveringMount(path, mounts)?.filesystem ?? null,
@@ -140,8 +166,23 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
         ...(measure ? { measurement: { extent: "unknown" } } : {}),
       });
     } else {
-      areas.push(await observeArea(area, mounts, budget, measure));
+      areas.push(await observeArea(area, mounts, budget, measure, selectFile));
     }
+  }
+  for (const { project, ...area } of projectAreas) {
+    if (!selected("retained")) continue;
+    if (mounts && coveringMount(project, mounts) !== coveringMount(area.path, mounts)) {
+      areas.push({
+        ...area,
+        coverage: "mount-boundary",
+        filesystem: coveringMount(area.path, mounts)?.filesystem ?? null,
+      });
+    } else {
+      areas.push(await observeArea(area, mounts, budget));
+    }
+  }
+  for (const area of supplied) {
+    if (selected("retained")) areas.push(await observeArea(area, mounts, budget));
   }
   for (const path of retained) {
     if (path === dirname(path) || path === home)
@@ -160,6 +201,11 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       ),
     );
   }
+  const nativeVolumeEvidence = [];
+  for (const path of nativeVolumes)
+    nativeVolumeEvidence.push(
+      await inspectNativeVolume(path, platform, deps.readMounts ?? readStorageMounts),
+    );
   const volumeEvidence = volumes.map((path) => ({
     path,
     coveringMount: mounts ? (coveringMount(path, mounts) ?? null) : null,
@@ -169,6 +215,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       (m) => m.extentSharing === "possible" || m.access === "network" || m.access === "automount",
     ) ?? [];
   const partial =
+    nativeVolumeEvidence.some((v) => v.status !== "observed") ||
     areas.some(
       (a) => a.coverage !== "missing" && a.measurement && a.measurement.extent !== "complete",
     ) ||
@@ -192,6 +239,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       reportedMounts: relevant.slice(0, 128),
       omittedMounts: Math.max(0, relevant.length - 128),
       volumeEvidence,
+      ...(nativeVolumes.length ? { nativeVolumeEvidence } : {}),
       gitPacks,
       crabbox,
       areas,

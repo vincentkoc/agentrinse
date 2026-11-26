@@ -1,3 +1,4 @@
+import { isCodexDatabaseName } from "../codex/storage-databases.js";
 import type { Location } from "./location.js";
 
 export const agentAndSystemStorage: readonly Location[] = [
@@ -68,5 +69,15 @@ export const agentAndSystemStorage: readonly Location[] = [
     platform: "linux",
     scope: "retained",
     reason: "User recovery and restoration metadata",
+  },
+  {
+    id: "codex.database-files",
+    owner: "Codex",
+    scope: "file-group",
+    selectFile: isCodexDatabaseName,
+    relative: ".codex",
+    optIn: true,
+    reason:
+      "Immediate SQLite databases and sidecars, aggregated by metadata without opening a database",
   },
 ];

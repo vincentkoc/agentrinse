@@ -70,7 +70,11 @@ export async function directStorageEntries(
   root: string,
   mounts: StorageMount[] | undefined,
   budget: EntryBudget,
-  filter?: { protect: (name: string) => boolean; expected: BigIntStats },
+  filter?: {
+    protect?: (name: string) => boolean;
+    select?: (name: string) => boolean;
+    expected: BigIntStats;
+  },
 ): Promise<{
   coverage: Coverage;
   entries: DirectEntry[];
@@ -98,8 +102,9 @@ export async function directStorageEntries(
           break;
         }
         budget.remaining--;
+        if (filter?.select && !filter.select(entry.name)) continue;
         const path = join(root, entry.name);
-        if (filter?.protect(entry.name) || mountPaths.has(path) || entry.isSymbolicLink()) {
+        if (filter?.protect?.(entry.name) || mountPaths.has(path) || entry.isSymbolicLink()) {
           excluded++;
           continue;
         }

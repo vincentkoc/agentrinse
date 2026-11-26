@@ -17,6 +17,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- `storage-rules` lists fixed locations, operator-supplied roots and native-owner checks. Storage inventory includes developer caches, installed tools, desktop data, opt-in system and credential locations, and protected Codex database file totals.
+
 - `worktrees --repo <owner> --project-roots` includes repository-local `.worktrees` and `.claude/worktrees` containers in the checkout inventory and optional measurement. Derived containers with mount boundaries are withheld.
 
 - Configured projects that declare Vite or Jiti can report the Vite dependency cache, Vite bundled configuration scratch, and Jiti filesystem transform cache. These findings share one manifest read and mount query per project and propose no removal.

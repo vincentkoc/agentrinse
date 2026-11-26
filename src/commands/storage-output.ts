@@ -2,6 +2,17 @@ import type { inventoryStorage } from "./storage.js";
 
 type StorageReport = Awaited<ReturnType<typeof inventoryStorage>>;
 
+function formatNativeVolume(
+  volume: NonNullable<StorageReport["data"]["nativeVolumeEvidence"]>[number],
+) {
+  const label = `Native volume ${volume.path}  ${volume.filesystem ?? "unknown"}  ${volume.status}`;
+  if (!("data" in volume) || !volume.data) return label;
+  const data = volume.data;
+  if ("snapshots" in data)
+    return `${label}  ${data.snapshots} snapshots (${data.purgeable} purgeable, ${data.nonPurgeable} non-purgeable, ${data.purgeabilityUnknown} unknown), container bytes ${data.containerFreeBytes ?? "unknown"} free / ${data.containerBytes ?? "unknown"} total`;
+  return `${label}  device bytes ${data.allocatedBytes} allocated / ${data.unallocatedBytes} unallocated / ${data.deviceBytes} total`;
+}
+
 export function formatStorageReport(view: StorageReport["data"], status: StorageReport["status"]) {
   const present = view.areas.filter((a) => a.coverage !== "missing");
   return (
@@ -19,6 +30,7 @@ export function formatStorageReport(view: StorageReport["data"], status: Storage
         (v) =>
           "Volume " + v.path + "  " + (v.coveringMount?.filesystem ?? "unknown") + " (mount table)",
       ),
+      ...(view.nativeVolumeEvidence ?? []).map(formatNativeVolume),
       ...view.gitPacks.repositories.map((r) => "Git pack store  " + r.coverage + "  " + r.path),
       ...Object.entries(view.gitPacks.byKind).map(
         ([kind, g]) =>
