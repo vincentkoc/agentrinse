@@ -110,6 +110,34 @@ await writeFile(
   )}\n`,
 );
 
+const storageEnv = { ...process.env, HOME: home, USERPROFILE: home };
+const textCatalog = (await runCli(["storage-rules"], root, storageEnv)).stdout;
+const npmRule = textCatalog.split("\n").find((line) => line.startsWith("npm.content  "));
+if (!npmRule?.includes("  npm  --measure"))
+  throw new Error("catalog help omits the cache owner or measurement flag");
+const catalog = JSON.parse((await runCli(["storage-rules", "--json"], root, storageEnv)).stdout);
+if (
+  !catalog.data.locations.some(
+    (rule) => rule.id === "codex.database-files" && rule.selection === "explicit",
+  ) ||
+  !catalog.data.ownerEvidence.some((rule) => rule.id === "filesystem.btrfs-usage")
+)
+  throw new Error("storage catalog is missing a registered rule");
+
+const observed = JSON.parse(
+  (await runCli(["storage", "--at", "project.proof=" + project, "--json"], root, storageEnv))
+    .stdout,
+);
+const [area] = observed.data.areas;
+if (
+  observed.data.areas.length !== 1 ||
+  area.rule !== "project.proof" ||
+  (process.platform !== "win32" && area.coverage !== "stat-only") ||
+  "fileBytes" in area ||
+  observed.data.entriesInspected !== 0
+)
+  throw new Error("supplied storage root escaped its metadata-only scope");
+
 await runCli(["audit", "--home", home, "--config", configPath, "--json", "--output", auditPath]);
 await runCli(["plan", "--audit", auditPath, "--config", configPath, "--output", planPath]);
 

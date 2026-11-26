@@ -33,10 +33,12 @@ export function executeStorageRulesCommand(json: boolean): string {
   return (
     [
       ...data.locations.map(
-        (rule) => `${rule.id}  ${rule.path}  ${rule.scope}  ${rule.platform}  ${rule.selection}`,
+        (rule) =>
+          `${rule.id}  ${rule.path}  ${rule.scope}  ${rule.platform}  ${rule.selection}  ${rule.owner}${rule.treeMeasurement ? "  --measure" : ""}`,
       ),
       ...data.suppliedLocations.map(
-        (rule) => `${rule.id}  --at ${rule.id}=<absolute-path>  retained  ${rule.reason}`,
+        (rule) =>
+          `${rule.id}  --at ${rule.id}=<absolute-path>  retained  ${rule.owner}  ${rule.reason}`,
       ),
       ...data.ownerEvidence.map(
         (rule) =>
