@@ -619,7 +619,7 @@ Each override remains subject to hard invariants.
 
 - TypeScript
 - ESM-only package
-- Node.js 22 or newer
+- Node.js 22.12.0 or newer
 - pnpm
 - Vitest
 - `oxfmt`
@@ -628,9 +628,8 @@ Each override remains subject to hard invariants.
   compile-time equivalence tests
 - no native dependency in the core package
 
-Node.js 22 is the minimum because this is a new package in 2026 and should not
-carry compatibility cost for retired runtimes. Native SQLite support must not
-become an implicit requirement until its stability and packaging behavior are
+Commander 15.1.0 requires Node.js 22.12.0, which sets the minimum for the CLI.
+Native SQLite support must not become an implicit requirement until its stability and packaging behavior are
 verified during implementation.
 
 ### Runtime shape
@@ -2984,7 +2983,7 @@ Recommended:
     "agentrinse": "./dist/cli.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12.0"
   },
   "license": "MIT",
   "repository": {

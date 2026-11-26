@@ -6,7 +6,7 @@ ownership proof.
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22.12.0 or newer
 - Git
 - `lsof`
 - `sqlite3` for offline Codex database maintenance

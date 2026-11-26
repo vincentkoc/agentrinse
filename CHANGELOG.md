@@ -43,6 +43,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- The npm package now declares Node.js 22.12.0 as its minimum, matching the requirement of its Commander dependency.
+
 - Crabbox mirror inventory recognizes UUID-backed receipts after macOS renumbers a mounted filesystem. Device-only receipts still require their recorded device.
 
 - Direct storage inventory distinguishes an uninspected cache from a verified empty directory. Partial direct file totals are labelled as lower bounds and include directory and exclusion counts.
