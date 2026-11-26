@@ -61,6 +61,8 @@ export function parseStorageMounts(platform: NodeJS.Platform, input: string): St
       if (
         sides.length !== 2 ||
         fields.length < 6 ||
+        sides[1]?.split(" ").length !== 3 ||
+        !fields[5]?.split(",").some((flag) => flag === "rw" || flag === "ro") ||
         !/^\d+$/u.test(fields[0] ?? "") ||
         !/^\d+:\d+$/u.test(fields[2] ?? "")
       )
@@ -70,6 +72,7 @@ export function parseStorageMounts(platform: NodeJS.Platform, input: string): St
       flags = (fields[5] ?? "").split(",");
       shared = fields.slice(6).some((field) => /^shared:\d+$/u.test(field));
     } else {
+      if (line.split(" on ").length !== 2) throw new Error("Ambiguous mount entry");
       const match =
         /^.+? on (\/.+) \(([^()]+)\)$/u.exec(line) ?? /^.+? on (\/) \(([^()]+)\)$/u.exec(line);
       if (!match) throw new Error("Invalid mount entry");

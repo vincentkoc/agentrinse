@@ -14,3 +14,17 @@ The [owner catalog](../src/rules/storage/catalog.ts) lists conventional location
 | OrbStack                      | [OrbStack storage](https://docs.orbstack.dev/architecture). The host image and swap file have a logical size and allocated blocks. Guest filesystem type and free space require a separate guest observation.                                                                                                                              |
 
 `--volume /absolute/path` with `--family mounts` uses only the host mount table without opening that path. APFS and Btrfs may share extents. Linux mount propagation is separate from extent sharing. AFP, SMB, NFS, automounts and unknown filesystems are withheld from filesystem inspection. The command never derives physical reclaim from logical or allocated byte counts.
+
+## Git pack storage
+
+Pass one or more durable repository roots explicitly. For example, `agentrinse storage --family git --repo /work/projects/one --repo /work/projects/two --json`. Bare common directories also work. A linked checkout reports that it needs its durable owner. The inventory reads metadata for direct regular files in the owner's `objects/pack` directory. It does not read objects, follow alternates, or run Git maintenance.
+
+The report separates ordinary packs, indexes, sidecars, `tmp_pack_*` names, `tmp_idx_*` names and other names starting with `tmp`. Names alone do not establish that an operation ended or a file is disposable. Per-repository figures count observed names. Global figures count each device/inode once, including hardlinked files across owners. Conflicting observations use an ambiguous group. Allocated bytes can include shared extents. [Git repository layout](https://git-scm.com/docs/gitrepository-layout)
+
+For registered project-local worktrees, use `agentrinse worktrees --repo /work/projects/one`. To include unregistered entries, select the actual containers with repeated `--root`, for example `--root /work/projects/one/.worktrees --root /work/projects/one/.claude/worktrees`. Add the managed worktree root explicitly when combining containers.
+
+## OpenClaw Crabbox staging
+
+`agentrinse storage --family crabbox` checks `~/.cache/openclaw/crabbox-sync`. Supply `--crabbox-root /absolute/staging/root` to replace the default. The controller directory is retained separately. The inventory counts the direct mirror index, then checks at most 256 owner-matching v2 `staging.json` receipts bounded to 32 KiB apiece. It does not inspect source payloads, controller databases, mirror slots or active jobs.
+
+A matched receipt reports its state, users and mirror timing. A durable mirror with a manifest can report an idle prepared or preserved state. A usable timestamp, matching user state and absence of a hold, leases, disposal or recovery lock are required for the separate reusable-mirror receipt classification. This is preliminary receipt evidence. Unknown, missing, legacy and malformed receipts provide no cleanup authorization. Use the producer's staging inspection for live ownership and release decisions. [OpenClaw staging producer](https://github.com/openclaw/openclaw/blob/6136262f59d0c3803aca0c911df2511ec97846fa/scripts/crabbox-staging.mts)

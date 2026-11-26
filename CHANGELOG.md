@@ -21,6 +21,7 @@ The project follows semantic versioning after its first supported release.
 
 - Projects can opt into pytest, mypy and Ruff cache removal by exact name. Each cache must contain a valid CACHEDIR.TAG declaration at audit and apply time.
 - `agentrinse storage` reports bounded direct cache metadata, protected storage locations, sparse VM disk sizes and kernel mount types. Shared filesystem extents carry no physical reclaim estimate.
+- Storage inventory groups Git pack and temporary filenames across explicit durable owners. OpenClaw Crabbox source staging reports bounded v2 receipt evidence independently of controller and payload data.
 
 - `agentrinse worktrees` inventories linked checkouts, standalone repositories,
   missing registrations, logical worktree sizes and direct Git administrative

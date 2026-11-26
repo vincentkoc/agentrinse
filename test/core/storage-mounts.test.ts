@@ -38,3 +38,10 @@ it("fails closed on unsupported or incomplete mount metadata", () => {
   ])
     expect(() => parseStorageMounts("darwin", value)).toThrow();
 });
+
+it("rejects ambiguous mount paths and incomplete Linux mountinfo", () => {
+  expect(() =>
+    parseStorageMounts("darwin", "device on / (apfs)\\nserver on label on /Volumes/share (smbfs)"),
+  ).toThrow();
+  expect(() => parseStorageMounts("linux", "1 0 8:1 / / rw - ext4")).toThrow();
+});

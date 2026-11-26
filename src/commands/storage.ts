@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { isAbsolute, resolve, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { isAbsolute, resolve, dirname, join } from "node:path";
 import { createCommandEnvelope, jsonDocument } from "../machine-output.js";
 import { redactAuditValue } from "../core/redaction.js";
 import { readStorageMounts, coveringMount, type StorageMount } from "../core/storage-mounts.js";
@@ -12,10 +13,16 @@ import {
 } from "../core/storage-observation.js";
 import { localStorageLocations } from "../rules/storage/catalog.js";
 
+import { collectPackStorage } from "../rules/git/pack-storage.js";
+import { collectCrabboxStorage } from "../rules/openclaw/crabbox-storage.js";
+import { isPathInside } from "../core/safety.js";
+
 export type StorageOptions = {
   home: string;
   family?: string[];
   retainedRoot?: string[];
+  repo?: string[];
+  crabboxRoot?: string[];
   volume?: string[];
   maxEntries?: string;
   json?: boolean;
@@ -76,7 +83,7 @@ async function observeArea(
 export async function inventoryStorage(options: StorageOptions, deps: Dependencies = {}) {
   const home = literal(options.home);
   const families = options.family ?? [];
-  const allowed = ["developer", "retained", "vm", "mounts"];
+  const allowed = ["developer", "retained", "vm", "mounts", "crabbox", "git"];
   if (families.some((f) => !allowed.includes(f)))
     throw new Error("Unknown storage family; choose " + allowed.join(", "));
   const selected = (family: string) => !families.length || families.includes(family);
@@ -88,12 +95,84 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   const mounts = await (deps.readMounts ?? readStorageMounts)(platform);
   const retained = [...new Set((options.retainedRoot ?? []).map(literal))];
   const volumes = [...new Set((options.volume ?? []).map(literal))];
-  if (retained.length + volumes.length > 64)
+  const repos = [...new Set((options.repo ?? []).map(literal))];
+  const staging = [...new Set((options.crabboxRoot ?? []).map(literal))];
+  if (retained.length + volumes.length + repos.length + staging.length > 64)
     throw new Error("At most 64 explicit storage paths are supported");
+  for (const path of [...repos, ...staging]) {
+    if (
+      isPathInside(path, home) ||
+      [
+        "/tmp",
+        "/private/tmp",
+        tmpdir(),
+        "/Volumes",
+        "/Users",
+        "/home",
+        "/var",
+        "/private",
+        "/opt",
+        "/usr",
+      ].includes(path)
+    )
+      throw new Error("Select a specific owner location");
+    if (
+      path
+        .split("/")
+        .some((part) =>
+          [
+            ".codex",
+            ".claude",
+            ".ssh",
+            ".gnupg",
+            ".Trash",
+            ".agents",
+            ".openclaw",
+            ".config",
+          ].includes(part),
+        )
+    )
+      throw new Error("Protected owner location");
+  }
+  for (const path of staging) {
+    if (
+      path.split("/").includes(".git") ||
+      [
+        join(home, ".cache"),
+        join(home, ".cache/openclaw"),
+        join(home, ".local"),
+        join(home, ".local/share"),
+        join(home, "Library"),
+      ].includes(path)
+    )
+      throw new Error("Select the staging container itself");
+  }
+  const gitPacks = await collectPackStorage(repos, mounts, budget);
+  const crabbox = [];
+  const receiptBudget = { remaining: 256 };
+  for (const root of staging.length
+    ? staging
+    : selected("crabbox")
+      ? [join(home, ".cache/openclaw/crabbox-sync")]
+      : []) {
+    crabbox.push(await collectCrabboxStorage(root, mounts, budget, Date.now(), receiptBudget));
+  }
   const areas: AreaReport[] = [];
   for (const { id, owner, path, scope, reason } of localStorageLocations(home, platform)) {
     if (selected(scope === "image" ? "vm" : scope === "retained" ? "retained" : "developer"))
-      areas.push(await observeArea({ rule: id, owner, path, scope, reason }, mounts, budget));
+      if (mounts && coveringMount(home, mounts) !== coveringMount(path, mounts)) {
+        areas.push({
+          rule: id,
+          owner,
+          path,
+          scope,
+          reason,
+          filesystem: coveringMount(path, mounts)?.filesystem ?? null,
+          coverage: "mount-boundary",
+        });
+      } else {
+        areas.push(await observeArea({ rule: id, owner, path, scope, reason }, mounts, budget));
+      }
   }
   for (const path of retained) {
     if (path === dirname(path) || path === home)
@@ -120,7 +199,17 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
     mounts?.filter(
       (m) => m.extentSharing === "possible" || m.access === "network" || m.access === "automount",
     ) ?? [];
-  const partial = areas.some((a) => ["entry-limit", "unavailable", "changed"].includes(a.coverage));
+  const partial =
+    areas.some((a) => ["entry-limit", "unavailable", "changed"].includes(a.coverage)) ||
+    gitPacks.repositories.some(
+      (r) => r.coverage !== "duplicate-store" && r.coverage !== "direct-complete",
+    ) ||
+    gitPacks.ambiguousFiles > 0 ||
+    crabbox.some(
+      (r) =>
+        (r.coverage !== "direct-complete" && !(r.coverage === "missing" && !staging.length)) ||
+        r.receiptsOmitted > 0,
+    );
   return {
     status: !mounts || partial ? ("degraded" as const) : ("ok" as const),
     data: {
@@ -128,6 +217,8 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       reportedMounts: relevant.slice(0, 128),
       omittedMounts: Math.max(0, relevant.length - 128),
       volumeEvidence,
+      gitPacks,
+      crabbox,
       areas,
       entryBudget: Number(limit),
       entriesInspected: Number(limit) - budget.remaining,
@@ -166,6 +257,30 @@ export async function executeStorageCommand(options: StorageOptions) {
         (v) =>
           "Volume " + v.path + "  " + (v.coveringMount?.filesystem ?? "unknown") + " (mount table)",
       ),
+      ...view.gitPacks.repositories.map((r) => "Git pack store  " + r.coverage + "  " + r.path),
+      ...Object.entries(view.gitPacks.byKind).map(
+        ([kind, g]) =>
+          "Git " +
+          kind +
+          ": " +
+          g.files +
+          " files, " +
+          g.logicalBytes +
+          " logical / " +
+          g.allocatedBytes +
+          " allocated bytes",
+      ),
+      ...view.crabbox.flatMap((r) => [
+        "Crabbox staging  " +
+          r.coverage +
+          "  " +
+          r.root +
+          "  mirror index: " +
+          r.mirrorIndex +
+          "; receipts omitted: " +
+          r.receiptsOmitted,
+        ...r.entries.map((e) => "  " + e.classification + "  " + e.path),
+      ]),
       ...present.map(
         (a) =>
           a.rule +

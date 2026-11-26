@@ -101,7 +101,19 @@ export function buildProgram(): Command {
     )
     .option(
       "--family <name>",
-      "select developer, retained, vm, or mounts; repeatable",
+      "select developer, retained, vm, mounts, crabbox or git; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--repo <path>",
+      "inspect pack metadata in a durable Git owner; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--crabbox-root <path>",
+      "use an explicit source staging container; repeatable",
       collectOption,
       [],
     )
