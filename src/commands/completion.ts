@@ -19,6 +19,7 @@ const COMMANDS = [
   "storage",
   "undo",
   "worktrees",
+  "worktree-grades",
 ] as const;
 
 const SUBCOMMANDS = {

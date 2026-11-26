@@ -75,7 +75,7 @@ function scope(path: string, owner: string, roots: string[]) {
   if (roots.some((root) => isPathInside(root, path))) return "managed-container";
   return "external";
 }
-function protectedCheckout(path: string) {
+export function protectedCheckout(path: string) {
   const parts = path.split(sep);
   return parts.some(
     (part, i) =>

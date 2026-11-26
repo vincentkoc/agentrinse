@@ -45,6 +45,8 @@ export type GitWorktreeOptions = Pick<AgentRinseConfig["audit"], "maxEntries" | 
     platform: NodeJS.Platform;
   };
 export type GitWorktreeDependencies = {
+  // Report-only grading selects a member after the full native roster establishes the main.
+  selectedPath?: string;
   measure?: typeof measurePath;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   inspect?: typeof lstat;
@@ -223,6 +225,11 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
     const diagnostics: Diagnostic[] = [];
 
     for (const record of records) {
+      if (
+        this.dependencies.selectedPath !== undefined &&
+        record.path !== this.dependencies.selectedPath
+      )
+        continue;
       let exists = true;
       let pathInspectionFailed = false;
       try {
@@ -322,6 +329,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
                 (args) => this.runGit(["-C", worktreePath, ...args]),
                 head,
                 configuredPins,
+                { requireCompleteHistory: this.dependencies.selectedPath !== undefined },
               );
             } catch (error) {
               gitRefInspectionComplete = false;
@@ -439,6 +447,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           branch: status?.branch ?? record.branch,
           upstream: status?.upstream,
           gitRefs,
+          ...(this.dependencies.selectedPath === undefined ? {} : { gitRefInspectionComplete }),
           detached: record.detached,
           bare: record.bare,
           locked: record.locked,
@@ -537,7 +546,8 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       this.reachability,
     );
     const eligible = resource.exists && roots.length === 0;
-    const candidateActions: WorktreeQuarantineAction[] = eligible ? [this.actionFor(resource)] : [];
+    const candidateActions: WorktreeQuarantineAction[] =
+      eligible && this.dependencies.selectedPath === undefined ? [this.actionFor(resource)] : [];
 
     return {
       schemaVersion: 1,

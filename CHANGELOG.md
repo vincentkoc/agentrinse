@@ -6,6 +6,10 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- `worktree-grades` grades up to 64 named linked checkouts for one durable Git owner. It checks full-roster membership, provider protections and configured pins, and reports any unresolved selections without saving a plan.
+
 ## [1.0.0] - 2026-11-27
 
 AgentRinse can now inventory Git object stores, worktrees and developer caches

@@ -7,6 +7,7 @@ export async function inventoryGit(
   path: string,
   args: string[],
   signal: AbortSignal,
+  limits = { timeoutMs: 5_000, maxBuffer: 8 * 1024 * 1024 },
 ): Promise<string> {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
@@ -34,8 +35,8 @@ export async function inventoryGit(
       },
       encoding: "utf8",
       signal,
-      timeout: 5_000,
-      maxBuffer: 8 * 1024 * 1024,
+      timeout: limits.timeoutMs,
+      maxBuffer: limits.maxBuffer,
     },
   );
   return stdout;
