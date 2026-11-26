@@ -1,12 +1,13 @@
-import { lstat, link, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, link, mkdir, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   executeGitInventory,
   inventoryGitOwners,
   type GitInventoryOptions,
 } from "../../src/commands/git-inventory.js";
+import * as loose from "../../src/rules/git/inventory-loose.js";
 import { parseStorageMounts } from "../../src/core/storage-mounts.js";
 import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { runFixtureGit } from "../helpers/git.js";
@@ -28,6 +29,126 @@ const input = (value: unknown) =>
   })();
 const lock = "gwt-finish.v2:11223344-1234-1234-1234-123456789abc";
 describe("git-inventory", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  // Change the actual filesystem after the independent scans and before the owner is credited.
+  function afterLooseScan(change: () => Promise<void>) {
+    const scan = loose.inventoryLooseObjects;
+    vi.spyOn(loose, "inventoryLooseObjects").mockImplementationOnce(async (...args) => {
+      const observed = await scan(...args);
+      await change();
+      return observed;
+    });
+  }
+
+  it.each([
+    "index update",
+    "replaced pack",
+    "replaced worktrees",
+    "replaced objects",
+    "indirect common",
+    "linked common",
+    "replaced common",
+    "remounted owner",
+  ])("attributes only independently stable sections after %s", async (change) => {
+    const { repo, options, home } = await setup();
+    const common = join(repo, ".git");
+    const objects = join(common, "objects");
+    const pack = join(objects, "pack");
+    const worktrees = join(common, "worktrees");
+    const missing = join(home, "missing");
+    await runFixtureGit(["-C", repo, "worktree", "add", "--detach", missing, "HEAD"]);
+    await rm(missing, { recursive: true });
+    await writeFile(join(pack, "tmp_pack_fixture"), "pack bytes");
+    const baseline = (await inventoryGitOwners({ ...options, looseObjects: true }, { mounts }))
+      .data;
+    expect(baseline.summary.missingPrunable).toBe(1);
+    expect(baseline.summary.looseObjects.regularNames).toBeGreaterThan(0);
+    expect(baseline.bytes.missingAdminFiles.files).toBeGreaterThan(0);
+    expect(baseline.bytes.temporaryNames.uniqueIdentities.files).toBe(1);
+    let remounted = false;
+    afterLooseScan(async () => {
+      await writeFile(join(common, "FETCH_HEAD"), "unrelated update");
+      if (
+        change === "replaced worktrees" ||
+        change === "replaced pack" ||
+        change === "replaced objects"
+      ) {
+        const dir =
+          change === "replaced worktrees" ? worktrees : change === "replaced pack" ? pack : objects;
+        await rename(dir, join(home, "retained-section"));
+        await mkdir(dir);
+      } else if (change === "indirect common") {
+        await writeFile(join(common, "commondir"), "../elsewhere");
+      } else if (change === "linked common" || change === "replaced common") {
+        const retained = join(home, "retained-common");
+        await rename(common, retained);
+        if (change === "linked common") await symlink(retained, common);
+        else await runFixtureGit(["init", repo]);
+      } else if (change === "remounted owner") {
+        remounted = true;
+      }
+    });
+    const result = await inventoryGitOwners(
+      { ...options, looseObjects: true },
+      {
+        mounts: async () =>
+          remounted
+            ? parseStorageMounts("linux", "2 0 1:1 / / rw - ext4 /dev/replacement rw")
+            : mounts(),
+      },
+    );
+    const row = result.data.repositories[0];
+    if (
+      ["linked common", "replaced common", "indirect common", "remounted owner"].includes(change)
+    ) {
+      expect(row?.coverage).toBe("changed");
+      expect(result.data.bytes.uniqueFiles.files).toBe(0);
+      expect(result.data.summary.linkedRegistrations).toBe(0);
+      expect(result.data.summary.looseObjects.completeStores).toBe(0);
+      return;
+    }
+    expect(row?.commonMetadataChanged).toBe(true);
+    const expectedChanged = {
+      "replaced worktrees": ["worktrees"],
+      "replaced pack": ["packs"],
+      "replaced objects": ["packs", "looseObjects"],
+    }[change];
+    expect(row?.changedSections).toEqual(expectedChanged);
+    expect(result.status).toBe(expectedChanged ? "degraded" : "ok");
+    expect(result.data.bytes.temporaryNames.uniqueIdentities.files).toBe(
+      expectedChanged?.includes("packs") ? 0 : 1,
+    );
+    expect(result.data.summary.looseObjects.regularNames).toBe(
+      change === "replaced objects" ? 0 : baseline.summary.looseObjects.regularNames,
+    );
+    expect(result.data.summary.missingPrunable).toBe(change === "replaced worktrees" ? 0 : 1);
+    expect(result.data.bytes.missingAdminFiles.files).toBe(
+      change === "replaced worktrees" ? 0 : baseline.bytes.missingAdminFiles.files,
+    );
+  });
+
+  it("rechecks the object format after an in-place config write independently of the common directory", async () => {
+    const { repo, options } = await setup();
+    const common = join(repo, ".git");
+    const config = join(common, "config");
+    await writeFile(join(common, "objects", "pack", "tmp_pack_stable"), "stable");
+    const inspect = () => lstat(common, { bigint: true });
+    const start = await inspect();
+    const sha256 = "[core]\nrepositoryFormatVersion = 1\n[extensions]\nobjectFormat = sha256\n";
+    afterLooseScan(() => writeFile(config, sha256));
+    const result = await inventoryGitOwners({ ...options, looseObjects: true }, { mounts });
+    expect((await inspect()).mtimeNs).toBe(start.mtimeNs);
+    expect(result.data.repositories[0]).toMatchObject({
+      coverage: "partial",
+      changedSections: ["looseObjects"],
+    });
+    expect(result.data.repositories[0]?.looseObjects).toBeUndefined();
+    expect(result.data.bytes.temporaryNames.uniqueIdentities.files).toBe(1);
+    afterLooseScan(() => writeFile(config, "[core]\nrepositoryFormatVersion = 0\n"));
+    const human = await executeGitInventory({ ...options, looseObjects: true }, { mounts });
+    expect(human).toContain("changed sections: looseObjects");
+  });
   it("finds dot-prefixed owners and reconciles temp pack aliases, external links and sidecars", async () => {
     const { repo, parent, home, options } = await setup(),
       pack = join(repo, ".git", "objects", "pack");
@@ -203,7 +324,7 @@ describe("git-inventory", () => {
     };
     const census = (projection: unknown) =>
       inventoryGitOwners(
-        { ...options, worktreeRoot: [root], gwtStatusStdin: true },
+        { ...options, worktreeRoot: [root], gwtStatusStdin: true, looseObjects: true },
         { mounts, input: input(projection) },
       );
     const projected = (r: unknown) => ({
@@ -211,6 +332,7 @@ describe("git-inventory", () => {
       source: "gwt finish-status --all --read-only --inventory-json",
       records: [r],
     });
+    afterLooseScan(() => writeFile(join(repo, ".git", "FETCH_HEAD"), "unrelated update"));
     expect((await census(projected(row))).data.summary.nativeCloseoutReview).toBe(1);
     const broken = join(repo, ".git", "worktrees", "malformed");
     await mkdir(broken);
@@ -228,6 +350,12 @@ describe("git-inventory", () => {
       source: "admin-backlink",
       nativeReview: "review-native-closeout",
     });
+    afterLooseScan(async () => {
+      await writeFile(join(admin, "locked"), "replacement");
+      await writeFile(join(repo, ".git", "ORIG_HEAD"), head);
+    });
+    expect((await census(projected(row))).data.summary.nativeCloseoutReview).toBe(0);
+    await writeFile(join(admin, "locked"), lock + "\n");
     for (const replacement of [
       { ...row, finish_head: "0".repeat(40) },
       { ...row, has_intent: true },

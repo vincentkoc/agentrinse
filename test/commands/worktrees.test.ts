@@ -186,6 +186,32 @@ describe("worktree inventory", () => {
     }
   });
 
+  it("distinguishes a stable empty group from files, a missing marker, and a failed inspection", async () => {
+    const home = await fixture();
+    const root = join(home, "worktrees");
+    const empty = join(root, "empty");
+    const files = join(root, "files");
+    const unmarked = join(root, "group", "unmarked");
+    const broken = join(root, "broken");
+    for (const dir of [empty, files, unmarked, broken]) await mkdir(dir, { recursive: true });
+    await writeFile(join(files, ".retained"), "user data");
+    await writeFile(join(broken, ".git"), "invalid gitfile");
+    const result = await inventoryWorktrees({ home, root: [root], repo: [] });
+    expect(result.summary.unresolved).toBe(4);
+    expect(
+      result.entries.map((item) => [item.path, item.kind, item.unresolvedReason, item.disposition]),
+    ).toEqual([
+      [broken, "unresolved", "inspection-incomplete", "retain"],
+      [empty, "unresolved", "empty-group", "retain"],
+      [files, "unresolved", "group-with-nondirectory-entries", "retain"],
+      [unmarked, "unresolved", "no-git-marker", "retain"],
+    ]);
+    expect(result.problems).toEqual([{ path: broken, code: "WORKTREE_INSPECTION_INCOMPLETE" }]);
+    const human = await executeWorktreesCommand({ home, root: [root], repo: [] });
+    expect(human).toContain("(empty-group)");
+    expect(human).toContain("(inspection-incomplete)");
+  });
+
   it("isolates configured containers and refuses unsafe paths or malformed input", async () => {
     const home = await fixture();
     const root = join(home, "worktrees");

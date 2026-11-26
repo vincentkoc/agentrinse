@@ -7,6 +7,7 @@ import { parseWorktreePorcelain, type GitWorktreeRecord } from "../adapters/git/
 import { missingAdminSizes, registeredCheckoutPath } from "../adapters/git/worktree-admin-size.js";
 import { projectWorktreeRoots } from "../rules/git/project-worktree-roots.js";
 import { coveringMount, readStorageMounts } from "../core/storage-mounts.js";
+import { sameObservation } from "../core/storage-observation.js";
 import { measurePath } from "../core/measure.js";
 import { redactAuditValue } from "../core/redaction.js";
 import { isPathInside } from "../core/safety.js";
@@ -27,6 +28,12 @@ type Size = { status: "complete" | "lower-bound" | "unavailable"; logicalBytes: 
 type Entry = {
   path: string;
   kind: Kind;
+  unresolvedReason?:
+    | "empty-group"
+    | "group-with-nondirectory-entries"
+    | "no-git-marker"
+    | "unverified-checkout"
+    | "inspection-incomplete";
   ownerRepository?: string;
   directoryAgeDays?: number;
   locked?: boolean;
@@ -159,17 +166,23 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     return records.find((record) => resolve(record.path) === path);
   }
 
-  async function scan(directory: string, depth: number, device: number): Promise<number> {
+  async function scan(
+    directory: string,
+    depth: number,
+    device: bigint,
+  ): Promise<{ directoryEntries: number; directEntries: number }> {
     let directoryEntries = 0;
+    let directEntries = 0;
     const children = await opendir(directory);
     for await (const child of children) {
       if (++inspected > DISCOVERY_LIMIT || deadline.aborted) throw new Error("discovery limit");
+      directEntries++;
       if (!child.isDirectory() && !child.isSymbolicLink()) continue;
       directoryEntries++;
       const path = join(directory, child.name);
       if (entries.has(path)) continue;
       try {
-        const stats = await lstat(path);
+        const stats = await lstat(path, { bigint: true });
         if (stats.isSymbolicLink() || !stats.isDirectory() || stats.dev !== device) {
           entry(path, "unresolved");
           continue;
@@ -181,15 +194,27 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
           if (!missing(error)) throw error;
         }
         if (!marker && depth === 1) {
-          if ((await scan(path, 2, device)) === 0) entry(path, "unresolved");
+          const group = await scan(path, 2, device);
+          if (!group.directoryEntries) {
+            const end = await lstat(path, { bigint: true });
+            if (!sameObservation(stats, end)) throw new Error("group changed during inspection");
+            const item = entry(path, "unresolved");
+            item.unresolvedReason = group.directEntries
+              ? "group-with-nondirectory-entries"
+              : "empty-group";
+          }
           continue;
         }
         const item = entry(path, "unresolved");
         item.directoryAgeDays = Math.max(
           0,
-          Math.floor((started.getTime() - stats.mtimeMs) / 86_400_000),
+          Math.floor((started.getTime() - Number(stats.mtimeMs)) / 86_400_000),
         );
-        if (!marker || (!marker.isFile() && !marker.isDirectory())) continue;
+        if (!marker) {
+          item.unresolvedReason = "no-git-marker";
+          continue;
+        }
+        if (!marker.isFile() && !marker.isDirectory()) continue;
         const record = await readRepository(path);
         if (!record) continue;
         // The main checkout may also use a gitfile (e.g. --separate-git-dir).
@@ -217,11 +242,11 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
         )
           item.disposition = "review-native-closeout";
       } catch {
-        entry(path, "unresolved");
+        entry(path, "unresolved").unresolvedReason = "inspection-incomplete";
         problems.push({ path, code: "WORKTREE_INSPECTION_INCOMPLETE" });
       }
     }
-    return directoryEntries;
+    return { directoryEntries, directEntries };
   }
 
   const projectMounts = options.projectRoots
@@ -258,7 +283,7 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     const root: Root = { path, status: "available" };
     roots.push(root);
     try {
-      const stats = await lstat(path);
+      const stats = await lstat(path, { bigint: true });
       if (!stats.isDirectory() || (await realpath(path)) !== path) throw new Error("unsafe root");
       try {
         await lstat(join(path, ".git"));
@@ -354,10 +379,12 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
   for (const item of items) {
     if (conflicting.has(item.path)) {
       item.kind = "unresolved";
+      item.unresolvedReason = "unverified-checkout";
       item.disposition = "retain";
       problems.push({ path: item.path, code: "WORKTREE_REGISTRATION_CONFLICT" });
       continue;
     }
+    if (item.kind === "unresolved") item.unresolvedReason ??= "unverified-checkout";
     if (item.kind === "missing") {
       const registration = registrations.get(item.path);
       if (registration) {
@@ -487,7 +514,7 @@ export async function executeWorktreesCommand(options: Options): Promise<string>
         .filter((item) => item.disposition !== "recorded-removed")
         .map(
           (item) =>
-            `${item.kind}  ${item.lifecycle}  ${item.disposition}  ${item.path}${item.size ? `  ${item.size.logicalBytes ?? "?"} logical bytes (${item.size.status})` : ""}`,
+            `${item.kind}  ${item.lifecycle}  ${item.disposition}  ${item.path}${item.unresolvedReason ? `  (${item.unresolvedReason})` : ""}${item.size ? `  ${item.size.logicalBytes ?? "?"} logical bytes (${item.size.status})` : ""}`,
         ),
       ...view.problems.map((problem) => `${problem.code}: ${problem.path}`),
     ].join("\n") + "\n"

@@ -3,19 +3,23 @@ import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createCommandEnvelope, jsonDocument } from "../machine-output.js";
 import { redactAuditValue } from "../core/redaction.js";
 import { isPathInside } from "../core/safety.js";
-import { coveringMount, readStorageMounts, type StorageMount } from "../core/storage-mounts.js";
+import { readStorageMounts, type StorageMount } from "../core/storage-mounts.js";
+import { directStorageEntries, observeStoragePath } from "../core/storage-observation.js";
 import {
-  directStorageEntries,
-  observeStoragePath,
-  sameObservation,
-} from "../core/storage-observation.js";
-import { readProjectFile } from "../core/project-file.js";
+  discoverOwner,
+  observeInventorySections,
+  compareInventorySections,
+  recheckOwner,
+} from "../rules/git/inventory-owner.js";
 import { protectedStorageName } from "../core/storage-measurement.js";
-import { inventoryLooseObjects } from "../rules/git/inventory-loose.js";
+import { gitObjectFormat, inventoryLooseObjects } from "../rules/git/inventory-loose.js";
 import { inventoryPath } from "../rules/git/inventory-path.js";
 import { GitIdentityLedger } from "../rules/git/inventory-bytes.js";
 import { inventoryPackStore } from "../rules/git/inventory-packs.js";
-import { inventoryRegistrations } from "../rules/git/inventory-registrations.js";
+import {
+  inventoryRegistrations,
+  type ReviewRegistrations,
+} from "../rules/git/inventory-registrations.js";
 import { gitLifecycleInput } from "../rules/git/inventory-lifecycle.js";
 
 export type GitInventoryOptions = {
@@ -38,9 +42,11 @@ type Repository = {
   path: string;
   coverage: string;
   commonDirectory?: string;
+  commonMetadataChanged?: boolean;
+  changedSections?: string[];
   uniqueWithinOwner?: ReturnType<GitIdentityLedger["report"]>;
   packs?: Awaited<ReturnType<typeof inventoryPackStore>>;
-  looseObjects?: Awaited<ReturnType<typeof inventoryLooseObjects>>;
+  looseObjects?: Awaited<ReturnType<typeof inventoryLooseObjects>>["report"];
   worktrees?: Awaited<ReturnType<typeof inventoryRegistrations>>;
 };
 const maxOwners = 8192;
@@ -54,40 +60,6 @@ function repoPath(value: string, home: string) {
   if (dirname(p) === p || isPathInside(p, home) || p.split(sep).some(protectedStorageName))
     throw new Error("Select a specific durable owner or its direct parent outside protected data");
   return p;
-}
-async function discoverOwner(path: string, mounts: StorageMount[] | undefined) {
-  const base = await observeStoragePath(path, mounts);
-  if (!base.stats?.isDirectory()) return { coverage: base.stats ? "unexpected-kind" : base.status };
-  const markerPath = join(path, ".git"),
-    m = coveringMount(path, mounts!);
-  if (m !== coveringMount(markerPath, mounts!)) return { coverage: "mount-boundary" };
-  const marker = await observeStoragePath(markerPath, mounts);
-  if (marker.status !== "missing" && !marker.stats?.isDirectory())
-    return { coverage: marker.stats ? "requires-durable-owner" : marker.status };
-  const common = marker.status === "missing" ? path : markerPath,
-    commonStats = marker.stats ?? base.stats;
-  for (const name of ["HEAD", "objects", "refs", "config", "commondir"]) {
-    const child = join(common, name);
-    if (m !== coveringMount(child, mounts!)) return { coverage: "mount-boundary" };
-    const seen = await observeStoragePath(child, mounts);
-    if (name === "commondir" && seen.status === "missing") continue;
-    if (name === "HEAD" && marker.status === "missing" && seen.status === "missing")
-      return { coverage: "not-owner" };
-    if (
-      name === "commondir" ||
-      (["objects", "refs"].includes(name) ? !seen.stats?.isDirectory() : !seen.stats?.isFile())
-    )
-      return { coverage: "unverified-owner" };
-  }
-  const head = await readProjectFile(join(common, "HEAD"), Number(commonStats.dev), {
-    maxBytes: 16384,
-  });
-  if (
-    !head ||
-    !/^(?:ref: refs\/[^\s\p{Cc}]+|[a-f\d]{40}|[a-f\d]{64})\r?\n?$/u.test(head.toString("utf8"))
-  )
-    return { coverage: "unverified-owner" };
-  return { coverage: "owner", owner: { path, common, ownerStats: base.stats, commonStats } };
 }
 export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dependencies = {}) {
   const startedAt = new Date().toISOString(),
@@ -128,7 +100,8 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
   const statuses = await gitLifecycleInput(
     options.gwtStatusStdin ? (deps.input ?? process.stdin) : undefined,
   );
-  const mounts = await (deps.mounts ?? (() => readStorageMounts(process.platform)))();
+  const readMounts = deps.mounts ?? (() => readStorageMounts(process.platform));
+  const mounts = await readMounts();
   const repoRoots: {
     path: string;
     coverage: string;
@@ -211,27 +184,54 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
       continue;
     }
     stores.add(key);
-    const localLedger = new GitIdentityLedger();
-    const packs = await inventoryPackStore(owner.common, mounts, budget, localLedger);
+    const sections = await observeInventorySections(owner.common, mounts);
+    const packLedger = new GitIdentityLedger();
+    const adminLedger = new GitIdentityLedger();
+    const reviews: ReviewRegistrations[] = [];
+    const packs = await inventoryPackStore(owner.common, mounts, budget, packLedger);
     const worktrees = await inventoryRegistrations(
       owner,
       roots,
       mounts,
       budget,
       slotsBudget,
-      localLedger,
+      adminLedger,
       statuses,
+      reviews,
     );
-    const looseObjects = options.looseObjects
+    const loose = options.looseObjects
       ? await inventoryLooseObjects(owner.common, mounts, budget)
       : undefined;
-    const final = await observeStoragePath(owner.common, mounts);
-    if (!final.stats || !sameObservation(owner.commonStats, final.stats)) {
+    const looseObjects = loose?.report;
+    let bound = await recheckOwner(owner, mounts, readMounts);
+    if (bound && reviews.length) {
+      for (const review of reviews) await review(bound.owner, bound.mounts);
+      bound = await recheckOwner(owner, mounts, readMounts);
+    }
+    if (!bound) {
       repositories.push({ path, commonDirectory: owner.common, coverage: "changed" });
       continue;
     }
+    const changed = await compareInventorySections(owner.common, sections, mounts, bound.mounts);
+    const keepPacks = !changed.objects && !changed.pack;
+    const keepRegistrations = !changed.worktrees;
+    const sameFormat =
+      !changed.config ||
+      !looseObjects?.objectFormat ||
+      (await gitObjectFormat(owner.common)) === looseObjects.objectFormat;
+    const keepLoose =
+      sameFormat && (!changed.objects || (loose && (await loose.verifyFanouts(bound.mounts))));
+    const changedSections = [
+      ...(keepPacks ? [] : ["packs"]),
+      ...(keepRegistrations ? [] : ["worktrees"]),
+      ...(!keepLoose && looseObjects ? ["looseObjects"] : []),
+    ];
+    const localLedger = new GitIdentityLedger();
+    if (keepPacks) localLedger.merge(packLedger);
+    if (keepRegistrations) localLedger.merge(adminLedger);
     ledger.merge(localLedger);
     const coverage =
+      changedSections.length ||
       (looseObjects && looseObjects.coverage !== "complete") ||
       packs.changedTemporaryNames ||
       !["direct-complete", "missing"].includes(packs.packCoverage) ||
@@ -244,9 +244,11 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
       path,
       commonDirectory: owner.common,
       coverage,
-      packs,
-      worktrees,
-      ...(looseObjects ? { looseObjects } : {}),
+      ...(bound.commonMetadataChanged ? { commonMetadataChanged: true } : {}),
+      ...(changedSections.length ? { changedSections } : {}),
+      ...(keepPacks ? { packs } : {}),
+      ...(keepRegistrations ? { worktrees } : {}),
+      ...(looseObjects && keepLoose ? { looseObjects } : {}),
       uniqueWithinOwner: localLedger.report(),
     });
   }
@@ -374,7 +376,16 @@ export async function executeGitInventory(
     ...view.repositories.map((r) => {
       if (!r.uniqueWithinOwner) return `${r.coverage}  ${r.path}`;
       const files = r.uniqueWithinOwner.temporaryNames;
-      return `${r.coverage}  ${r.path}  ${files.observedNames} temporary names, ${files.uniqueIdentities.allocatedBytes} temporary-name allocated bytes, ${r.worktrees?.entries.length ?? 0} registration entries`;
+      const pack = r.packs
+        ? `${files.observedNames} temporary names, ${files.uniqueIdentities.allocatedBytes} temporary-name allocated bytes`
+        : "pack count withheld";
+      const registrations = r.worktrees
+        ? `${r.worktrees.entries.length} registration entries`
+        : "registration count withheld";
+      const changed = r.changedSections?.length
+        ? `  changed sections: ${r.changedSections.join(", ")}`
+        : "";
+      return `${r.coverage}  ${r.path}  ${pack}, ${registrations}${changed}`;
     }),
   ];
   return lines.join("\n") + "\n";
