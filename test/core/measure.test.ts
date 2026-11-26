@@ -1,11 +1,12 @@
 import { once } from "node:events";
-import { lstat, mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { opendir, lstat, mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { DirectoryChangeProof } from "../../src/core/directory-change-proof.js";
 import { measurePath } from "../../src/core/measure.js";
 
 describe("measurePath", () => {
@@ -25,6 +26,26 @@ describe("measurePath", () => {
     );
     expect(result).toMatchObject({ protectedEntries: 1, bytes: 0, entries: 3 });
     expect((await measurePath(root, { maxEntries: 10 })).bytes).toBe(8);
+  });
+
+  it("refuses incomplete directory proof and detects a change during enumeration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const proof = new DirectoryChangeProof();
+    expect(proof.unchanged(root)).toBe(false);
+    await expect(
+      measurePath(
+        root,
+        { maxEntries: 10, directoryProof: proof },
+        {
+          openDirectory: async (path) => {
+            const reader = await opendir(path);
+            await mkdir(join(path, "new-child"));
+            return reader;
+          },
+        },
+      ),
+    ).rejects.toThrow("changed during enumeration");
+    expect(proof.unchanged(root)).toBe(false);
   });
 
   it("measures regular files recursively", async () => {

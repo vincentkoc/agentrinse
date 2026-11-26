@@ -84,6 +84,28 @@ describe("executeArtifactRemove", () => {
       "keep",
     );
   });
+  it("restores history inserted into an existing deep directory by the second authorization refresh", async () => {
+    const value = await fixture(true);
+    let refreshes = 0;
+    await expect(
+      executeArtifactRemove(value.action, {
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        revalidateProtection: async (path) => {
+          if (++refreshes !== 2) return;
+          await mkdir(join(path, "cache", ".codex"));
+          await writeFile(join(path, "cache", ".codex", "history.jsonl"), "preserve");
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      message: expect.stringContaining("final authorization"),
+    });
+    expect(refreshes).toBe(2);
+    expect(await readFile(join(value.target, "cache", ".codex", "history.jsonl"), "utf8")).toBe(
+      "preserve",
+    );
+  });
+
   it("restores an isolated artifact if its provider claims it before removal", async () => {
     const value = await fixture();
     await expect(

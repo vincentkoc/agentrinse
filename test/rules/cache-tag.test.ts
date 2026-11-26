@@ -93,6 +93,27 @@ describe("project cache declarations", () => {
       });
     }
   });
+  it("retains a cache whose declaration is overwritten during the final authorization", async () => {
+    const { tag, observe, idle } = await fixture();
+    await writeFile(tag, signature);
+    const action = (await observe()).finding.candidateActions[0]!;
+    if (action.type !== "artifacts.remove") throw new Error("missing cache action");
+    let refreshes = 0;
+    await expect(
+      executeArtifactRemove(action, {
+        processProbe: idle,
+        revalidateProtection: async (path) => {
+          if (++refreshes === 2)
+            await writeFile(join(path, "CACHEDIR.TAG"), signature.toLowerCase());
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      message: expect.stringContaining("final authorization"),
+    });
+    expect(await readFile(tag, "utf8")).toBe(signature.toLowerCase());
+  });
+
   it("requires marker evidence to classify and rechecks changed markers during apply", async () => {
     const { home, dir, tag, config, context, observe, adapter, idle } = await fixture();
     await writeFile(tag, signature);

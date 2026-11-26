@@ -8,6 +8,7 @@ import { artifactMeasurementChanged, isArtifactAgentState } from "./artifact-mea
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
 import { prepareRenameNoReplace } from "./no-clobber-rename.js";
+import { DirectoryChangeProof } from "./directory-change-proof.js";
 import { measurePath } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -200,7 +201,10 @@ export async function executeArtifactRemove(
     );
   }
 
-  const checkContents = async () => {
+  const checkContents = async (directoryProof?: DirectoryChangeProof) => {
+    if (directoryProof && requiresCacheTag(action.target.name)) {
+      await directoryProof.watchDeclaration(join(isolationPath, "CACHEDIR.TAG"));
+    }
     if (
       requiresCacheTag(action.target.name) &&
       !(await hasCacheTag(isolationPath, action.target.device))
@@ -216,6 +220,7 @@ export async function executeArtifactRemove(
     const measurement = await measure(isolationPath, {
       maxEntries: dependencies.maxEntries ?? 100_000,
       protectEntry: isArtifactAgentState,
+      ...(directoryProof ? { directoryProof } : {}),
     });
     if (measurement.specialEntries > 0 || artifactMeasurementChanged(measurement, action.target)) {
       await rollbackBeforeRemoval(
@@ -322,8 +327,9 @@ export async function executeArtifactRemove(
   };
   await checkProtection();
   // A nested directory can change while owner and mount probes run without changing the root mtime.
+  const directoryProof = new DirectoryChangeProof();
   try {
-    await checkContents();
+    await checkContents(directoryProof);
   } catch (error) {
     if (error instanceof ArtifactExecutionError) throw error;
     await rollbackBeforeRemoval(
@@ -336,20 +342,9 @@ export async function executeArtifactRemove(
     );
   }
   await checkProtection();
-  if (
-    dependencies.authorization !== undefined &&
-    dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
-  ) {
-    await rollbackBeforeRemoval(
-      "cleanup plan authorization expired during artifact isolation",
-      action,
-      isolationPath,
-      inspect,
-      move,
-    );
-  }
 
   try {
+    const unchanged = directoryProof.unchanged(isolationPath);
     const finalStats = (dependencies.finalInspect ?? lstatSync)(isolationPath);
     if (!matchesFilesystemObject(finalStats, action)) {
       throw new ArtifactExecutionError(
@@ -361,6 +356,28 @@ export async function executeArtifactRemove(
     if (finalStats.mtimeMs !== action.target.mtimeMs) {
       await rollbackBeforeRemoval(
         "artifact metadata changed before removal",
+        action,
+        isolationPath,
+        inspect,
+        move,
+      );
+    }
+
+    if (!unchanged) {
+      await rollbackBeforeRemoval(
+        "artifact contents changed during final authorization",
+        action,
+        isolationPath,
+        inspect,
+        move,
+      );
+    }
+    if (
+      dependencies.authorization !== undefined &&
+      dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
+    ) {
+      await rollbackBeforeRemoval(
+        "cleanup plan authorization expired during artifact isolation",
         action,
         isolationPath,
         inspect,
