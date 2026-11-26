@@ -1,8 +1,8 @@
 # Storage inventory
 
-Run `agentrinse storage --json --redact` to see metadata for known user storage. This command does not create an audit or cleanup plan, launch a package manager, start a VM, or connect to a share. `--family developer`, `--family retained` and `--family vm` select owner classes. Pass `--retained-root /absolute/path` for a known former service home, unpublished local components or qualification copy. The command observes only that root's metadata.
+Run `agentrinse storage-rules` to find the stable ID and inspection method for a location. Run `agentrinse storage --json --redact` to inventory the default locations on this host. Both commands are read-only. The inventory reports what the process could observe, including missing paths, withheld mounts and incomplete measurements.
 
-The [owner catalog](../src/rules/storage/catalog.ts) lists conventional locations. A missing default does not establish the absence of an overridden store. Developer entries count only directly observed regular files and directories. Decimal byte strings preserve exact logical size and filesystem block counts. Descendant files are not measured. The global entry budget, coverage, excluded entries and missing locations identify the limits of each result.
+A `direct` observation counts immediate regular files and directories. A `retained` observation checks only the root. Image observations report logical size and allocated blocks. Byte counts are decimal strings. Use `--measure` on a catalog entry with `treeMeasurement: true` for a bounded traversal of its eligible descendants. An overridden package store can live elsewhere. Use its producer to resolve the effective path.
 
 | Owner                         | Source and scope                                                                                                                                                                                                                                                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -13,11 +13,34 @@ The [owner catalog](../src/rules/storage/catalog.ts) lists conventional location
 | Codebase Memory, Codex, Trash | [Codebase Memory configuration](https://github.com/DeusData/codebase-memory-mcp/blob/main/docs/CONFIGURATION.md). Graph databases stay closed. Mixed agent and recovery roots are retained without enumerating their contents.                                                                                                             |
 | OrbStack                      | [OrbStack storage](https://docs.orbstack.dev/architecture). The host image and swap file have a logical size and allocated blocks. Guest filesystem type and free space require a separate guest observation.                                                                                                                              |
 
-`--volume /absolute/path` with `--family mounts` uses only the host mount table without opening that path. APFS and Btrfs may share extents. Linux mount propagation is separate from extent sharing. AFP, SMB, NFS, automounts and unknown filesystems are withheld from filesystem inspection. The command never derives physical reclaim from logical or allocated byte counts.
+## Select locations
 
-## Select more locations
+| To inspect                                                          | Command                                                               |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Rules, including the evidence a native owner must supply            | `agentrinse storage-rules --json`                                     |
+| One known cache and its eligible descendants                        | `agentrinse storage --rule npm.content --measure --max-entries 50000` |
+| Immediate Codex database and sidecar files by metadata              | `agentrinse storage --rule codex.database-files`                      |
+| System-owned Apple locations by root metadata                       | `agentrinse storage --system`                                         |
+| A package rescue archive at its actual path                         | `agentrinse storage --at npm.rescue=/work/rescue`                     |
+| Vendored source and an experimental transform cache under a project | `agentrinse storage --project /work/project`                          |
 
-Run `agentrinse storage-rules` to list registered paths, their owners and inspection methods. The JSON catalog also lists operator-supplied paths and native evidence. Use `--rule` for an opt-in location, `--system` for system-owned Apple locations, and `--at npm.rescue=/absolute/path` for a retained root. `--project /absolute/project` checks the exact vendored-source and experimental transform directories by metadata. `--native-volume /mountpoint` requests native counters for an already mounted local APFS or Btrfs filesystem.
+Repeat `--rule`, `--at` or `--project` for additional locations. Combine them with `--system` to include system locations. These selectors restrict the location list. `--family` further limits the owners shown. For an unclassified retained root, use `--retained-root /absolute/path`.
+
+Credential caches require explicit selection and expose root metadata only. The Codex database rule counts immediate matching regular files once per inode and leaves databases closed. Project inspection preserves vendor trees and experimental transform directories even when they are large.
+
+## Mounted filesystems
+
+`agentrinse storage --family mounts --volume /absolute/path` identifies the covering filesystem using the kernel mount table. AFP, SMB, NFS and automount paths stay opaque. To collect counters from an **already mounted local filesystem**, specify its exact mountpoint.
+
+```sh
+# macOS, APFS startup volume
+agentrinse storage --native-volume /
+
+# Linux, when /mnt/data is a Btrfs mountpoint
+agentrinse storage --native-volume /mnt/data
+```
+
+APFS reports snapshot counts, purgeability and container capacity. Btrfs reports device, allocated and unallocated bytes. A changed mount or failed probe yields `unavailable`. Missing APFS capacity or purgeability yields `partial` and preserves the known counts. Native counters describe the selected filesystem. Inspect an OrbStack guest from inside the running guest to obtain its counters. Sparse images, shared extents and snapshots prevent a physical reclaim estimate.
 
 ## Git pack storage
 
@@ -25,7 +48,7 @@ Pass one or more durable repository roots explicitly. For example, `agentrinse s
 
 The report separates ordinary packs, indexes, sidecars, `tmp_pack_*` names, `tmp_idx_*` names and other names starting with `tmp`. Names alone do not establish that an operation ended or a file is disposable. Per-repository figures count observed names. Global figures count each device/inode once, including hardlinked files across owners. Conflicting names with stable metadata use an ambiguous group. Files whose metadata or allocation changed between sightings are omitted from the global stable byte totals. Allocated bytes can include shared extents. [Git repository layout](https://git-scm.com/docs/gitrepository-layout)
 
-For registered project-local worktrees, use `agentrinse worktrees --repo /work/projects/one`. To include unregistered entries, select the actual containers with repeated `--root`, for example `--root /work/projects/one/.worktrees --root /work/projects/one/.claude/worktrees`. Add the managed worktree root explicitly when combining containers.
+Use `agentrinse worktrees --repo /work/projects/one --project-roots` to correlate registrations with the owner's `.worktrees` and `.claude/worktrees` containers. Add `--root` for each additional container, such as a managed worktree root or a temporary test directory. A missing registration, standalone checkout or stale-looking directory still requires its owner's decision.
 
 ## OpenClaw Crabbox staging
 
