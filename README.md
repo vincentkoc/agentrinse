@@ -135,6 +135,7 @@ inventory this machine's managed worktree containers before selecting repositori
 
 ```bash
 agentrinse worktrees
+agentrinse worktrees --repo /src/project --project-roots --measure
 agentrinse worktrees --root /work/current --root /work/legacy --repo /src/project --measure --json
 gwt finish-status --all --read-only | agentrinse worktrees --root "$(gwt root)" --gwt-status-stdin --measure --json
 ```
@@ -142,7 +143,10 @@ gwt finish-status --all --read-only | agentrinse worktrees --root "$(gwt root)" 
 the default checks `~/.codex/worktrees`, `$CODEX_HOME/worktrees` and
 `$DOTFILES_WORKTREES_ROOT` where configured. Repeat `--root` to replace the
 defaults. Supply `--repo` for owners with no surviving checkout in those roots.
-Registrations outside those containers appear separately with presence and owner.
+Add `--project-roots` to include existing `.worktrees` and `.claude/worktrees`
+containers under each explicitly named primary checkout. Linked checkouts and
+symlinked containers are reported as problems. Registrations outside the
+selected containers appear separately with presence and owner.
 The scan covers direct checkouts and one grouping directory, with a 50,000-entry
 discovery limit. Discovery and optional measurement have separate three-minute
 budgets. `--max-entries` defaults to 10,000 per checkout. Size is the logical

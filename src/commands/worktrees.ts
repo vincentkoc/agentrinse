@@ -42,6 +42,7 @@ type Options = {
   home: string;
   root: string[];
   repo: string[];
+  projectRoots?: boolean;
   measure?: boolean;
   maxEntries?: string;
   gwtStatusStdin?: boolean;
@@ -115,8 +116,10 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     if (env.CODEX_HOME) configured.push(join(absolute(env.CODEX_HOME), "worktrees"));
     if (env.DOTFILES_WORKTREES_ROOT) configured.push(absolute(env.DOTFILES_WORKTREES_ROOT));
   }
-  const paths = [...new Set(configured.map(absolute))].sort();
-  if (paths.some((path) => isPathInside(path, home) || dirname(path) === path))
+  if (options.projectRoots && !options.repo.length)
+    throw new Error("--project-roots requires --repo");
+  const paths = new Set(configured.map(absolute));
+  if ([...paths].some((path) => isPathInside(path, home) || dirname(path) === path))
     throw new Error(
       "Refusing the home, its ancestors, or a filesystem root as a worktree container",
     );
@@ -246,7 +249,42 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     return directoryEntries;
   }
 
-  for (const path of paths) {
+  for (const path of new Set(options.repo.map(absolute))) {
+    try {
+      const record = await readRepository(path, true);
+      if (options.projectRoots) {
+        if (!record || owners.get(path) !== path) {
+          problems.push({ path, code: "WORKTREE_PROJECT_OWNER_REQUIRED" });
+          continue;
+        }
+        const device = (await lstat(path)).dev;
+        // Validate each parent before looking up a child underneath it.
+        for (const parts of [[".worktrees"], [".claude", "worktrees"]]) {
+          let current = path;
+          try {
+            for (const part of parts) {
+              current = join(current, part);
+              const stats = await lstat(current);
+              if (
+                !stats.isDirectory() ||
+                stats.dev !== device ||
+                (await realpath(current)) !== current
+              )
+                throw new Error("unsafe project worktree container");
+            }
+            if (isPathInside(current, home)) throw new Error("unsafe project worktree container");
+            paths.add(current);
+          } catch (error) {
+            if (!missing(error))
+              problems.push({ path: current, code: "WORKTREE_PROJECT_ROOT_INCOMPLETE" });
+          }
+        }
+      }
+    } catch {
+      problems.push({ path, code: "WORKTREE_REGISTRATIONS_UNAVAILABLE" });
+    }
+  }
+  for (const path of [...paths].sort()) {
     const root: Root = { path, status: "available" };
     roots.push(root);
     try {
@@ -262,13 +300,6 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     } catch (error) {
       root.status = missing(error) ? "absent" : "incomplete";
       if (root.status === "incomplete") problems.push({ path, code: "WORKTREE_ROOT_INCOMPLETE" });
-    }
-  }
-  for (const path of new Set(options.repo.map(absolute))) {
-    try {
-      await readRepository(path, true);
-    } catch {
-      problems.push({ path, code: "WORKTREE_REGISTRATIONS_UNAVAILABLE" });
     }
   }
   const externalRegistrations: {

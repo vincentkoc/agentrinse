@@ -112,6 +112,54 @@ describe("worktree inventory", () => {
     expect(again.entries.find((e) => e.path === checkout)?.disposition).toBe("retain");
   });
 
+  it("inventories local project containers only for explicitly selected primary checkouts", async () => {
+    const home = await fixture();
+    const owner = join(home, "project");
+    await runFixtureGit(["init", "-b", "main", owner]);
+    await runFixtureGit(["-C", owner, "commit", "--allow-empty", "-m", "initial"]);
+    const roots = [join(owner, ".worktrees"), join(owner, ".claude", "worktrees")];
+    const checkouts = roots.map((root) => join(root, "task"));
+    for (const checkout of checkouts)
+      await runFixtureGit(["-C", owner, "worktree", "add", "--detach", checkout]);
+    const opts = { home, root: [], repo: [owner], measure: true };
+    const before = await inventoryWorktrees(opts, { environment: {} });
+    expect(before.summary.externalRegisteredDirectories).toBe(2);
+    const result = await inventoryWorktrees({ ...opts, projectRoots: true }, { environment: {} });
+    expect(result.entries.map((entry) => entry.path).sort()).toEqual(checkouts.sort());
+    expect(result.summary).toMatchObject({ registeredLinked: 2, externalRegisteredDirectories: 0 });
+    expect(result.entries.every((entry) => entry.size?.status === "complete")).toBe(true);
+    expect(result.problems).toEqual([]);
+    const linked = await inventoryWorktrees(
+      { ...opts, repo: [checkouts[0]!], projectRoots: true },
+      { environment: {} },
+    );
+    expect(linked.problems).toContainEqual({
+      path: checkouts[0],
+      code: "WORKTREE_PROJECT_OWNER_REQUIRED",
+    });
+    await expect(inventoryWorktrees({ ...opts, repo: [], projectRoots: true })).rejects.toThrow(
+      "--repo",
+    );
+  });
+
+  it("keeps linked project containers opaque and tolerates absent optional containers", async () => {
+    const home = await fixture();
+    const owner = join(home, "project");
+    await runFixtureGit(["init", "-b", "main", owner]);
+    const outside = join(home, "other");
+    await mkdir(join(outside, "worktrees", "private"), { recursive: true });
+    await symlink(outside, join(owner, ".claude"), "dir");
+    const result = await inventoryWorktrees(
+      { home, root: [], repo: [owner], projectRoots: true },
+      { environment: {} },
+    );
+    expect(result.entries).toEqual([]);
+    expect(result.problems).toEqual([
+      { path: join(owner, ".claude"), code: "WORKTREE_PROJECT_ROOT_INCOMPLETE" },
+    ]);
+    expect(result.roots.map((root) => root.path)).toEqual([join(home, ".codex", "worktrees")]);
+  });
+
   it("isolates configured containers and refuses unsafe paths or malformed input", async () => {
     const home = await fixture();
     const root = join(home, "worktrees");
