@@ -11,15 +11,10 @@ import type { Diagnostic } from "../contracts/diagnostic.js";
 import type { Finding } from "../contracts/finding.js";
 import type { AdapterProbe } from "../contracts/report.js";
 import type { ResourceSnapshot } from "../contracts/resource.js";
-import {
-  databaseIdentitySchema,
-  providerFileQuarantineActionSchema,
-  providerFileIdentitySchema,
-  type DatabaseVacuumAction,
-} from "../contracts/action.js";
+import { databaseIdentitySchema, type DatabaseVacuumAction } from "../contracts/action.js";
 import { sha256 } from "../core/digest.js";
 import { measurePath } from "../core/measure.js";
-import { PROVIDER_FILE_POLICIES } from "../core/provider-file-policy.js";
+import { classifyProviderFile } from "./provider-file-classification.js";
 import type { ReachabilityIndex } from "../core/reachability.js";
 import {
   codexDatabaseContractMatches,
@@ -515,9 +510,6 @@ export class ProviderAuditAdapter implements AuditAdapter {
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const observedAt = context.now.toISOString();
-    const providerFileIdentity = providerFileIdentitySchema.safeParse(
-      resource.facts.providerFileIdentity,
-    );
     const claudeNativeRetention = claudeNativeRetentionFactsSchema.safeParse(
       resource.facts.nativeRetention,
     );
@@ -531,75 +523,8 @@ export class ProviderAuditAdapter implements AuditAdapter {
       resource.facts.nativeMaintenance,
     );
     const grokOwnerContract = grokOwnerContractFactsSchema.safeParse(resource.facts.ownerContract);
-    const providerFilePolicy =
-      typeof resource.facts.policyId === "string"
-        ? PROVIDER_FILE_POLICIES.find(
-            (policy) =>
-              policy.id === resource.facts.policyId &&
-              providerFileIdentity.success &&
-              policy.matchesRelativePath(providerFileIdentity.data.relativePath),
-          )
-        : undefined;
-    if (
-      providerFileIdentity.success &&
-      providerFileIdentity.data.provider === this.spec.id &&
-      providerFilePolicy?.provider === this.spec.id
-    ) {
-      const identity = providerFileIdentity.data;
-      const oldEnough =
-        context.now.getTime() - identity.mtimeMs >= providerFilePolicy.minAgeMinutes * 60_000;
-      const candidateActions = oldEnough
-        ? [
-            providerFileQuarantineActionSchema.parse({
-              actionId: `provider.file-quarantine:${sha256(
-                `${providerFilePolicy.id}:${identity.fingerprint}`,
-              )}`,
-              type: "provider.file-quarantine",
-              adapter: providerFilePolicy.provider,
-              resourceId: resource.resource.id,
-              policyId: providerFilePolicy.id,
-              risk: "recoverable",
-              description: providerFilePolicy.description,
-              expectedReclaimBytes: 0,
-              pendingQuarantineBytes: identity.measuredBytes,
-              quarantineTtlMinutes: providerFilePolicy.quarantineTtlMinutes,
-              target: identity,
-            }),
-          ]
-        : [];
-      return {
-        schemaVersion: 1,
-        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-        auditId: context.auditId,
-        observedAt,
-        resource: resource.resource,
-        state: oldEnough ? "eligible" : "protected",
-        confidence: "certain",
-        roots: [
-          {
-            code: providerFilePolicy.rootCode,
-            source: this.id,
-            observedAt,
-            detail: providerFilePolicy.rootDetail,
-          },
-          ...(oldEnough
-            ? []
-            : [
-                {
-                  code: "provider-file-too-recent",
-                  source: this.id,
-                  observedAt,
-                  detail: providerFilePolicy.tooRecentDetail,
-                },
-              ]),
-        ],
-        facts: resource.facts,
-        candidateActions,
-        measuredBytes: identity.measuredBytes,
-        estimatedReclaimBytes: 0,
-        warnings: [],
-      };
-    }
+    const quarantinableFile = classifyProviderFile(this.spec.id, context, resource);
+    if (quarantinableFile) return quarantinableFile;
     const databaseIdentity = databaseIdentitySchema.safeParse(resource.facts.databaseIdentity);
     if (this.spec.id === "codex" && databaseIdentity.success) {
       const estimatedReclaimBytes =
