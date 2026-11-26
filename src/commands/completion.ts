@@ -16,6 +16,7 @@ const COMMANDS = [
   "plan",
   "purge",
   "show",
+  "storage",
   "undo",
   "worktrees",
 ] as const;

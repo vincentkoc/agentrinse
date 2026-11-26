@@ -1,0 +1,88 @@
+import { mkdir, realpath, writeFile, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, it } from "vitest";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
+import { inventoryStorage, executeStorageCommand } from "../../src/commands/storage.js";
+import { parseStorageMounts } from "../../src/core/storage-mounts.js";
+import { observeStoragePath } from "../../src/core/storage-observation.js";
+
+const local = parseStorageMounts("linux", "1 0 8:1 / / rw - ext4 /dev/example rw");
+async function fixture() {
+  return realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-storage-")));
+}
+
+it("accounts only direct regular files and leaves protected state opaque", async () => {
+  const home = await fixture(),
+    graphs = join(home, ".cache/codebase-memory-mcp"),
+    retained = join(home, ".codex/artifacts");
+  await mkdir(join(graphs, "nested"), { recursive: true });
+  await mkdir(retained, { recursive: true });
+  await writeFile(join(graphs, "example.db"), Buffer.from([0xfe, 0xff]));
+  await writeFile(join(graphs, "nested", "private"), "ignore me");
+  await symlink(retained, join(graphs, "linked"));
+  await writeFile(join(retained, "transcript.jsonl"), "protected");
+  const result = await inventoryStorage(
+    { home },
+    { platform: "linux", readMounts: async () => local },
+  );
+  expect(result.data.areas.find((a) => a.rule === "codebase-memory.graphs")).toMatchObject({
+    coverage: "direct-complete",
+    directDirectories: 1,
+    excluded: 1,
+    fileBytes: { files: 1, logicalBytes: "2" },
+  });
+  const state = result.data.areas.find((a) => a.rule === "codex.artifacts");
+  expect(state).toMatchObject({ coverage: "stat-only" });
+  expect(state).not.toHaveProperty("fileBytes");
+  expect(JSON.stringify(result)).not.toContain("transcript.jsonl");
+});
+it("withholds network and unknown mounts before any metadata syscall", async () => {
+  const home = await fixture();
+  const mounts = [
+    ...local,
+    { ...local[0]!, path: home, access: "network" as const, filesystem: "afpfs" },
+  ];
+  await expect(
+    observeStoragePath(join(home, "any"), mounts, async () => {
+      throw new Error("unexpected stat");
+    }),
+  ).resolves.toEqual({ status: "mount-boundary" });
+  const result = await inventoryStorage(
+    { home, volume: [home], family: ["mounts"] },
+    { readMounts: async () => mounts },
+  );
+  expect(result.data.areas).toEqual([]);
+  expect(result.data.volumeEvidence[0]?.coveringMount?.filesystem).toBe("afpfs");
+  expect((await inventoryStorage({ home }, { readMounts: async () => undefined })).status).toBe(
+    "degraded",
+  );
+});
+it("labels incomplete budgets, linked roots and redacts paths in both formats", async () => {
+  const home = await fixture(),
+    graph = join(home, ".cache/codebase-memory-mcp");
+  await mkdir(graph, { recursive: true });
+  await writeFile(join(graph, "a"), "a");
+  await writeFile(join(graph, "b"), "b");
+  await symlink(graph, join(home, ".cache/uv"));
+  const result = await inventoryStorage(
+    { home, maxEntries: "1" },
+    { platform: "linux", readMounts: async () => local },
+  );
+  expect(result.status).toBe("degraded");
+  expect(result.data.entriesInspected).toBe(1);
+  expect(result.data.areas.find((a) => a.rule === "uv.cache")?.coverage).toBe("linked");
+  expect(result.data.areas.find((a) => a.rule === "codebase-memory.graphs")?.coverage).toBe(
+    "entry-limit",
+  );
+  for (const json of [true, false])
+    expect(
+      await executeStorageCommand({
+        home,
+        retainedRoot: [graph],
+        family: ["retained"],
+        json,
+        redact: true,
+      }),
+    ).not.toContain(home);
+});

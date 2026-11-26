@@ -2,6 +2,8 @@
 
 audit first. clean deliberately. recover when it matters.
 
+Use [storage inventory](docs/storage.md) to inspect hidden developer caches, retained state and virtual disk allocation.
+
 ## what is agentrinse?
 
 agentrinse is a local-first cleanup planner for machines where coding agents,
