@@ -6,11 +6,7 @@ import type { AuditContext, CollectionResult } from "../contracts/adapter.js";
 import type { ResourceSnapshot } from "../contracts/resource.js";
 import { sha256 } from "../core/digest.js";
 import { inspectProviderFile } from "../core/provider-file-identity.js";
-import {
-  CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
-  CLAUDE_DEBUG_LOG_POLICY_ID,
-  isClaudeDebugLogRelativePath,
-} from "../core/provider-file-policy.js";
+import { CLAUDE_DEBUG_LOG_POLICY } from "../core/provider-file-policy.js";
 
 function isMissing(error: unknown): boolean {
   return (
@@ -100,13 +96,13 @@ export async function collectClaudeDebugLogs(
     };
   }
 
-  const cutoffMs = context.now.getTime() - CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES * 60_000;
+  const cutoffMs = context.now.getTime() - CLAUDE_DEBUG_LOG_POLICY.minAgeMinutes * 60_000;
   const resources: ResourceSnapshot[] = [];
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
     context.signal?.throwIfAborted();
     const path = join(debugRoot, entry.name);
     const relativePath = join("debug", entry.name);
-    if (!isClaudeDebugLogRelativePath(relativePath)) {
+    if (!CLAUDE_DEBUG_LOG_POLICY.matchesRelativePath(relativePath)) {
       continue;
     }
 
@@ -132,8 +128,8 @@ export async function collectClaudeDebugLogs(
         facts: {
           reportOnly: false,
           maintenanceAction: "provider.file-quarantine",
-          policyId: CLAUDE_DEBUG_LOG_POLICY_ID,
-          minAgeMinutes: CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
+          policyId: CLAUDE_DEBUG_LOG_POLICY.id,
+          minAgeMinutes: CLAUDE_DEBUG_LOG_POLICY.minAgeMinutes,
           providerFileIdentity: identity,
         },
       });

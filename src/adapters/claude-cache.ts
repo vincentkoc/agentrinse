@@ -4,10 +4,7 @@ import { join } from "node:path";
 import type { AuditContext, CollectionResult } from "../contracts/adapter.js";
 import { sha256 } from "../core/digest.js";
 import { inspectProviderFile } from "../core/provider-file-identity.js";
-import {
-  CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
-  CLAUDE_CHANGELOG_CACHE_POLICY_ID,
-} from "../core/provider-file-policy.js";
+import { CLAUDE_CHANGELOG_CACHE_POLICY } from "../core/provider-file-policy.js";
 
 function isMissing(error: unknown): boolean {
   return (
@@ -29,7 +26,7 @@ export async function collectClaudeChangelogCache(
     }
 
     const stats = await lstat(path);
-    const cutoffMs = context.now.getTime() - CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES * 60_000;
+    const cutoffMs = context.now.getTime() - CLAUDE_CHANGELOG_CACHE_POLICY.minAgeMinutes * 60_000;
     if (!stats.isFile() || stats.isSymbolicLink() || stats.mtimeMs > cutoffMs) {
       return { resources: [], diagnostics: [] };
     }
@@ -53,8 +50,8 @@ export async function collectClaudeChangelogCache(
           facts: {
             reportOnly: false,
             maintenanceAction: "provider.file-quarantine",
-            policyId: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
-            minAgeMinutes: CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
+            policyId: CLAUDE_CHANGELOG_CACHE_POLICY.id,
+            minAgeMinutes: CLAUDE_CHANGELOG_CACHE_POLICY.minAgeMinutes,
             providerFileIdentity: identity,
           },
         },

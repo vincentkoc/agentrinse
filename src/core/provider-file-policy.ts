@@ -200,6 +200,19 @@ export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [
   ZED_ROTATED_LOG_POLICY,
 ];
 
+export function matchProviderFilePolicy(
+  provider: string,
+  policyId: unknown,
+  relativePath: string,
+): ProviderFilePolicy | undefined {
+  return PROVIDER_FILE_POLICIES.find(
+    (policy) =>
+      policy.provider === provider &&
+      policy.id === policyId &&
+      policy.matchesRelativePath(relativePath),
+  );
+}
+
 export async function authorizeProviderFileAction(
   action: ProviderFileQuarantineAction,
   home: string,
@@ -212,10 +225,12 @@ export async function authorizeProviderFileAction(
   if (action.adapter === "openclaw" && config.adapters.openclaw?.enabled !== true) {
     throw new Error("OpenClaw snapshot quarantine requires the OpenClaw adapter to be enabled");
   }
-  const policy = PROVIDER_FILE_POLICIES.find(
-    (candidate) => candidate.id === action.policyId && candidate.provider === action.adapter,
+  const policy = matchProviderFilePolicy(
+    action.adapter,
+    action.policyId,
+    action.target.relativePath,
   );
-  if (policy === undefined || !policy.matchesRelativePath(action.target.relativePath)) {
+  if (policy === undefined) {
     throw new Error(
       `provider-file target is not approved by policy ${action.adapter}:${action.policyId}`,
     );

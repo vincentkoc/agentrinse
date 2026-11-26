@@ -1,3 +1,4 @@
+import { matchProviderFilePolicy } from "../../src/core/provider-file-policy.js";
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
@@ -392,5 +393,20 @@ describe("provider file policy", () => {
         new Date("2026-07-28T00:00:00.000Z"),
       ),
     ).rejects.toThrow("provider-file target is outside the configured zed root");
+  });
+});
+
+describe("provider file matching", () => {
+  it("requires the same owner, policy and relative path for classification and revalidation", () => {
+    expect(
+      matchProviderFilePolicy("claude", "claude.debug-log", join("debug", "run.txt"))?.id,
+    ).toBe("claude.debug-log");
+    expect(
+      matchProviderFilePolicy("zed", "claude.debug-log", join("debug", "run.txt")),
+    ).toBeUndefined();
+    expect(
+      matchProviderFilePolicy("claude", "claude.debug-log", join("projects", "run.txt")),
+    ).toBeUndefined();
+    expect(matchProviderFilePolicy("claude", undefined, join("debug", "run.txt"))).toBeUndefined();
   });
 });
