@@ -30,6 +30,8 @@ Cargo declares one rebuildable directory.
 
 The operator must select `target` for an explicit project. A match goes through the same project-root, Git, size, age, mount and process checks as the other [project artifacts](../src/adapters/artifacts/adapter.ts).
 
+To require a cache declaration, set `"proof": "cachedir-tag"` in a project-artifact descriptor. The collector reads at most 45 bytes of the direct regular `CACHEDIR.TAG` file and checks its first line. Apply repeats the check before and after isolation. The marker declares a cache at the configured path. It cannot identify the process that wrote it. See the [format](https://bford.info/cachedir/spec.html) and the writers in [pytest](https://github.com/pytest-dev/pytest/blob/9.0.1/src/_pytest/cacheprovider.py#L225), [mypy](https://github.com/python/mypy/blob/v1.18.2/mypy/build.py#L1227) and [Ruff](https://github.com/astral-sh/ruff/blob/0.14.8/crates/ruff/src/cache.rs#L356).
+
 ## Choose the method
 
 **Provider file quarantine.** Set the owner root, relative directory components, filename matcher, age and recovery window. `exact` discovery inspects one literal filename. `children` enumerates one bounded directory. An incomplete enumeration yields no candidates. The [shared collector](../src/adapters/provider-file-discovery.ts) pins identity before classification. Apply selects the matching rule again, resolves the configured owner, and verifies content and live holders. The original manifest governs recovery after a rule changes.

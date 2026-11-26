@@ -3333,6 +3333,7 @@ Exit criteria:
 
 - Never removes the main worktree.
 - Never removes dirty, active, locked, provider-rooted, or unpushed work.
+- Python tool caches `.pytest_cache`, `.mypy_cache` and `.ruff_cache` require explicit project selection and a standard CACHEDIR.TAG signature during discovery and live revalidation.
 - Trims only declared rebuildable artifacts. A nested agent state root (such as `.codex` or `.claude`) blocks removal. Artifact measurement skips its contents, including during apply and the final check of the isolated directory.
 - Quarantines eligible worktrees on the same filesystem.
 - Creates a durable recovery ref before removal.

@@ -1,0 +1,6 @@
+{
+  "id": "ruff.cache",
+  "kind": "project-artifacts",
+  "names": [".ruff_cache"],
+  "proof": "cachedir-tag"
+}

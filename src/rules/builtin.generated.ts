@@ -22,5 +22,14 @@ export const artifactNames = [
   ".cache",
   "coverage",
   "target",
+  ".mypy_cache",
+  ".pytest_cache",
   ".venv",
+  ".ruff_cache",
+] as const;
+// oxfmt-ignore
+export const cacheTagNames = [
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache",
 ] as const;

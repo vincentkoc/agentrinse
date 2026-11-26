@@ -1,0 +1,6 @@
+{
+  "id": "mypy.cache",
+  "kind": "project-artifacts",
+  "names": [".mypy_cache"],
+  "proof": "cachedir-tag"
+}

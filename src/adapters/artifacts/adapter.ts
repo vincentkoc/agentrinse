@@ -1,6 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { hasCacheTag, requiresCacheTag } from "../../rules/build/cache-tag.js";
 import { artifactDecisionBeforeHolderProbe } from "../../rules/build/inspection.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
@@ -180,14 +181,6 @@ export class ArtifactAuditAdapter implements AuditAdapter {
           const stats = await lstat(path);
           const isDirectory = stats.isDirectory();
           const isSymlink = stats.isSymbolicLink();
-          const measurement =
-            isDirectory && !isSymlink && this.options.measureBytes
-              ? await measurePath(path, {
-                  maxEntries: this.options.maxEntries,
-                  protectEntry: isArtifactAgentState,
-                  ...(context.signal === undefined ? {} : { signal: context.signal }),
-                })
-              : undefined;
           const mounts =
             isDirectory && !isSymlink
               ? await this.mountProbe(path)
@@ -196,6 +189,21 @@ export class ArtifactAuditAdapter implements AuditAdapter {
                   paths: [],
                   reason: "resource is not a real directory",
                 } satisfies MountBoundaryResult);
+          const cacheTagVerified = requiresCacheTag(name)
+            ? isDirectory &&
+              !isSymlink &&
+              mounts.status === "clear" &&
+              stats.dev === projectStats.dev &&
+              (await hasCacheTag(path, stats.dev))
+            : undefined;
+          const measurement =
+            isDirectory && !isSymlink && cacheTagVerified !== false && this.options.measureBytes
+              ? await measurePath(path, {
+                  maxEntries: this.options.maxEntries,
+                  protectEntry: isArtifactAgentState,
+                  ...(context.signal === undefined ? {} : { signal: context.signal }),
+                })
+              : undefined;
           const gitState =
             isDirectory && !isSymlink
               ? await inspectArtifactGitState(projectRoot, name)
@@ -217,6 +225,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
             facts: {
               projectRoot,
               name,
+              ...(cacheTagVerified === undefined ? {} : { cacheTagVerified }),
               device: stats.dev,
               inode: stats.ino,
               mtimeMs: stats.mtimeMs,

@@ -16,6 +16,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- Projects can opt into pytest, mypy and Ruff cache removal by exact name. Each cache must contain a valid CACHEDIR.TAG declaration at audit and apply time.
+
 - `agentrinse worktrees` inventories linked checkouts, standalone repositories,
   missing registrations, logical worktree sizes and direct Git administrative
   file bytes. Optional GWT completion records separate native-closeout review

@@ -1,3 +1,4 @@
+import { requiresCacheTag } from "./cache-tag.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { inspectArtifactGitState } from "../../core/artifact-git-state.js";
 import type { Finding } from "../../contracts/finding.js";
@@ -20,6 +21,13 @@ export function artifactInspectionBlocker(
       code: "ARTIFACT_NOT_DIRECTORY",
       confidence: "certain",
       message: "Only declared artifact directories are supported.",
+    };
+  if (requiresCacheTag(facts.name) && facts.cacheTagVerified !== true)
+    return {
+      code: "ARTIFACT_CACHE_TAG_UNVERIFIED",
+      confidence: "unknown",
+      message:
+        "The configured cache requires a regular CACHEDIR.TAG with the standard signature on its first line.",
     };
   if (typeof facts.protectedAgentEntries === "number" && facts.protectedAgentEntries > 0)
     return {

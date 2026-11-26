@@ -1,0 +1,5 @@
+{
+  "rule": "pytest.cache",
+  "accept": [".pytest_cache"],
+  "reject": [".pytest_cache.old", "pytest"]
+}

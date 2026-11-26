@@ -1,6 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { hasCacheTag, requiresCacheTag } from "../rules/build/cache-tag.js";
 import { artifactMeasurementChanged, isArtifactAgentState } from "./artifact-measurement.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import { openClawPathProtection } from "../adapters/openclaw-ownership.js";
@@ -174,6 +175,13 @@ export async function revalidateArtifactRemove(
       );
     }
 
+    if (requiresCacheTag(action.target.name) && !(await hasCacheTag(targetPath, targetStats.dev))) {
+      return stale(
+        action,
+        "ARTIFACT_CACHE_TAG_UNVERIFIED",
+        "artifact cache declaration could not be verified",
+      );
+    }
     const measurement = await (dependencies.measure ?? measurePath)(targetPath, {
       maxEntries: config.audit.maxEntries,
       protectEntry: isArtifactAgentState,

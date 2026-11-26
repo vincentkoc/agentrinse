@@ -3,6 +3,7 @@ import { lstatSync, rmSync, type Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { hasCacheTag, requiresCacheTag } from "../rules/build/cache-tag.js";
 import { artifactMeasurementChanged, isArtifactAgentState } from "./artifact-measurement.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
@@ -200,6 +201,18 @@ export async function executeArtifactRemove(
   }
 
   const checkContents = async () => {
+    if (
+      requiresCacheTag(action.target.name) &&
+      !(await hasCacheTag(isolationPath, action.target.device))
+    ) {
+      await rollbackBeforeRemoval(
+        "artifact cache declaration changed during isolation",
+        action,
+        isolationPath,
+        inspect,
+        move,
+      );
+    }
     const measurement = await measure(isolationPath, {
       maxEntries: dependencies.maxEntries ?? 100_000,
       protectEntry: isArtifactAgentState,

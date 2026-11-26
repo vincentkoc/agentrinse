@@ -1,0 +1,5 @@
+{
+  "rule": "mypy.cache",
+  "accept": [".mypy_cache"],
+  "reject": [".mypy_cache.old", "mypy"]
+}
