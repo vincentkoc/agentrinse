@@ -1,5 +1,7 @@
 import { readdir, readFile, readlink } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
+
+import { isPathInside } from "./safety.js";
 
 import { runBoundedCommand } from "./bounded-command.js";
 
@@ -40,11 +42,6 @@ export type LsofFileRecord = {
 type LsofInspection =
   | { status: "complete"; records: LsofFileRecord[] }
   | { status: "unknown"; reason: string; scope: "path" | "host" };
-
-function isInside(root: string, candidate: string): boolean {
-  const result = relative(resolve(root), resolve(candidate));
-  return result === "" || (!result.startsWith("..") && !isAbsolute(result));
-}
 
 function cleanProcLink(value: string): string {
   return value.endsWith(" (deleted)") ? value.slice(0, -" (deleted)".length) : value;
@@ -164,7 +161,7 @@ async function inspectLinux(
       }
 
       const cwd = cleanProcLink(await readlink(resolve(processRoot, "cwd")));
-      if (isInside(target, cwd)) {
+      if (isPathInside(target, cwd)) {
         matches.push({ pid, source: "cwd", path: cwd });
       }
 
@@ -172,7 +169,7 @@ async function inspectLinux(
       for (const descriptor of descriptors) {
         try {
           const path = cleanProcLink(await readlink(resolve(processRoot, "fd", descriptor)));
-          if (isAbsolute(path) && isInside(target, path)) {
+          if (isAbsolute(path) && isPathInside(target, path)) {
             matches.push({ pid, source: "fd", path });
           }
         } catch (error) {

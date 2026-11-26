@@ -70,6 +70,20 @@ describe("ReachabilityIndex", () => {
     ]);
   });
 
+  it("protects session descendants whose first component starts with two dots", () => {
+    const index = new ReachabilityIndex();
+    index.add({
+      code: "recent-session",
+      source: "claude",
+      path: "/tmp/project",
+      scope: "subtree",
+      detail: "Session project.",
+    });
+    const observedAt = "2026-07-24T00:00:00.000Z";
+    expect(index.rootsFor("/tmp/project/..notes/output", observedAt)).toHaveLength(1);
+    expect(index.rootsFor("/tmp/..notes/output", observedAt)).toEqual([]);
+  });
+
   it("deduplicates identical evidence", () => {
     const index = new ReachabilityIndex();
     const root = {

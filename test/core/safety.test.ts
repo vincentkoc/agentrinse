@@ -53,10 +53,13 @@ describe("isPathInside", () => {
   it("accepts a path at or below the root", () => {
     expect(isPathInside("/tmp/project", "/tmp/project")).toBe(true);
     expect(isPathInside("/tmp/project", "/tmp/project/node_modules")).toBe(true);
+    expect(isPathInside("/tmp/project", "/tmp/project/..cache/file")).toBe(true);
   });
 
   it("rejects sibling-prefix paths", () => {
     expect(isPathInside("/tmp/project", "/tmp/project-other")).toBe(false);
+    expect(isPathInside("/tmp/project", "/tmp/project/..")).toBe(false);
+    expect(isPathInside("/tmp/project", "/tmp/project/../..cache")).toBe(false);
   });
 });
 

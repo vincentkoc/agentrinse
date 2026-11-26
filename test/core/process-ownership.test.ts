@@ -52,6 +52,24 @@ describe("findProcessesUsingPath", () => {
     ]);
   });
 
+  it("recognizes holders inside double-dot-prefixed subdirectories", async () => {
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-proc-"));
+    const target = join(root, "project");
+    const cwd = join(target, "..cache");
+    const fd = join(cwd, "open");
+    const procRoot = join(root, "proc");
+    await fakeProcess(procRoot, 101, 501, cwd, [fd, join(root, "..other", "outside")]);
+    expect(await findProcessesUsingPath(target, { platform: "linux", procRoot, uid: 501 })).toEqual(
+      {
+        status: "busy",
+        matches: [
+          { pid: 101, source: "cwd", path: cwd },
+          { pid: 101, source: "fd", path: fd },
+        ],
+      },
+    );
+  });
+
   it("ignores processes owned by other users", async () => {
     const root = createFixtureDirectory(join(tmpdir(), "agentrinse-proc-"));
     const procRoot = join(root, "proc");

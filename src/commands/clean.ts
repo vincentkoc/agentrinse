@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
+
+import { isPathInside } from "../core/safety.js";
 import { promisify } from "node:util";
 
 import { parseWorktreePorcelain } from "../adapters/git/porcelain.js";
@@ -156,11 +158,6 @@ async function defaultRunCommand(
   return { stdout: result.stdout, stderr: result.stderr };
 }
 
-function isInside(root: string, candidate: string): boolean {
-  const result = relative(resolve(root), resolve(candidate));
-  return result === "" || (!result.startsWith("..") && !isAbsolute(result));
-}
-
 function scopedConfig(
   config: AgentRinseConfig,
   gitRoot: string,
@@ -173,7 +170,7 @@ function scopedConfig(
   }
   scoped.adapters.git = { enabled: true, root: gitRoot };
   scoped.artifacts.projects = scoped.artifacts.projects.filter((project) =>
-    worktrees.some((worktree) => isInside(worktree, project.root)),
+    worktrees.some((worktree) => isPathInside(worktree, project.root)),
   );
   if (maxRisk !== undefined) {
     scoped.plan.maxRisk = maxRisk;

@@ -1,6 +1,6 @@
 import { homedir, tmpdir } from "node:os";
 import { realpath } from "node:fs/promises";
-import { basename, dirname, isAbsolute, parse, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, parse, relative, resolve, sep } from "node:path";
 
 export class UnsafeAuditRootError extends Error {
   override readonly name = "UnsafeAuditRootError";
@@ -12,7 +12,7 @@ export class UnsafeDestructiveFixtureError extends Error {
 
 export function isPathInside(root: string, candidate: string): boolean {
   const result = relative(resolve(root), resolve(candidate));
-  return result === "" || (!result.startsWith("..") && !isAbsolute(result));
+  return result !== ".." && !result.startsWith(`..${sep}`) && !isAbsolute(result);
 }
 
 export async function resolvePhysicalPath(candidate: string): Promise<string> {
