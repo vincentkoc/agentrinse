@@ -260,6 +260,8 @@ rollback set is actually deleted.
 | `agentrinse purge`                        | preview worktree and database recovery backups            | none                  |
 | `agentrinse purge --apply --yes`          | permanently remove selected recovery backups              | destructive           |
 | `agentrinse doctor`                       | diagnose platform, config, state, Git, and optional tools | none                  |
+| `agentrinse storage-rules`                | list storage rules, scopes and required owner evidence    | none                  |
+| `agentrinse storage`                      | inspect storage metadata and native volume counters       | none                  |
 | `agentrinse adapters`                     | show adapter maturity and ownership                       | none                  |
 | `agentrinse history`                      | list persisted cleanup runs                               | none                  |
 | `agentrinse show`                         | inspect runs, plans, and resource findings                | none                  |
