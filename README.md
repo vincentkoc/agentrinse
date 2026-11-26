@@ -147,8 +147,9 @@ Add `--project-roots` to include existing `.worktrees` and `.claude/worktrees`
 containers under each explicitly named primary checkout. Linked checkouts and
 symlinked containers are reported as problems. A derived container also requires
 a known local filesystem and no mount at or below the container or along its path
-from the owner. Registrations outside the
-selected containers appear separately with presence and owner.
+from the owner. Registrations outside the selected containers appear separately
+with presence and owner. Conflicting Git registrations list every claiming owner
+and mark the external path unresolved.
 The scan covers direct checkouts and one grouping directory, with a 50,000-entry
 discovery limit. Discovery and optional measurement have separate three-minute
 budgets. `--max-entries` defaults to 10,000 per checkout. Size is the logical
