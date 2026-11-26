@@ -160,6 +160,32 @@ describe("worktree inventory", () => {
     expect(result.roots.map((root) => root.path)).toEqual([join(home, ".codex", "worktrees")]);
   });
 
+  it("reports conflicting external Git ownership independently of repository order", async () => {
+    const home = await fixture();
+    const root = join(home, "selected");
+    await mkdir(root);
+    const owners = [join(home, "one"), join(home, "two")];
+    const paths = [join(home, "shared"), join(home, "other")];
+    for (const [i, owner] of owners.entries()) {
+      await runFixtureGit(["init", "-b", "main", owner]);
+      await runFixtureGit(["-C", owner, "commit", "--allow-empty", "-m", "initial"]);
+      await runFixtureGit(["-C", owner, "worktree", "add", "--detach", paths[i]!]);
+    }
+    const { stdout } = await runFixtureGit(["-C", paths[1]!, "rev-parse", "--absolute-git-dir"]);
+    await writeFile(join(stdout.trimEnd(), "gitdir"), join(paths[0]!, ".git") + "\n");
+    for (const repo of [owners, [...owners].reverse()]) {
+      const result = await inventoryWorktrees({ home, root: [root], repo }, { environment: {} });
+      expect(result.externalRegistrations).toEqual([
+        { path: paths[0], ownerRepositories: owners, presence: "unresolved" },
+      ]);
+      expect(result.problems).toEqual([{ path: paths[0], code: "WORKTREE_REGISTRATION_CONFLICT" }]);
+      expect(result.summary).toMatchObject({
+        externalUnresolved: 1,
+        externalRegisteredDirectories: 0,
+      });
+    }
+  });
+
   it("isolates configured containers and refuses unsafe paths or malformed input", async () => {
     const home = await fixture();
     const root = join(home, "worktrees");

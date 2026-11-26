@@ -39,6 +39,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- External worktree registrations claimed by multiple Git owners report unresolved ownership and list all claimants regardless of repository argument order.
+
 - Process holders, session roots, and artifact project scopes now recognize child names such as `..cache` when checking path containment.
 
 - Artifact plans and cleanup summaries identify logical byte counts. Completed totals use the actions that contributed reclaimed bytes. Sparse files and shared blocks can yield a smaller change in available disk space.

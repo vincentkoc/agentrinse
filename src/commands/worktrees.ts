@@ -142,7 +142,7 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
   const entries = new Map<string, Entry>();
   const registrations = new Map<string, GitWorktreeRecord>();
   const owners = new Map<string, string>();
-  const conflicting = new Set<string>();
+  const conflicting = new Map<string, Set<string>>();
   const repositories = new Map<string, GitWorktreeRecord[]>();
   const explicitRegistrations = new Map<string, string>();
   const problems: { path: string; code: string }[] = [];
@@ -178,7 +178,12 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
       repositories.set(common, records);
       for (const record of records) {
         const checkout = resolve(record.path);
-        if (registrations.has(checkout)) conflicting.add(checkout);
+        const priorOwner = owners.get(checkout);
+        if (priorOwner && records[0]) {
+          const claims = conflicting.get(checkout) ?? new Set([priorOwner]);
+          claims.add(resolve(records[0].path));
+          conflicting.set(checkout, claims);
+        }
         registrations.set(checkout, record);
         if (records[0]) owners.set(checkout, resolve(records[0].path));
       }
@@ -305,11 +310,22 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
   }
   const externalRegistrations: {
     path: string;
-    ownerRepository: string;
+    ownerRepository?: string;
+    ownerRepositories?: string[];
     presence: "directory" | "missing" | "unresolved";
   }[] = [];
   for (const [path, ownerRepository] of explicitRegistrations) {
     if (withinRoot(roots, path) || entries.has(path)) continue;
+    const claims = conflicting.get(path);
+    if (claims) {
+      externalRegistrations.push({
+        path,
+        ownerRepositories: [...claims].sort(),
+        presence: "unresolved",
+      });
+      problems.push({ path, code: "WORKTREE_REGISTRATION_CONFLICT" });
+      continue;
+    }
     let presence: "directory" | "missing" | "unresolved" = "unresolved";
     try {
       if (
