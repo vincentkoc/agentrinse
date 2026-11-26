@@ -223,6 +223,27 @@ async function runPhase<T>(options: {
   }
 }
 
+/** Run a full inventory with the configured total and per-phase budgets. */
+export async function runFullAudit(options: RunAuditOptions): Promise<AuditReport> {
+  const { deadlineMs, phaseTimeoutMs } = options.config.audit;
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort(new AuditPhaseDeadlineError("agentrinse", "collect", deadlineMs));
+  }, deadlineMs);
+  timer.unref();
+  try {
+    return await runAudit({
+      ...options,
+      signal: options.signal
+        ? AbortSignal.any([options.signal, controller.signal])
+        : controller.signal,
+      phaseTimeoutMs,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
   if (
     options.phaseTimeoutMs !== undefined &&
@@ -276,6 +297,7 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
       if (!(error instanceof AuditPhaseDeadlineError)) {
         throw error;
       }
+      adapter.markDiscoveryIncomplete?.();
       const diagnostic = phaseDeadlineDiagnostic(error);
       probe = {
         adapter: adapter.id,
@@ -342,6 +364,7 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
       if (!(error instanceof AuditPhaseDeadlineError)) {
         throw error;
       }
+      adapter.markDiscoveryIncomplete?.();
       const diagnostic = phaseDeadlineDiagnostic(error);
       const deadlineDiagnostics = [...partialDiagnostics, diagnostic];
       diagnostics.push(...deadlineDiagnostics);

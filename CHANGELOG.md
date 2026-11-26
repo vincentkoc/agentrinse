@@ -24,6 +24,10 @@ The project follows semantic versioning after its first supported release.
   Vitest is capped at 8 workers, and the real SQLite compact/restore fixture stubs
   open-handle inspection the same way it already stubs process inspection.
 
+- Full audits now honor the configured total and per-phase time budgets and
+  report incomplete inventory when a deadline expires. Unresolved provider
+  ownership keeps dependent artifact and worktree actions out of cleanup plans.
+
 - In fleet campaigns, one worktree's Git inspection failure (for example a
   `git status` timeout) no longer drops every worktree in that repository.
   The failed worktree is reported as inspection-incomplete and stays

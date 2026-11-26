@@ -80,6 +80,16 @@ export class ProviderAuditAdapter implements AuditAdapter {
     return resolveProviderRoot(this.spec, context.home, this.options);
   }
 
+  markDiscoveryIncomplete(): void {
+    if (this.id === "codex" || this.id === "claude" || this.id === "openclaw") {
+      this.options.reachability?.addGlobal({
+        code: "unknown-provider-state",
+        source: this.id,
+        detail: "Provider workspace ownership discovery did not complete.",
+      });
+    }
+  }
+
   async probe(context: AuditContext): Promise<AdapterProbe> {
     let root: string;
     try {

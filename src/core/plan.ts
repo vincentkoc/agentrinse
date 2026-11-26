@@ -22,9 +22,22 @@ export function createCleanupPlan(
   const expiresAt = new Date(now.getTime() + config.plan.ttlMinutes * 60_000).toISOString();
   const configDigest = sha256Json(config);
   const auditDigest = sha256Json(audit);
+  // Older saved audits may have emitted eligible artifacts/worktrees after a
+  // provider timed out, before its workspace roots entered the shared index.
+  const ownershipIncomplete = audit.diagnostics.some(
+    (entry) =>
+      entry.code === "AUDIT_PHASE_DEADLINE_EXCEEDED" &&
+      entry.resourceId === undefined &&
+      ["codex", "claude", "openclaw", "agentrinse"].includes(entry.adapter ?? ""),
+  );
   const actions = audit.findings
     .filter((finding) => finding.state === "eligible")
     .flatMap((finding) => finding.candidateActions)
+    .filter(
+      (action) =>
+        !ownershipIncomplete ||
+        (action.type !== "artifacts.remove" && action.type !== "worktree.quarantine"),
+    )
     .filter((action) => RISK_ORDER[action.risk] <= RISK_ORDER[config.plan.maxRisk])
     .sort((left, right) => left.actionId.localeCompare(right.actionId));
   const planWithoutId = {

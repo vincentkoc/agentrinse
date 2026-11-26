@@ -87,6 +87,28 @@ describe("createCleanupPlan", () => {
     expect(plan.home).toBe(AUDIT.home);
     expect(plan.actions).toHaveLength(1);
     expect(plan.expectedReclaimBytes).toBe(1024);
+
+    for (const adapter of ["codex", "claude", "openclaw"]) {
+      const partial = {
+        ...audit,
+        diagnostics: [
+          {
+            code: "AUDIT_PHASE_DEADLINE_EXCEEDED",
+            severity: "warning" as const,
+            message: "incomplete",
+            adapter,
+          },
+        ],
+      };
+      expect(
+        createCleanupPlan(JSON.parse(JSON.stringify(partial)), DEFAULT_CONFIG).actions,
+      ).toEqual([]);
+      const classified = {
+        ...partial,
+        diagnostics: partial.diagnostics.map((d) => ({ ...d, resourceId: "classified-late" })),
+      };
+      expect(createCleanupPlan(classified, DEFAULT_CONFIG).actions).toHaveLength(1);
+    }
   });
 
   it("tracks quarantined bytes separately from immediate reclaim", () => {

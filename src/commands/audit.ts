@@ -6,7 +6,7 @@ import { PROVIDER_IDS, type ProviderAdapterId } from "../adapters/provider-specs
 import { loadConfigForHome } from "../config/load.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { AuditReport } from "../contracts/report.js";
-import { runAudit, type AuditProgressEvent } from "../core/audit.js";
+import { runAudit, runFullAudit, type AuditProgressEvent } from "../core/audit.js";
 import { parseDurationMs } from "../core/duration.js";
 import { redactAuditReport, redactAuditValue } from "../core/redaction.js";
 import {
@@ -191,7 +191,8 @@ export async function executeAuditCommand(
     );
   }
   try {
-    const discoveredReport = await runAudit({
+    const audit = quick ? runAudit : runFullAudit;
+    const discoveredReport = await audit({
       home,
       config: effectiveConfig,
       adapters: createAuditAdapters(effectiveConfig, process.platform, {
