@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "../adapters/git/porcelain.js";
 import { missingAdminSizes, registeredCheckoutPath } from "../adapters/git/worktree-admin-size.js";
+import { projectWorktreeRoots } from "../rules/git/project-worktree-roots.js";
+import { coveringMount, readStorageMounts } from "../core/storage-mounts.js";
 import { measurePath } from "../core/measure.js";
 import { redactAuditValue } from "../core/redaction.js";
 import { isPathInside } from "../core/safety.js";
@@ -42,13 +44,18 @@ type Options = {
   home: string;
   root: string[];
   repo: string[];
+  projectRoots?: boolean;
   measure?: boolean;
   maxEntries?: string;
   gwtStatusStdin?: boolean;
   json?: boolean;
   redact?: boolean;
 };
-type Dependencies = { environment?: NodeJS.ProcessEnv; input?: AsyncIterable<Uint8Array> };
+type Dependencies = {
+  environment?: NodeJS.ProcessEnv;
+  input?: AsyncIterable<Uint8Array>;
+  readMounts?: typeof readStorageMounts;
+};
 
 function missing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -115,8 +122,10 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     if (env.CODEX_HOME) configured.push(join(absolute(env.CODEX_HOME), "worktrees"));
     if (env.DOTFILES_WORKTREES_ROOT) configured.push(absolute(env.DOTFILES_WORKTREES_ROOT));
   }
-  const paths = [...new Set(configured.map(absolute))].sort();
-  if (paths.some((path) => isPathInside(path, home) || dirname(path) === path))
+  if (options.projectRoots && !options.repo.length)
+    throw new Error("--project-roots requires --repo");
+  const paths = new Set(configured.map(absolute));
+  if ([...paths].some((path) => isPathInside(path, home) || dirname(path) === path))
     throw new Error(
       "Refusing the home, its ancestors, or a filesystem root as a worktree container",
     );
@@ -246,7 +255,37 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     return directoryEntries;
   }
 
-  for (const path of paths) {
+  const projectMounts = options.projectRoots
+    ? await (dependencies.readMounts ?? readStorageMounts)(process.platform)
+    : undefined;
+  const withheldContainers: string[] = [];
+  for (const path of new Set(options.repo.map(absolute))) {
+    try {
+      if (
+        options.projectRoots &&
+        (!projectMounts || coveringMount(path, projectMounts)?.access !== "local")
+      ) {
+        problems.push({ path, code: "WORKTREE_PROJECT_MOUNTS_UNAVAILABLE" });
+        continue;
+      }
+      const record = await readRepository(path, true);
+      if (projectMounts) {
+        if (!record || owners.get(path) !== path) {
+          problems.push({ path, code: "WORKTREE_PROJECT_OWNER_REQUIRED" });
+          continue;
+        }
+        const { available, withheld } = await projectWorktreeRoots(path, home, projectMounts);
+        for (const root of available) paths.add(root);
+        for (const root of withheld) {
+          withheldContainers.push(root);
+          problems.push({ path: root, code: "WORKTREE_PROJECT_ROOT_INCOMPLETE" });
+        }
+      }
+    } catch {
+      problems.push({ path, code: "WORKTREE_REGISTRATIONS_UNAVAILABLE" });
+    }
+  }
+  for (const path of [...paths].sort()) {
     const root: Root = { path, status: "available" };
     roots.push(root);
     try {
@@ -264,13 +303,6 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
       if (root.status === "incomplete") problems.push({ path, code: "WORKTREE_ROOT_INCOMPLETE" });
     }
   }
-  for (const path of new Set(options.repo.map(absolute))) {
-    try {
-      await readRepository(path, true);
-    } catch {
-      problems.push({ path, code: "WORKTREE_REGISTRATIONS_UNAVAILABLE" });
-    }
-  }
   const externalRegistrations: {
     path: string;
     ownerRepository: string;
@@ -280,7 +312,12 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     if (withinRoot(roots, path) || entries.has(path)) continue;
     let presence: "directory" | "missing" | "unresolved" = "unresolved";
     try {
-      if (!deadline.aborted && (await realpath(dirname(path))) === dirname(path)) {
+      if (
+        !deadline.aborted &&
+        !(projectMounts && coveringMount(path, projectMounts)?.access !== "local") &&
+        !withheldContainers.some((root) => path === root || path.startsWith(root + sep)) &&
+        (await realpath(dirname(path))) === dirname(path)
+      ) {
         const stats = await lstat(path);
         if (stats.isDirectory()) presence = "directory";
       }

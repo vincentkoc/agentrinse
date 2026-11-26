@@ -158,6 +158,11 @@ export function buildProgram(): Command {
       [],
     )
     .option(
+      "--project-roots",
+      "include .worktrees and .claude/worktrees under explicit repository owners",
+      false,
+    )
+    .option(
       "--gwt-status-stdin",
       "read JSON from gwt finish-status --all --read-only on stdin",
       false,
