@@ -1,4 +1,6 @@
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
+
+import { isPathInside } from "../core/safety.js";
 
 import { z } from "zod";
 
@@ -83,11 +85,6 @@ const pinSchema = z.union([
     })
     .strict(),
 ]);
-
-function isInside(root: string, candidate: string): boolean {
-  const result = relative(resolve(root), resolve(candidate));
-  return result === "" || (!result.startsWith("..") && !isAbsolute(result));
-}
 
 export const agentRinseConfigSchema = z
   .object({
@@ -187,7 +184,7 @@ export const agentRinseConfigSchema = z
       for (let right = left + 1; right < targets.length; right += 1) {
         const first = targets[left]!;
         const second = targets[right]!;
-        if (isInside(first.path, second.path) || isInside(second.path, first.path)) {
+        if (isPathInside(first.path, second.path) || isPathInside(second.path, first.path)) {
           context.addIssue({
             code: "custom",
             message: "artifact cleanup targets must not overlap",

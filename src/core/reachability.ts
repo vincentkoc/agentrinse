@@ -1,4 +1,6 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { resolve } from "node:path";
+
+import { isPathInside } from "./safety.js";
 
 import type { RootEvidence } from "../contracts/finding.js";
 import type { ResourceKind, ResourceRef } from "../contracts/resource.js";
@@ -12,11 +14,6 @@ export type ReachabilityRoot = ReachabilityEvidence & {
   scope?: "exact" | "overlap" | "subtree";
   resourceKinds?: readonly ResourceKind[];
 };
-
-function isInside(root: string, candidate: string): boolean {
-  const result = relative(root, candidate);
-  return result === "" || (!result.startsWith("..") && !isAbsolute(result));
-}
 
 export class ReachabilityIndex {
   private readonly roots = new Map<string, ReachabilityRoot>();
@@ -125,8 +122,8 @@ export class ReachabilityIndex {
         root.scope === "exact"
           ? root.path === target
           : root.scope === "subtree"
-            ? isInside(root.path, target)
-            : isInside(root.path, target) || isInside(target, root.path),
+            ? isPathInside(root.path, target)
+            : isPathInside(root.path, target) || isPathInside(target, root.path),
       )
       .map(({ path: _path, scope: _scope, resourceKinds: _resourceKinds, ...root }) =>
         this.evidence(root, observedAt),
