@@ -24,6 +24,7 @@ import {
 } from "./commands/show.js";
 import { executeStorageRulesCommand } from "./commands/storage-rules.js";
 import { executeStorageCommand } from "./commands/storage.js";
+import { executeGitInventory } from "./commands/git-inventory.js";
 import { executeWorktreesCommand } from "./commands/worktrees.js";
 import { executeUndoCommand } from "./commands/undo.js";
 import { CommandInterruptedError } from "./core/interruption.js";
@@ -171,6 +172,42 @@ export function buildProgram(): Command {
     });
 
   program
+    .command("git-inventory")
+    .description(
+      "Account for Git pack storage and linked registrations without creating a cleanup plan.",
+    )
+    .option(
+      "--repo-root <path>",
+      "inspect direct children of a repository parent; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--repo <path>",
+      "inspect one durable worktree owner or bare repository; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--worktree-root <path>",
+      "classify registrations under an additional managed container; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--loose-objects",
+      "count canonical loose object names in direct hex fanouts using the shared budget",
+      false,
+    )
+    .option("--gwt-status-stdin", "read native lifecycle evidence from stdin", false)
+    .option("--max-entries <count>", "shared direct storage entry budget", "1000000")
+    .option("--redact", "redact paths and identifiers", false)
+    .option("--json", "emit versioned machine output", false)
+    .action(async (options) => {
+      process.stdout.write(await executeGitInventory({ ...options, home: homedir() }));
+    });
+
+  program
     .command("worktrees")
     .description("Inventory worktree containers and native owner evidence without saving a plan.")
     .option(
@@ -212,7 +249,9 @@ export function buildProgram(): Command {
 
   program
     .command("plan")
-    .description("Create a dry-run cleanup plan from a saved audit.")
+    .description(
+      "Create a dry-run cleanup plan from a saved audit. Use git-inventory for Git storage and registrations.",
+    )
     .requiredOption("--audit <path>", "saved audit JSON")
     .option("--config <path>", "explicit JSON config")
     .option("--output <path>", "write the plan atomically")

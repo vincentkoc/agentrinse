@@ -28,6 +28,7 @@
   "files": [
     "dist",
     "schemas",
+    "skills/agentrinse/SKILL.md",
     "LICENSE",
     "README.md"
   ],

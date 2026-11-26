@@ -164,6 +164,7 @@ describe("clean closeout profile", () => {
     expect(result.summary.worktrees).toBe(2);
     expect(result.summary.protectedWorktrees).toBe(2);
     expect(result.summary.eligibleActions).toBe(0);
+    expect(result.summary.gitInventory).toEqual({ status: "not-run", command: "git-inventory" });
     expect(result.summary.auditIncomplete).toBe(false);
     expect(result.summary.auditDeadlineExceeded).toBe(false);
     expect(result.summary.selectedUnprovenTargets).toBe(0);
@@ -335,6 +336,7 @@ describe("clean fleet profile", () => {
       riskCeiling: "safe",
       candidateActions: 0,
       selectedActions: 0,
+      gitInventory: { status: "not-run", command: "git-inventory" },
       excludedByRisk: 0,
       candidateQuarantineBytes: 0,
       selectedQuarantineBytes: 0,

@@ -17,6 +17,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- `git-inventory` reports linked registrations and direct Git storage across repository parents. It deduplicates file identities, separates temporary names from shared allocations, and can compare native GWT enrollment evidence. The npm package includes an operator skill at `skills/agentrinse/SKILL.md`.
+
 - The text output of `storage-rules` names each storage owner and marks cache trees that support `--measure`.
 
 - `storage-rules` lists fixed locations, operator-supplied roots and native-owner checks. Storage inventory includes developer caches, installed tools, desktop data, opt-in system and credential locations, and protected Codex database file totals.

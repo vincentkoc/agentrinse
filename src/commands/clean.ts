@@ -71,6 +71,7 @@ type RunSummary = Pick<CleanupRun, "runId" | "status" | "reclaimedBytes"> & {
 };
 
 type SavedCleanSummary = {
+  gitInventory: { status: "not-run"; command: "git-inventory" };
   auditId: string;
   planId: string;
   auditPath: string;
@@ -301,6 +302,7 @@ function renderCloseout(
     "",
     `Repository: ${summary.repositoryRoot}`,
     `Worktrees: ${summary.worktrees} (${summary.protectedWorktrees} protected)`,
+    "Git pack storage and all linked registrations: agentrinse git-inventory --repo <owner>",
     `Eligible actions: ${summary.eligibleActions}`,
     `Estimated reclaim: ${formatReclaimBytes(summary.expectedReclaimBytes, actions)}`,
     `Pending quarantine: ${summary.pendingQuarantineBytes} bytes`,
@@ -333,6 +335,7 @@ function renderFleet(
     "",
     `Repositories: ${summary.repositoryCount}`,
     `Worktrees: ${summary.worktrees} (${summary.protectedWorktrees} protected)`,
+    "Git pack storage and all linked registrations: agentrinse git-inventory --repo-root <parent>",
     `Risk ceiling: ${summary.riskCeiling}`,
     `Candidate actions: ${summary.candidateActions} (${riskCounts})`,
     `Selected actions: ${summary.selectedActions} (${summary.excludedByRisk} excluded by risk)`,
@@ -604,6 +607,7 @@ export async function executeCleanCommand(
   const deadlineExceeded = auditDeadlineExceeded(audit);
   const selectedUnprovenTargets = countSelectedUnprovenTargets(audit, plan);
   const savedSummary: SavedCleanSummary = {
+    gitInventory: { status: "not-run", command: "git-inventory" },
     auditId: audit.auditId,
     planId: plan.planId,
     auditPath,

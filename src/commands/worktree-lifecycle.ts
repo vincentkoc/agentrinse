@@ -13,11 +13,9 @@ const statusSchema = z.object({
   released_owners: z.array(z.string()).optional(),
   cancelled_owners: z.array(z.object({ owner: z.string(), head: z.string() })).optional(),
 });
-type Status = z.infer<typeof statusSchema>;
+export type GwtStatus = z.infer<typeof statusSchema>;
 
-export async function readGwtStatus(
-  input: AsyncIterable<Uint8Array>,
-): Promise<Map<string, Status[]>> {
+export async function readGwtInput(input: AsyncIterable<Uint8Array>): Promise<unknown> {
   const chunks: Uint8Array[] = [];
   let bytes = 0;
   for await (const chunk of input) {
@@ -31,10 +29,14 @@ export async function readGwtStatus(
   } catch {
     throw new Error("Expected valid JSON from gwt finish-status --all --read-only");
   }
+  return value;
+}
+
+export function legacyGwtStatus(value: unknown): Map<string, GwtStatus[]> {
   const records = z.array(statusSchema).max(100_000).safeParse(value);
   if (!records.success)
     throw new Error("Expected a JSON array from gwt finish-status --all --read-only");
-  const byPath = new Map<string, Status[]>();
+  const byPath = new Map<string, GwtStatus[]>();
   for (const record of records.data) {
     const path = resolve(record.worktree);
     const existing = byPath.get(path);
@@ -42,6 +44,10 @@ export async function readGwtStatus(
     else byPath.set(path, [record]);
   }
   return byPath;
+}
+
+export async function readGwtStatus(input: AsyncIterable<Uint8Array>) {
+  return legacyGwtStatus(await readGwtInput(input));
 }
 
 export type Lifecycle =
@@ -53,7 +59,7 @@ export type Lifecycle =
   | "unresolved"
   | "removed";
 
-export function lifecycleFor(records: Status[] | undefined, currentHead?: string): Lifecycle {
+export function lifecycleFor(records: GwtStatus[] | undefined, currentHead?: string): Lifecycle {
   if (records === undefined) return "unreported";
   if (records.length !== 1) return "unresolved";
   const [record] = records;
@@ -72,7 +78,7 @@ export function lifecycleFor(records: Status[] | undefined, currentHead?: string
   return "unresolved";
 }
 
-export function ownerSignoffFor(records: Status[] | undefined, head?: string) {
+export function ownerSignoffFor(records: GwtStatus[] | undefined, head?: string) {
   if (records?.length !== 1 || !records[0]) return "unknown";
   const record = records[0];
   if (record.retirement_state === "report-only") return "report-only";
