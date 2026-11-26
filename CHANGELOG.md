@@ -8,6 +8,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Changed
 
+- Artifact scans retain nested agent state and exclude its contents from measurement. Apply checks the isolated tree again after refreshing ownership.
+
 - Built-in cleanup rules now live under their resource owner. Contributors can add supported file-quarantine and project-artifact rules with a JSON descriptor and a fixture, then verify them with `pnpm rules:verify`.
 - Planning from a saved audit and applying a provider-file action now respect a disabled provider and the currently registered rule.
 

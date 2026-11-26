@@ -19,6 +19,13 @@ export function artifactInspectionBlocker(
       confidence: "certain",
       message: "Only declared artifact directories are supported.",
     };
+  if (typeof facts.protectedAgentEntries === "number" && facts.protectedAgentEntries > 0)
+    return {
+      code: "ARTIFACT_NESTED_AGENT_STATE",
+      confidence: "certain",
+      message:
+        "Artifact contains protected agent state. Its contents were excluded from measurement.",
+    };
   if (facts.measurementTruncated === true)
     return {
       code: "ARTIFACT_MEASUREMENT_TRUNCATED",

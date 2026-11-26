@@ -3333,7 +3333,7 @@ Exit criteria:
 
 - Never removes the main worktree.
 - Never removes dirty, active, locked, provider-rooted, or unpushed work.
-- Trims only declared rebuildable artifacts.
+- Trims only declared rebuildable artifacts. A nested agent state root (such as `.codex` or `.claude`) blocks removal. Artifact measurement skips its contents, including during apply and the final check of the isolated directory.
 - Quarantines eligible worktrees on the same filesystem.
 - Creates a durable recovery ref before removal.
 - Restores a quarantined worktree without overwriting new paths.

@@ -96,6 +96,20 @@ describe("ArtifactAuditAdapter", () => {
     expect(finding.candidateActions).toEqual([]);
   });
 
+  it("retains nested agent storage and excludes it from measured bytes", async () => {
+    const { context, adapter, artifact } = await fixture();
+    await mkdir(join(artifact, "snapshot", ".Claude"), { recursive: true });
+    await writeFile(join(artifact, "snapshot", ".Claude", "transcript.jsonl"), "keep");
+    const { resources } = await adapter.collect(context, await adapter.probe(context));
+    expect(await adapter.classify(context, resources[0]!)).toMatchObject({
+      state: "blocked",
+      measuredBytes: 9,
+      estimatedReclaimBytes: 0,
+      candidateActions: [],
+      warnings: [{ code: "ARTIFACT_NESTED_AGENT_STATE" }],
+    });
+  });
+
   it("blocks an artifact containing a nested repository", async () => {
     const { context, adapter, artifact } = await fixture();
     const gitDirectory = join(artifact, ".git");

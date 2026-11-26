@@ -15,7 +15,7 @@ import { measurePath } from "../../src/core/measure.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { runFixtureGit } from "../helpers/git.js";
 
-async function fixture(): Promise<{
+async function fixture(nested = false): Promise<{
   action: ArtifactRemoveAction;
   project: string;
   target: string;
@@ -27,6 +27,7 @@ async function fixture(): Promise<{
   await mkdir(target, { recursive: true });
   await writeFile(join(project, "source.ts"), "keep");
   await writeFile(join(target, "cache.bin"), "remove");
+  if (nested) await mkdir(join(target, "cache"));
   const stats = await stat(target);
   const measurement = await measurePath(target, { maxEntries: 100 });
   return {
@@ -65,6 +66,24 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("executeArtifactRemove", () => {
+  it("restores history added deep in the isolated tree during the last owner refresh", async () => {
+    const value = await fixture(true);
+    await expect(
+      executeArtifactRemove(value.action, {
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        revalidateProtection: async (path) => {
+          await mkdir(join(path, "cache", ".codex"));
+          await writeFile(join(path, "cache", ".codex", "session.jsonl"), "keep");
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      message: expect.stringContaining("protected agent state"),
+    });
+    expect(await readFile(join(value.target, "cache", ".codex", "session.jsonl"), "utf8")).toBe(
+      "keep",
+    );
+  });
   it("restores an isolated artifact if its provider claims it before removal", async () => {
     const value = await fixture();
     await expect(

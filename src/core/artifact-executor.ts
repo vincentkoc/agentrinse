@@ -3,11 +3,11 @@ import { lstatSync, rmSync, type Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-import { artifactMeasurementChanged } from "./artifact-measurement.js";
+import { artifactMeasurementChanged, isArtifactAgentState } from "./artifact-measurement.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
 import { prepareRenameNoReplace } from "./no-clobber-rename.js";
-import { measurePath, type Measurement } from "./measure.js";
+import { measurePath } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
 
@@ -46,7 +46,7 @@ export type ArtifactExecutorDependencies = {
   finalInspect?: (path: string) => Stats;
   move?: (source: string, destination: string) => Promise<void>;
   remove?: (path: string) => Promise<void>;
-  measure?: (path: string, options: { maxEntries: number }) => Promise<Measurement>;
+  measure?: typeof measurePath;
   processProbe?: (path: string) => Promise<ProcessOwnershipResult>;
   mountProbe?: (path: string) => Promise<MountBoundaryResult>;
   maxEntries?: number;
@@ -199,20 +199,26 @@ export async function executeArtifactRemove(
     );
   }
 
-  try {
+  const checkContents = async () => {
     const measurement = await measure(isolationPath, {
       maxEntries: dependencies.maxEntries ?? 100_000,
+      protectEntry: isArtifactAgentState,
     });
     if (measurement.specialEntries > 0 || artifactMeasurementChanged(measurement, action.target)) {
       await rollbackBeforeRemoval(
-        "artifact contents changed during isolation",
+        measurement.protectedEntries
+          ? "artifact contains protected agent state"
+          : "artifact contents changed during isolation",
         action,
         isolationPath,
         inspect,
         move,
       );
     }
+  };
 
+  try {
+    await checkContents();
     const ownership = await processProbe(isolationPath);
     if (ownership.status !== "idle") {
       await rollbackBeforeRemoval(
@@ -300,6 +306,20 @@ export async function executeArtifactRemove(
         error,
       );
     }
+  }
+  // A nested directory can change while owner and mount probes run without changing the root mtime.
+  try {
+    await checkContents();
+  } catch (error) {
+    if (error instanceof ArtifactExecutionError) throw error;
+    await rollbackBeforeRemoval(
+      "artifact contents could not be rechecked before removal",
+      action,
+      isolationPath,
+      inspect,
+      move,
+      error,
+    );
   }
   if (
     dependencies.authorization !== undefined &&

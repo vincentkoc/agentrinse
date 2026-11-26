@@ -1,7 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
-import { artifactMeasurementChanged } from "./artifact-measurement.js";
+import { artifactMeasurementChanged, isArtifactAgentState } from "./artifact-measurement.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import { openClawPathProtection } from "../adapters/openclaw-ownership.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
@@ -176,7 +176,15 @@ export async function revalidateArtifactRemove(
 
     const measurement = await (dependencies.measure ?? measurePath)(targetPath, {
       maxEntries: config.audit.maxEntries,
+      protectEntry: isArtifactAgentState,
     });
+    if (measurement.protectedEntries) {
+      return stale(
+        action,
+        "ARTIFACT_NESTED_AGENT_STATE",
+        "artifact contains protected agent state",
+      );
+    }
     if (artifactMeasurementChanged(measurement, action.target)) {
       return stale(
         action,

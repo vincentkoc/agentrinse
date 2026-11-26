@@ -11,6 +11,7 @@ import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
 import { inspectArtifactGitState } from "../../core/artifact-git-state.js";
+import { isArtifactAgentState } from "../../core/artifact-measurement.js";
 import { measurePath } from "../../core/measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "../../core/mount-boundaries.js";
 import {
@@ -183,16 +184,17 @@ export class ArtifactAuditAdapter implements AuditAdapter {
             isDirectory && !isSymlink && this.options.measureBytes
               ? await measurePath(path, {
                   maxEntries: this.options.maxEntries,
+                  protectEntry: isArtifactAgentState,
                   ...(context.signal === undefined ? {} : { signal: context.signal }),
                 })
               : undefined;
           const ownership =
-            isDirectory && !isSymlink
+            measurement !== undefined && !measurement.truncated && !measurement.protectedEntries
               ? await this.processProbe(path)
               : ({
                   status: "unknown",
                   matches: [],
-                  reason: "resource is not a real directory",
+                  reason: "artifact did not pass bounded safety inspection",
                 } satisfies ProcessOwnershipResult);
           const mounts =
             isDirectory && !isSymlink
@@ -237,6 +239,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               measurementTruncated: measurement?.truncated ?? false,
               specialEntries: measurement?.specialEntries ?? 0,
               vcsMetadataEntries: measurement?.vcsMetadataEntries ?? 0,
+              protectedAgentEntries: measurement?.protectedEntries ?? 0,
               gitState,
               mountBoundaries: measurement?.mountBoundaries ?? 0,
               isMountRoot: stats.dev !== projectStats.dev,

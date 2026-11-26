@@ -11,6 +11,7 @@ export type Measurement = {
   symlinksSkipped: number;
   specialEntries: number;
   vcsMetadataEntries: number;
+  protectedEntries?: number;
   truncated: boolean;
   newestMtimeMs: number;
   fingerprint: string;
@@ -21,6 +22,7 @@ export type MeasureOptions = {
   maxEntries: number;
   signal?: AbortSignal;
   excludeRootEntries?: string[];
+  protectEntry?: (name: string) => boolean;
 };
 
 type DirectoryEntry = {
@@ -88,6 +90,12 @@ export async function measurePath(
     if (result.entries >= options.maxEntries) {
       result.truncated = true;
       break;
+    }
+
+    if (path !== root && options.protectEntry?.(basename(path))) {
+      result.entries += 1;
+      result.protectedEntries = (result.protectedEntries ?? 0) + 1;
+      continue;
     }
 
     const stats = await inspect(path);
