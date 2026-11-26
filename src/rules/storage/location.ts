@@ -7,3 +7,9 @@ export type Location = {
   measureTree?: true;
   platform?: "darwin" | "linux";
 };
+
+export function storageFamily(scope: Location["scope"]): "developer" | "retained" | "vm" {
+  if (scope === "image") return "vm";
+  if (scope === "retained") return "retained";
+  return "developer";
+}
