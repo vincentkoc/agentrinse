@@ -61,6 +61,31 @@ export const grokOwnerContractFactsSchema = z.object({
 
 export type GrokOwnerContractFacts = z.infer<typeof grokOwnerContractFactsSchema>;
 
+export function describeGrokOwnerContract(facts: GrokOwnerContractFacts): string {
+  switch (facts.installedVersionStatus) {
+    case "exact":
+      return "The installed Grok version and build revision match the inspected source snapshot. Grok runs its memory GC during session initialization, but exposes no tagged, user-invokable cleanup contract that AgentRinse can bind and revalidate.";
+    case "version-mismatch":
+      return `Installed Grok ${facts.installedVersion} does not match inspected source version ${facts.sourceVersion}; only the owner root was inventoried.`;
+    case "revision-mismatch":
+      return `Installed Grok build revision ${facts.installedRevision} does not match the inspected source revisions; only the owner root was inventoried.`;
+    case "unparseable":
+      return "The installed Grok version output did not match the documented format; only the owner root was inventoried.";
+  }
+  switch (facts.ownerExecutableStatus) {
+    case "unsafe":
+      return "The canonical Grok executable escapes or does not resolve to a file inside the audited owner root; only the owner root was inventoried.";
+    case "unexecutable":
+      return "The canonical Grok executable is not executable; only the owner root was inventoried.";
+    case "unreadable":
+      return "The canonical Grok executable could not be inspected; only the owner root was inventoried.";
+    case "missing":
+      return "The audited owner root has no canonical Grok executable; only the owner root was inventoried.";
+    case "bound":
+      return "The bound Grok executable version could not be inspected; only the owner root was inventoried.";
+  }
+}
+
 async function defaultRunGrokVersion(
   executable: string,
   environment: NodeJS.ProcessEnv,

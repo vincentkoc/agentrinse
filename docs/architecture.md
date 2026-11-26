@@ -1,6 +1,6 @@
 # Architecture
 
-AgentRinse separates evidence, policy, authorization, and mutation.
+AgentRinse separates evidence, policy, authorization, and mutation. The [cleanup rule map](cleanup-rules.md) links each resource owner to its classifier, action checks, and tests.
 
 ```text
 CLI

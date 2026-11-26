@@ -3,6 +3,7 @@ import { lstatSync, rmSync, type Stats } from "node:fs";
 import { lstat, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { artifactMeasurementChanged } from "./artifact-measurement.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
 import { measurePath, type Measurement } from "./measure.js";
@@ -185,15 +186,7 @@ export async function executeArtifactRemove(
     const measurement = await measure(isolationPath, {
       maxEntries: dependencies.maxEntries ?? 100_000,
     });
-    if (
-      measurement.truncated ||
-      measurement.specialEntries > 0 ||
-      measurement.vcsMetadataEntries > 0 ||
-      measurement.mountBoundaries > 0 ||
-      measurement.bytes !== action.target.measuredBytes ||
-      measurement.newestMtimeMs !== action.target.newestMtimeMs ||
-      measurement.fingerprint !== action.target.fingerprint
-    ) {
+    if (measurement.specialEntries > 0 || artifactMeasurementChanged(measurement, action.target)) {
       await rollbackBeforeRemoval(
         "artifact contents changed during isolation",
         action,

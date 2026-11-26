@@ -22,7 +22,7 @@ import { writeJsonAtomic } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 
 const execFileAsync = promisify(execFile);
-const ACTION_RISKS = ["safe", "recoverable", "destructive", "experimental"] as const;
+const ACTION_RISKS = actionRiskSchema.options;
 type FleetRepository = NonNullable<AuditAdapterRegistryOptions["gitRepositories"]>[number];
 
 type CleanCommandBaseOptions = {

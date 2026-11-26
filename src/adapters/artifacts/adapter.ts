@@ -1,6 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { artifactInspectionBlocker } from "./inspection-policy.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import { artifactNameSchema, type ArtifactRemoveAction } from "../../contracts/action.js";
@@ -269,76 +270,14 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     let state: Finding["state"] = "eligible";
     let confidence: Finding["confidence"] = "certain";
 
-    if (facts.isSymlink === true) {
+    const blocker = artifactInspectionBlocker(facts);
+    if (blocker) {
       state = "blocked";
-      confidence = "certain";
+      confidence = blocker.confidence;
       warnings.push({
         severity: "warning",
-        code: "ARTIFACT_SYMLINK_BLOCKED",
-        message: "Artifact symlinks are never cleanup candidates.",
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (facts.isDirectory !== true) {
-      state = "blocked";
-      confidence = "certain";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_NOT_DIRECTORY",
-        message: "Only declared artifact directories are supported.",
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (facts.measurementTruncated === true) {
-      state = "blocked";
-      confidence = "unknown";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_MEASUREMENT_TRUNCATED",
-        message: "The entry budget was exhausted before measurement completed.",
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (typeof facts.specialEntries === "number" && facts.specialEntries > 0) {
-      state = "blocked";
-      confidence = "certain";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_SPECIAL_ENTRY",
-        message: "Artifact cleanup only supports directories, regular files, and skipped symlinks.",
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (typeof facts.vcsMetadataEntries === "number" && facts.vcsMetadataEntries > 0) {
-      state = "blocked";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_NESTED_VCS",
-        message: "Artifact contains nested version-control metadata.",
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (
-      facts.isMountRoot === true ||
-      facts.mountBoundaryStatus === "blocked" ||
-      (typeof facts.mountBoundaries === "number" && facts.mountBoundaries > 0)
-    ) {
-      state = "blocked";
-      confidence = "certain";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_MOUNT_BOUNDARY",
-        message: "Artifact cleanup never crosses a filesystem mount boundary.",
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (facts.mountBoundaryStatus !== "clear") {
-      state = "blocked";
-      confidence = "unknown";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_MOUNT_INSPECTION_UNKNOWN",
-        message: "Filesystem mount boundaries could not be proven absent.",
+        code: blocker.code,
+        message: blocker.message,
         adapter: this.id,
         resourceId: resource.resource.id,
       });

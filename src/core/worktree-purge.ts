@@ -23,6 +23,37 @@ import {
   verifyLockedRegistration,
 } from "./worktree-recovery-validation.js";
 
+// Fresh and resumed purges must rebind the Git registration and prove isolation again after the live protection check.
+async function removeIsolatedWorktree(
+  entry: QuarantineEntry,
+  isolationPath: string,
+  options: PurgeWorktreeOptions,
+  dependencies: ResolvedRecoveryDependencies,
+): Promise<void> {
+  await assertNoGitOperations(entry, isolationPath, dependencies);
+  await assertTargetRegistrationLock(entry, dependencies, "unlocked", [
+    entry.quarantinePath,
+    isolationPath,
+  ]);
+  await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "worktree",
+    "repair",
+    isolationPath,
+  ]);
+  await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
+  await options.revalidateProtection?.(entry);
+  await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
+  await dependencies.runGit([
+    "--git-dir",
+    entry.target.repositoryCommonDir,
+    "worktree",
+    "remove",
+    isolationPath,
+  ]);
+}
+
 async function rollbackPurgeIsolation(
   entry: QuarantineEntry,
   isolationPath: string,
@@ -151,28 +182,7 @@ async function resumeInterruptedPurge(
   }
   if (isolationExists) {
     try {
-      await assertNoGitOperations(entry, isolationPath, dependencies);
-      await assertTargetRegistrationLock(entry, dependencies, "unlocked", [
-        entry.quarantinePath,
-        isolationPath,
-      ]);
-      await dependencies.runGit([
-        "--git-dir",
-        entry.target.repositoryCommonDir,
-        "worktree",
-        "repair",
-        isolationPath,
-      ]);
-      await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
-      await options.revalidateProtection?.(entry);
-      await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
-      await dependencies.runGit([
-        "--git-dir",
-        entry.target.repositoryCommonDir,
-        "worktree",
-        "remove",
-        isolationPath,
-      ]);
+      await removeIsolatedWorktree(entry, isolationPath, options, dependencies);
       if (await pathExists(isolationPath, dependencies.inspect)) {
         throw new WorktreeRecoveryError(
           "QUARANTINE_PURGE_TRANSITION_AMBIGUOUS",
@@ -279,28 +289,7 @@ export async function purgeWorktreeQuarantine(
     }
     await dependencies.move(entry.quarantinePath, isolationPath);
     isolated = true;
-    await assertNoGitOperations(entry, isolationPath, dependencies);
-    await assertTargetRegistrationLock(entry, dependencies, "unlocked", [
-      entry.quarantinePath,
-      isolationPath,
-    ]);
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "repair",
-      isolationPath,
-    ]);
-    await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
-    await options.revalidateProtection?.(entry);
-    await validateQuarantinedEntry(entry, options, false, ["purging"], "unlocked", isolationPath);
-    await dependencies.runGit([
-      "--git-dir",
-      entry.target.repositoryCommonDir,
-      "worktree",
-      "remove",
-      isolationPath,
-    ]);
+    await removeIsolatedWorktree(entry, isolationPath, options, dependencies);
     if (await pathExists(isolationPath, dependencies.inspect)) {
       throw new Error("Git reported success but the purge isolation path still exists");
     }

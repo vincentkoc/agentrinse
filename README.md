@@ -413,6 +413,7 @@ optional. Mole detection is available on macOS.
 - [adapter matrix](docs/adapters.md)
 - [platform support](docs/platforms.md)
 - [architecture](docs/architecture.md)
+- [cleanup rule and contributor map](docs/cleanup-rules.md)
 - [development](docs/development.md)
 - [release process](docs/releasing.md)
 - [roadmap](docs/roadmap.md)

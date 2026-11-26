@@ -22,7 +22,11 @@ async function fixture(): Promise<{
   const project = join(home, "project");
   const target = join(project, "node_modules");
   await mkdir(target, { recursive: true });
-  await writeFile(join(target, "fixture.txt"), "fixture");
+  const file = join(target, "fixture.txt");
+  await writeFile(file, "fixture");
+  // Keep age-policy results independent of sub-millisecond filesystem timestamps.
+  await utimes(file, new Date(0), new Date(0));
+  await utimes(target, new Date(0), new Date(0));
   const stats = await stat(target);
   const measurement = await measurePath(target, { maxEntries: 100 });
   const config = {

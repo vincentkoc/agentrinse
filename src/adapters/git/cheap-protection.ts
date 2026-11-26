@@ -20,9 +20,15 @@ export type CheapWorktreeProtection = {
   detail: string;
 };
 
-export function cheapWorktreeProtections(
-  input: CheapWorktreeProtectionInput,
-): CheapWorktreeProtection[] {
+type RegistrationFacts = {
+  isMain: boolean;
+  platform: string;
+  bare: boolean;
+  locked: unknown;
+  prunable: unknown;
+};
+
+export function registrationProtections(input: RegistrationFacts): CheapWorktreeProtection[] {
   const protections: CheapWorktreeProtection[] = [];
   if (input.isMain) {
     protections.push({
@@ -48,6 +54,13 @@ export function cheapWorktreeProtections(
       detail: "Git reports this worktree as locked.",
     });
   }
+  return protections;
+}
+
+export function cheapWorktreeProtections(
+  input: CheapWorktreeProtectionInput,
+): CheapWorktreeProtection[] {
+  const protections = registrationProtections(input);
   if (input.dirty) {
     protections.push({
       code: "dirty-worktree",

@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { DEFAULT_WORKTREE_RETENTION } from "../../config/defaults.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type {
   AuditAdapter,
@@ -12,7 +13,7 @@ import type {
 } from "../../contracts/adapter.js";
 import type { WorktreeQuarantineAction } from "../../contracts/action.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";
-import type { Finding, RootEvidence } from "../../contracts/finding.js";
+import type { Finding } from "../../contracts/finding.js";
 import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
@@ -24,6 +25,7 @@ import {
   type ProcessOwnershipResult,
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
+import { worktreeProtectionRoots } from "./protection-policy.js";
 import { shouldDeferProcessOwnership } from "./cheap-protection.js";
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "./porcelain.js";
 import { isPushedHead, matchingGitRefPins } from "./refs.js";
@@ -57,8 +59,7 @@ const DEFAULT_OPTIONS: GitWorktreeOptions = {
   maxEntries: 100_000,
   measureBytes: true,
   gitTimeoutMs: 10_000,
-  minAgeMinutes: 14 * 24 * 60,
-  quarantineTtlMinutes: 7 * 24 * 60,
+  ...DEFAULT_WORKTREE_RETENTION,
   platform: process.platform,
 };
 
@@ -529,218 +530,12 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const observedAt = context.now.toISOString();
-    const roots: RootEvidence[] = [];
-
-    if (resource.facts.isMain === true) {
-      roots.push({
-        code: "main-worktree",
-        source: "git",
-        observedAt,
-        detail: "The main worktree is always protected.",
-      });
-    }
-
-    if (!["darwin", "linux"].includes(String(resource.facts.platform))) {
-      roots.push({
-        code: "worktree-mutation-unsupported",
-        source: "git",
-        observedAt,
-        detail: "Recoverable worktree quarantine is supported only on macOS and Linux.",
-      });
-    }
-    if (resource.facts.bare === true || resource.facts.prunable !== undefined) {
-      roots.push({
-        code: "worktree-registration-unsafe",
-        source: "git",
-        observedAt,
-        detail: "Bare or prunable worktree registrations are not quarantine candidates.",
-      });
-    }
-    if (resource.facts.locked !== undefined) {
-      roots.push({
-        code: "git-lock",
-        source: "git",
-        observedAt,
-        detail: "Git reports this worktree as locked.",
-      });
-    }
-
-    if (
-      Number(resource.facts.staged ?? 0) +
-        Number(resource.facts.modified ?? 0) +
-        Number(resource.facts.untracked ?? 0) +
-        Number(resource.facts.conflicted ?? 0) >
-      0
-    ) {
-      roots.push({
-        code: "dirty-worktree",
-        source: "git",
-        observedAt,
-        detail: "Git reports staged, modified, conflicted, or untracked work.",
-      });
-    }
-    if (typeof resource.facts.ignored === "number" && resource.facts.ignored > 0) {
-      roots.push({
-        code: "ignored-worktree-content",
-        source: "git",
-        observedAt,
-        detail: "Git reports ignored content that would be lost by whole-worktree cleanup.",
-      });
-    }
-    if (
-      typeof resource.facts.statusSuppressedEntries === "number" &&
-      resource.facts.statusSuppressedEntries > 0
-    ) {
-      roots.push({
-        code: "git-status-suppressed",
-        source: "git",
-        observedAt,
-        detail: "Git index flags suppress status visibility for one or more tracked paths.",
-      });
-    }
-    if (Array.isArray(resource.facts.operations) && resource.facts.operations.length > 0) {
-      roots.push({
-        code: "git-operation-in-progress",
-        source: "git",
-        observedAt,
-        detail: `Git operation in progress: ${resource.facts.operations.join(", ")}.`,
-      });
-    }
-    if (resource.facts.unpushed === true) {
-      roots.push({
-        code: "unpushed-commit",
-        source: "git",
-        observedAt,
-        detail: "The worktree HEAD is ahead of or absent from local remote-tracking refs.",
-      });
-    }
-    if (resource.facts.processOwnership === "busy") {
-      roots.push({
-        code: "live-process-worktree",
-        source: "process",
-        observedAt,
-        detail: "A live process has its CWD or an open file inside this worktree.",
-      });
-    }
-    if (resource.facts.processOwnership === "unknown") {
-      roots.push({
-        code: "process-ownership-incomplete",
-        source: "process",
-        observedAt,
-        detail: "Live process ownership could not be proven completely.",
-      });
-    }
-    if (resource.facts.remoteConfigured !== true) {
-      roots.push({
-        code: "unknown-remote",
-        source: "git",
-        observedAt,
-        detail: "No configured remote is available for reachability proof.",
-      });
-    }
-    if (resource.facts.detached === true) {
-      roots.push({
-        code: "detached-worktree",
-        source: "git",
-        observedAt,
-        detail: "Detached worktrees are outside the 0.3 quarantine boundary.",
-      });
-    }
-    if (
-      resource.resource.path !== undefined &&
-      basename(resource.resource.path) === ".agentrinse-quarantine"
-    ) {
-      roots.push({
-        code: "worktree-quarantine-path-reserved",
-        source: "git",
-        observedAt,
-        detail: "A worktree cannot use AgentRinse's reserved quarantine container path.",
-      });
-    }
-    if (
-      typeof resource.facts.head !== "string" ||
-      typeof resource.facts.branch !== "string" ||
-      typeof resource.facts.repositoryCommonDir !== "string"
-    ) {
-      roots.push({
-        code: "worktree-identity-incomplete",
-        source: "git",
-        observedAt,
-        detail: "Worktree HEAD, branch, or common Git directory could not be proven.",
-      });
-    }
-    if (resource.facts.hasSubmodules === true) {
-      roots.push({
-        code: "worktree-submodules",
-        source: "git",
-        observedAt,
-        detail: "Worktrees containing gitlink entries are not quarantine candidates.",
-      });
-    }
-    if (
-      resource.measuredBytes === undefined ||
-      resource.facts.measurementTruncated === true ||
-      typeof resource.facts.fingerprint !== "string"
-    ) {
-      roots.push({
-        code: "worktree-measurement-incomplete",
-        source: "git",
-        observedAt,
-        detail: "Worktree contents could not be measured completely.",
-      });
-    }
-    if (
-      (typeof resource.facts.specialEntries === "number" && resource.facts.specialEntries > 0) ||
-      (typeof resource.facts.mountBoundaries === "number" && resource.facts.mountBoundaries > 0) ||
-      resource.facts.mountBoundaryStatus === "blocked"
-    ) {
-      roots.push({
-        code: "worktree-filesystem-boundary",
-        source: "git",
-        observedAt,
-        detail: "Worktree contents include an unsupported filesystem entry or mount boundary.",
-      });
-    }
-    if (resource.facts.mountBoundaryStatus !== "clear") {
-      roots.push({
-        code: "worktree-mount-inspection-incomplete",
-        source: "git",
-        observedAt,
-        detail: "Filesystem mount boundaries could not be proven absent.",
-      });
-    }
-    if (
-      typeof resource.facts.ageMinutes !== "number" ||
-      resource.facts.ageMinutes < this.options.minAgeMinutes
-    ) {
-      roots.push({
-        code: "recent-resource",
-        source: "git",
-        observedAt,
-        detail: `Worktree is newer than ${this.options.minAgeMinutes} minutes.`,
-      });
-    }
-    if (resource.facts.inspectionComplete !== true) {
-      roots.push({
-        code: "git-inspection-incomplete",
-        source: "git",
-        observedAt,
-        detail: "Git state or reachability could not be proven completely.",
-      });
-    }
-    roots.push(
-      ...(this.reachability?.rootsForResource(resource.resource, resource.facts, observedAt) ?? []),
+    const roots = worktreeProtectionRoots(
+      resource,
+      observedAt,
+      this.options.minAgeMinutes,
+      this.reachability,
     );
-    if (resource.facts.processOwnershipDeferred === true && roots.length === 0) {
-      roots.push({
-        code: "process-ownership-deferred",
-        source: "process",
-        observedAt,
-        detail:
-          "Process ownership was deferred for a supposedly protected worktree, but no protection root remained.",
-      });
-    }
-    roots.sort((left, right) => left.code.localeCompare(right.code));
     const eligible = resource.exists && roots.length === 0;
     const candidateActions: WorktreeQuarantineAction[] = eligible ? [this.actionFor(resource)] : [];
 

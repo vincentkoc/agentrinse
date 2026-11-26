@@ -4,6 +4,7 @@ import { dirname, join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { matchProviderFilePolicy } from "../../src/core/provider-file-policy.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { ProviderFileQuarantineAction } from "../../src/contracts/action.js";
 import { inspectProviderFile } from "../../src/core/provider-file-identity.js";
@@ -392,5 +393,20 @@ describe("provider file policy", () => {
         new Date("2026-07-28T00:00:00.000Z"),
       ),
     ).rejects.toThrow("provider-file target is outside the configured zed root");
+  });
+});
+
+describe("provider file matching", () => {
+  it("requires the same owner, policy and relative path for classification and revalidation", () => {
+    expect(
+      matchProviderFilePolicy("claude", "claude.debug-log", join("debug", "run.txt"))?.id,
+    ).toBe("claude.debug-log");
+    expect(
+      matchProviderFilePolicy("zed", "claude.debug-log", join("debug", "run.txt")),
+    ).toBeUndefined();
+    expect(
+      matchProviderFilePolicy("claude", "claude.debug-log", join("projects", "run.txt")),
+    ).toBeUndefined();
+    expect(matchProviderFilePolicy("claude", undefined, join("debug", "run.txt"))).toBeUndefined();
   });
 });

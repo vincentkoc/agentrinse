@@ -1,15 +1,13 @@
 import type { AgentRinseConfig } from "../config/schema.js";
-import type { ActionRisk } from "../contracts/action.js";
+import { actionRiskSchema, type ActionRisk } from "../contracts/action.js";
 import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import type { AuditReport } from "../contracts/report.js";
 import { sha256Json } from "./digest.js";
 
-const RISK_ORDER: Record<ActionRisk, number> = {
-  safe: 0,
-  recoverable: 1,
-  destructive: 2,
-  experimental: 3,
-};
+// The enum enumerates every ActionRisk, so the index covers every valid key.
+const RISK_ORDER = Object.fromEntries(
+  actionRiskSchema.options.map((risk, rank) => [risk, rank]),
+) as Record<ActionRisk, number>;
 
 export function cleanupPlanId(plan: Omit<CleanupPlan, "planId">): string {
   return sha256Json(plan);
