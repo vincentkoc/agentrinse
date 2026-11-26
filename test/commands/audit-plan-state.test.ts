@@ -1,4 +1,5 @@
-import { access, mkdtemp } from "node:fs/promises";
+import { access } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -10,8 +11,8 @@ import { executePlanCommand } from "../../src/commands/plan.js";
 
 describe("audit and plan state persistence", () => {
   it("stores validated audit and plan records under the selected state root", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-state-home-"));
-    const stateDir = await mkdtemp(join(tmpdir(), "agentrinse-audit-state-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-state-home-"));
+    const stateDir = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-state-"));
     const auditOutput = join(stateDir, "audit-output.json");
 
     const audit = await executeAuditCommand({
@@ -33,8 +34,8 @@ describe("audit and plan state persistence", () => {
   });
 
   it("uses the same explicit risk ceiling for plan creation and apply verification", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-risk-home-"));
-    const stateDir = await mkdtemp(join(tmpdir(), "agentrinse-risk-state-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-risk-home-"));
+    const stateDir = createFixtureDirectory(join(tmpdir(), "agentrinse-risk-state-"));
     const auditOutput = join(stateDir, "audit.json");
     const planOutput = join(stateDir, "plan.json");
 

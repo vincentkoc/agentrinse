@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,7 +29,7 @@ async function fakeProcess(
 
 describe("findProcessesUsingPath", () => {
   it("finds same-user cwd and file descriptor ownership", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-proc-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-proc-"));
     const procRoot = join(root, "proc");
     const target = join(root, "project", "node_modules");
     await mkdir(target, { recursive: true });
@@ -52,7 +53,7 @@ describe("findProcessesUsingPath", () => {
   });
 
   it("ignores processes owned by other users", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-proc-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-proc-"));
     const procRoot = join(root, "proc");
     const target = join(root, "project", "dist");
     await mkdir(target, { recursive: true });
@@ -68,7 +69,7 @@ describe("findProcessesUsingPath", () => {
   });
 
   it("uses lsof when hardened procfs blocks a same-user process scan", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-proc-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-proc-"));
     const procRoot = join(root, "proc");
     const processRoot = join(procRoot, "303");
     const target = join(root, "project", "build");
@@ -88,7 +89,7 @@ describe("findProcessesUsingPath", () => {
   });
 
   it("keeps Linux process ownership unknown when lsof fallback is incomplete", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-proc-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-proc-"));
     const procRoot = join(root, "proc");
     const processRoot = join(procRoot, "404");
     const target = join(root, "project", "build");

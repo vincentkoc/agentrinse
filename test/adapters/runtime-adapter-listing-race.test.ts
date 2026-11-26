@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -42,7 +43,7 @@ function simulateVanishingEntry(versions: string, name: string): void {
 
 async function claudeVersions(): Promise<{ context: AuditContext; versions: string }> {
   const context: AuditContext = {
-    home: await mkdtemp(join(tmpdir(), "agentrinse-runtime-race-")),
+    home: createFixtureDirectory(join(tmpdir(), "agentrinse-runtime-race-")),
     now: new Date("2026-07-24T00:00:00.000Z"),
     auditId: "audit-runtime-race",
   };

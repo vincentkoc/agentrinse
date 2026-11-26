@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, stat, symlink } from "node:fs/promises";
+import { chmod, lstat, mkdir, stat, symlink } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -108,7 +109,7 @@ describe("atomic JSON files", () => {
   });
 
   it("writes a complete owner-only document", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-state-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-state-"));
     const path = join(root, "plans", "plan.json");
 
     await writeJsonAtomic(path, { planId: "plan-1" });
@@ -119,7 +120,7 @@ describe("atomic JSON files", () => {
   });
 
   it("does not change permissions on an existing parent directory", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-parent-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-parent-"));
     await chmod(root, 0o755);
 
     await writeJsonExclusive(join(root, "config.json"), { schemaVersion: 1 });
@@ -131,7 +132,7 @@ describe("atomic JSON files", () => {
   it(
     "repairs and verifies AgentRinse-owned state directories",
     async () => {
-      const root = await mkdtemp(join(tmpdir(), "agentrinse-private-state-"));
+      const root = createFixtureDirectory(join(tmpdir(), "agentrinse-private-state-"));
       const plans = join(root, "plans");
       await chmod(root, 0o777);
 
@@ -150,7 +151,7 @@ describe("atomic JSON files", () => {
   );
 
   it("preflights every private directory before changing existing permissions", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-private-preflight-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-private-preflight-"));
     const valid = join(root, "valid");
     const target = join(root, "target");
     const invalid = join(root, "invalid");
@@ -170,7 +171,7 @@ describe("atomic JSON files", () => {
   });
 
   it("does not create missing directories when a later preflight entry is invalid", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-private-create-preflight-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-private-create-preflight-"));
     const missing = join(root, "missing");
     const target = join(root, "target");
     const invalid = join(root, "invalid");
@@ -185,7 +186,7 @@ describe("atomic JSON files", () => {
   it.runIf(process.platform === "win32")(
     "rejects a foreign-owned batch before creating any missing directory",
     async () => {
-      const root = await mkdtemp(join(tmpdir(), "agentrinse-private-owner-preflight-"));
+      const root = createFixtureDirectory(join(tmpdir(), "agentrinse-private-owner-preflight-"));
       const missingBefore = join(root, "missing-before");
       const foreignOwned = join(root, "foreign-owned");
       const missingAfter = join(root, "missing-after");
@@ -213,7 +214,7 @@ describe("atomic JSON files", () => {
   it.runIf(process.platform === "win32")(
     "repairs and verifies exact ACLs for a private directory batch",
     async () => {
-      const root = await mkdtemp(join(tmpdir(), "agentrinse-private-state-windows-"));
+      const root = createFixtureDirectory(join(tmpdir(), "agentrinse-private-state-windows-"));
       const plans = join(root, "plans");
 
       await writeJsonAtomic(

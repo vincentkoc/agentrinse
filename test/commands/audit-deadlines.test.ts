@@ -1,4 +1,5 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,7 +14,7 @@ it.each([
 ])(
   "degrades a full audit on the $adapter deadline",
   async ({ deadlineMs, phaseTimeoutMs, adapter }) => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-budget-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-audit-budget-"));
     const config = join(home, "config.json");
     await writeFile(
       config,

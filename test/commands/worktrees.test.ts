@@ -1,4 +1,5 @@
-import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -15,7 +16,7 @@ import { runFixtureGit } from "../helpers/git.js";
 
 const homes: string[] = [];
 async function fixture() {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-worktrees-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-worktrees-")));
   homes.push(home);
   return home;
 }

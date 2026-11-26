@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { access, mkdir, mkdtemp, readFile, realpath, utimes, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -42,7 +43,7 @@ async function gitFixture(): Promise<{
   configPath: string;
   stateDir: string;
 }> {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-clean-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-clean-")));
   const main = join(home, "repo");
   const linked = join(home, "task");
   const configPath = join(home, "config.json");

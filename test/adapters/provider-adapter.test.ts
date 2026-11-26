@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,7 +39,7 @@ function databaseIdentity(path: string): DatabaseIdentity {
 
 async function fixtureContext(): Promise<AuditContext> {
   return {
-    home: await mkdtemp(join(tmpdir(), "agentrinse-provider-")),
+    home: createFixtureDirectory(join(tmpdir(), "agentrinse-provider-")),
     now: new Date("2026-07-23T00:00:00.000Z"),
     auditId: "audit-fixture",
   };
@@ -89,7 +90,7 @@ describe("ProviderAuditAdapter", () => {
 
   it("blocks a symlinked provider root", async () => {
     const context = await fixtureContext();
-    const target = await mkdtemp(join(tmpdir(), "agentrinse-target-"));
+    const target = createFixtureDirectory(join(tmpdir(), "agentrinse-target-"));
     await symlink(target, join(context.home, ".grok"));
     const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.grok, {
       measureBytes: true,

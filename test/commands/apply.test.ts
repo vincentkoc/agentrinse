@@ -1,13 +1,5 @@
-import {
-  access,
-  mkdir,
-  mkdtemp,
-  open,
-  readFile,
-  realpath,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { access, mkdir, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -53,7 +45,7 @@ describe("executeApplyCommand", () => {
     using _probe = vi
       .spyOn(processOwnership, "findProcessesUsingPath")
       .mockResolvedValue({ status: "idle", matches: [] });
-    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-command-")));
+    const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-command-")));
     await assertDestructiveFixtureRoot(home);
     const project = join(home, "project");
     const target = join(project, "node_modules");

@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
+import { mkdir, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 
@@ -76,7 +77,7 @@ async function zedActionFor(
 
 describe("provider file policy", () => {
   it("authorizes an exact Claude debug text file under CLAUDE_CONFIG_DIR", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
     const action = await actionFor(ownerRoot, "debug/session.txt");
 
@@ -95,7 +96,7 @@ describe("provider file policy", () => {
   });
 
   it("refuses a saved file action after the provider is disabled", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-disabled-provider-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-disabled-provider-"));
     const action = await actionFor(join(home, ".claude"), join("debug", "old.txt"));
     const config = {
       ...DEFAULT_CONFIG,
@@ -107,7 +108,7 @@ describe("provider file policy", () => {
   it.each(["debug/session.jsonl", "debug/nested/session.txt", "projects/session.txt"])(
     "rejects the non-policy path %s",
     async (relativePath) => {
-      const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+      const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
       const ownerRoot = join(home, "claude-data");
       const action = await actionFor(ownerRoot, relativePath);
 
@@ -127,7 +128,7 @@ describe("provider file policy", () => {
   );
 
   it.skipIf(sep !== "/")("rejects a root-level debug filename containing a backslash", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
     const action = await actionFor(ownerRoot, "debug\\session.txt");
 
@@ -146,7 +147,7 @@ describe("provider file policy", () => {
   });
 
   it("rejects recent logs and shortened recovery windows at authorization", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
     const recent = await actionFor(
       ownerRoot,
@@ -184,7 +185,7 @@ describe("provider file policy", () => {
   });
 
   it("authorizes only the exact old Claude changelog cache", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
     const action = await cacheActionFor(ownerRoot, "cache/changelog.md");
 
@@ -205,7 +206,7 @@ describe("provider file policy", () => {
   it.each(["cache/my-closed-issues.json", "cache/nested/changelog.md", "changelog.md"])(
     "rejects the non-cache-policy path %s",
     async (relativePath) => {
-      const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+      const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
       const ownerRoot = join(home, "claude-data");
       const action = await cacheActionFor(ownerRoot, relativePath);
 
@@ -227,7 +228,7 @@ describe("provider file policy", () => {
   );
 
   it.skipIf(sep !== "/")("rejects a root-level cache filename containing a backslash", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
     const action = await cacheActionFor(ownerRoot, "cache\\changelog.md");
 
@@ -248,7 +249,7 @@ describe("provider file policy", () => {
   });
 
   it("rejects recent changelog caches and shortened recovery windows at authorization", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "claude-data");
     const recent = await cacheActionFor(
       ownerRoot,
@@ -286,7 +287,7 @@ describe("provider file policy", () => {
   });
 
   it("authorizes the exact old rotated Zed log under the default macOS log root", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "Library", "Logs", "Zed");
     const action = await zedActionFor(ownerRoot, "Zed.log.old");
 
@@ -303,7 +304,7 @@ describe("provider file policy", () => {
   });
 
   it("authorizes the rotated Zed log under an explicit data root", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const dataRoot = join(home, "custom-zed");
     const ownerRoot = join(dataRoot, "logs");
     const action = await zedActionFor(ownerRoot, "Zed.log.old");
@@ -330,7 +331,7 @@ describe("provider file policy", () => {
   it.each(["Zed.log", "Zed.log.old.backup", join("nested", "Zed.log.old")])(
     "rejects the non-Zed-log-policy path %s",
     async (relativePath) => {
-      const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+      const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
       const ownerRoot = join(home, "Library", "Logs", "Zed");
       const action = await zedActionFor(ownerRoot, relativePath);
 
@@ -348,7 +349,7 @@ describe("provider file policy", () => {
   );
 
   it("rejects recent rotated Zed logs, shortened recovery, and the wrong owner root", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-policy-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-policy-home-"));
     const ownerRoot = join(home, "Library", "Logs", "Zed");
     const recent = await zedActionFor(
       ownerRoot,

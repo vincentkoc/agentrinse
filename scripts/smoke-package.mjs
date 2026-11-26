@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath } from "node:fs/promises";
+import { mkdir, readFile, realpath } from "node:fs/promises";
+import { createScriptFixture } from "./owned-fixture.mjs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-package-smoke-")));
+const root = await realpath(createScriptFixture(join(tmpdir(), "agentrinse-package-smoke-")));
 const packageRoot = join(root, "package");
 const installRoot = join(root, "install");
 const requestedTarball = process.argv.slice(2).find((argument) => argument !== "--");

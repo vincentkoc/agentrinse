@@ -1,4 +1,5 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,7 +14,7 @@ import {
 
 describe("config commands", () => {
   it("resolves, initializes, shows, and validates the default path", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-config-command-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-config-command-"));
     const expectedPath = join(home, ".config", "agentrinse", "config.json");
 
     expect(executeConfigPathCommand({ home, environment: {} }).path).toBe(expectedPath);
@@ -37,7 +38,7 @@ describe("config commands", () => {
   });
 
   it("never overwrites an existing config", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-config-command-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-config-command-"));
     await executeConfigInitCommand({ home, environment: {} });
 
     await expect(executeConfigInitCommand({ home, environment: {} })).rejects.toMatchObject({
@@ -46,7 +47,7 @@ describe("config commands", () => {
   });
 
   it("shows safe defaults when the default path does not exist", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-config-command-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-config-command-"));
     const shown = await executeConfigShowCommand({ home, environment: {} });
 
     expect(shown.config).toMatchObject({

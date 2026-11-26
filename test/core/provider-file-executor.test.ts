@@ -4,13 +4,13 @@ import {
   link,
   lstat,
   mkdir,
-  mkdtemp,
   readFile,
   rename,
   symlink,
   truncate,
   writeFile,
 } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -56,7 +56,7 @@ async function fixture(): Promise<{
   ownerRoot: string;
   quarantineDirectory: string;
 }> {
-  const home = await mkdtemp(join(tmpdir(), "agentrinse-provider-file-"));
+  const home = createFixtureDirectory(join(tmpdir(), "agentrinse-provider-file-"));
   const ownerRoot = join(home, ".claude");
   const debug = join(ownerRoot, "debug");
   const file = join(debug, "session.txt");
@@ -320,7 +320,7 @@ describe("provider-file quarantine execution and recovery", () => {
     const selected = await fixture();
     const debugDirectory = join(selected.ownerRoot, "debug");
     const movedDebugDirectory = join(selected.ownerRoot, "debug-moved");
-    const outsideDirectory = await mkdtemp(join(tmpdir(), "agentrinse-provider-outside-"));
+    const outsideDirectory = createFixtureDirectory(join(tmpdir(), "agentrinse-provider-outside-"));
     const outsideFile = join(outsideDirectory, "session.txt");
     await writeFile(outsideFile, "outside replacement\n");
     let raced = false;
@@ -435,7 +435,10 @@ describe("provider-file quarantine execution and recovery", () => {
 
   it("never follows a symlink presented as a provider file", async () => {
     const selected = await fixture();
-    const external = join(await mkdtemp(join(tmpdir(), "agentrinse-provider-external-")), "log");
+    const external = join(
+      createFixtureDirectory(join(tmpdir(), "agentrinse-provider-external-")),
+      "log",
+    );
     await writeFile(external, "external\n");
     const linked = join(selected.ownerRoot, "debug", "linked.txt");
     await symlink(external, linked);

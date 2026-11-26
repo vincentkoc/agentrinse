@@ -1,13 +1,5 @@
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  stat,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -51,7 +43,7 @@ async function fixture(): Promise<{
   stateRoot: string;
   target: string;
 }> {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-apply-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-apply-")));
   await assertDestructiveFixtureRoot(home);
   const stateRoot = join(home, "state");
   const project = join(home, "project");
@@ -113,7 +105,7 @@ async function worktreeFixture(): Promise<{
   plan: CleanupPlan;
   stateRoot: string;
 }> {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-worktree-apply-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-worktree-apply-")));
   await assertDestructiveFixtureRoot(home);
   const repository = join(home, "repo");
   const commonDir = join(repository, ".git");
@@ -186,7 +178,7 @@ async function databaseFixture(): Promise<{
   plan: CleanupPlan;
   stateRoot: string;
 }> {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-database-apply-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-database-apply-")));
   await assertDestructiveFixtureRoot(home);
   const root = join(home, ".codex");
   const path = join(root, "state_5.sqlite");
@@ -263,7 +255,7 @@ async function providerFileFixture(): Promise<{
   plan: CleanupPlan;
   stateRoot: string;
 }> {
-  const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-provider-apply-")));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-provider-apply-")));
   await assertDestructiveFixtureRoot(home);
   const ownerRoot = join(home, ".claude");
   const path = join(ownerRoot, "debug", "session.txt");

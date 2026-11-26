@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +15,7 @@ const OLD = new Date("2026-06-01T00:00:00.000Z");
 
 async function fixtureContext(): Promise<AuditContext> {
   return {
-    home: await mkdtemp(join(tmpdir(), "agentrinse-zed-logs-")),
+    home: createFixtureDirectory(join(tmpdir(), "agentrinse-zed-logs-")),
     now: NOW,
     auditId: "audit-zed-logs",
   };
@@ -142,7 +143,7 @@ describe("Zed rotated-log cleanup", () => {
     const rootContext = await fixtureContext();
     const dataRoot = join(rootContext.home, "Library", "Application Support", "Zed");
     const logsParent = join(rootContext.home, "Library", "Logs");
-    const outside = await mkdtemp(join(tmpdir(), "agentrinse-zed-logs-target-"));
+    const outside = createFixtureDirectory(join(tmpdir(), "agentrinse-zed-logs-target-"));
     await mkdir(dataRoot, { recursive: true });
     await mkdir(logsParent, { recursive: true });
     await writeDatedFile(join(outside, "Zed.log.old"), "outside\n", OLD);

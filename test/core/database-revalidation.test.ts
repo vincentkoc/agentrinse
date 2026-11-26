@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +12,7 @@ import { revalidateDatabaseVacuum } from "../../src/core/database-revalidation.j
 
 describe("database vacuum revalidation", () => {
   it("reserves peak space for the compacted copy and its normalization vacuum", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-db-space-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-db-space-"));
     const root = join(home, ".codex");
     const path = join(root, "state_5.sqlite");
     await mkdir(root);

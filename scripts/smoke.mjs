@@ -1,14 +1,6 @@
 import { execFile } from "node:child_process";
-import {
-  access,
-  chmod,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  utimes,
-  writeFile,
-} from "node:fs/promises";
+import { access, chmod, mkdir, readFile, realpath, utimes, writeFile } from "node:fs/promises";
+import { createScriptFixture } from "./owned-fixture.mjs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +15,7 @@ const runCli = (args, cwd = process.cwd(), environment = process.env) =>
   installedCli
     ? execFileAsync(installedCli, args, { cwd, env: environment })
     : execFileAsync(process.execPath, [sourceCli, ...args], { cwd, env: environment });
-const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-smoke-")));
+const root = await realpath(createScriptFixture(join(tmpdir(), "agentrinse-smoke-")));
 await assertDestructiveFixtureRoot(root);
 const home = join(root, "home");
 const auditPath = join(root, "audit.json");

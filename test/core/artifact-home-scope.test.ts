@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, stat, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -17,7 +18,7 @@ describe("artifact projects equal to the audited home", () => {
       (["direct", "dot", "parent", "alias"] as const).map((form) => ({ name, form })),
     ),
   )("refuses $name with $form spelling before ownership probes", async ({ name, form }) => {
-    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-home-scope-")));
+    const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-home-scope-")));
     const target = join(home, name);
     await mkdir(target);
     await writeFile(join(target, "keep.txt"), "synthetic user state");

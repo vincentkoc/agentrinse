@@ -5,12 +5,12 @@ import {
   chmod,
   lstat,
   mkdir,
-  mkdtemp,
   readFile,
   readdir,
   realpath,
   writeFile,
 } from "node:fs/promises";
+import { createScriptFixture } from "./owned-fixture.mjs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,7 +22,9 @@ const repositoryRoot = await realpath(
 );
 const dependenciesRoot = await realpath(join(repositoryRoot, "node_modules"));
 const cli = join(repositoryRoot, "dist", "cli.js");
-const fixtureRoot = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-stateless-smoke-")));
+const fixtureRoot = await realpath(
+  createScriptFixture(join(tmpdir(), "agentrinse-stateless-smoke-")),
+);
 const home = join(fixtureRoot, "home");
 const trapBin = join(fixtureRoot, "trap-bin");
 const trapMarker = join(fixtureRoot, "trap-invocations.log");

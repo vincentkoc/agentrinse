@@ -1,5 +1,6 @@
 import type { Dirent } from "node:fs";
-import { lstat, mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { lstat, mkdir, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 
@@ -15,7 +16,7 @@ const NOW = new Date("2026-07-25T00:00:00.000Z");
 
 async function fixtureContext(): Promise<AuditContext> {
   return {
-    home: await mkdtemp(join(tmpdir(), "agentrinse-claude-debug-")),
+    home: createFixtureDirectory(join(tmpdir(), "agentrinse-claude-debug-")),
     now: NOW,
     auditId: "audit-claude-debug",
   };
@@ -142,7 +143,7 @@ describe("Claude debug cleanup", () => {
   it("does not follow a symlinked debug directory", async () => {
     const context = await fixtureContext();
     const root = join(context.home, ".claude");
-    const target = await mkdtemp(join(tmpdir(), "agentrinse-claude-debug-target-"));
+    const target = createFixtureDirectory(join(tmpdir(), "agentrinse-claude-debug-target-"));
     await mkdir(root);
     await writeFile(join(target, "old-session.txt"), "outside");
     await symlink(target, join(root, "debug"));

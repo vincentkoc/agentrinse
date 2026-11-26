@@ -1,4 +1,5 @@
-import { mkdtemp, utimes, writeFile } from "node:fs/promises";
+import { utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,7 +17,7 @@ import {
 
 describe("Codex database inspection", () => {
   it("reads a supported state database contract without opening provider content", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-db-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-codex-db-"));
     const path = join(root, "state_5.sqlite");
     const header = Buffer.alloc(100);
     header.write("SQLite format 3\0", "binary");
@@ -70,7 +71,7 @@ describe("Codex database inspection", () => {
   });
 
   it("rejects a database with a failed SQLx migration", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-db-failed-migration-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-codex-db-failed-migration-"));
     const path = join(root, "state_5.sqlite");
     const header = Buffer.alloc(100);
     header.write("SQLite format 3\0", "binary");
@@ -98,7 +99,7 @@ describe("Codex database inspection", () => {
   });
 
   it("uses complete file contents for the database fingerprint", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-db-content-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-codex-db-content-"));
     const path = join(root, "state_5.sqlite");
     const bytes = Buffer.alloc(200);
     bytes.write("SQLite format 3\0", "binary");
@@ -170,7 +171,7 @@ describe("Codex database inspection", () => {
   });
 
   it("parses exact database descriptors and Codex owner processes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-handles-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-codex-handles-"));
     const path = join(root, "state_5.sqlite");
     await writeFile(path, "synthetic");
     const handles = await inspectDatabaseOpenHandles(path, {
@@ -194,7 +195,7 @@ describe("Codex database inspection", () => {
   });
 
   it("counts every direct-selected lsof file set and fails closed on malformed output", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-codex-handles-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-codex-handles-"));
     const path = join(root, "state_5.sqlite");
     await writeFile(path, "synthetic");
 

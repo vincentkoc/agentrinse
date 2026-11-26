@@ -1,9 +1,10 @@
 import { once } from "node:events";
-import { opendir, lstat, mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { opendir, lstat, mkdir, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { describe, expect, it } from "vitest";
 
 import { DirectoryChangeProof } from "../../src/core/directory-change-proof.js";
@@ -11,7 +12,7 @@ import { measurePath } from "../../src/core/measure.js";
 
 describe("measurePath", () => {
   it("prunes protected entries before inspecting files, links or directories", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     await mkdir(join(root, "nested", ".codex"), { recursive: true });
     await writeFile(join(root, "nested", ".codex", "history.jsonl"), "preserve");
     const result = await measurePath(
@@ -29,7 +30,7 @@ describe("measurePath", () => {
   });
 
   it("refuses incomplete directory proof and detects a change during enumeration", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     const proof = new DirectoryChangeProof();
     expect(proof.unchanged(root)).toBe(false);
     await expect(
@@ -49,7 +50,7 @@ describe("measurePath", () => {
   });
 
   it("measures regular files recursively", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     await mkdir(join(root, "nested"));
     await writeFile(join(root, "a.txt"), "abc");
     await writeFile(join(root, "nested", "b.txt"), "12345");
@@ -64,8 +65,8 @@ describe("measurePath", () => {
   });
 
   it("does not follow symlinks", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
-    const outside = await mkdtemp(join(tmpdir(), "agentrinse-outside-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
+    const outside = createFixtureDirectory(join(tmpdir(), "agentrinse-outside-"));
     await writeFile(join(outside, "secret.txt"), "do not count");
     await symlink(outside, join(root, "outside"));
 
@@ -76,7 +77,7 @@ describe("measurePath", () => {
   });
 
   it("stops at the entry budget", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     await writeFile(join(root, "a.txt"), "a");
     await writeFile(join(root, "b.txt"), "b");
 
@@ -87,7 +88,7 @@ describe("measurePath", () => {
   });
 
   it("bounds lazy enumeration without materializing a large tree", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     const template = join(root, "template");
     await writeFile(template, "x");
     const rootStats = await lstat(root);
@@ -121,7 +122,7 @@ describe("measurePath", () => {
   });
 
   it("charges excluded names against the enumeration budget", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     const rootStats = await lstat(root);
     let yielded = 0;
     let closed = false;
@@ -155,7 +156,7 @@ describe("measurePath", () => {
   });
 
   it("closes directory iteration when cancellation arrives", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     const rootStats = await lstat(root);
     const controller = new AbortController();
     let yielded = 0;
@@ -190,7 +191,7 @@ describe("measurePath", () => {
   });
 
   it("reports Unix sockets as unsupported special entries", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     const socketPath = join(root, "active.sock");
     const server = createServer();
     server.listen(socketPath);
@@ -208,7 +209,7 @@ describe("measurePath", () => {
   });
 
   it("changes the fingerprint for same-size in-place writes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     const path = join(root, "cache.bin");
     await writeFile(path, "before");
     const original = await stat(path);
@@ -225,7 +226,7 @@ describe("measurePath", () => {
   });
 
   it("counts nested VCS metadata without descending into it", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-vcs-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-vcs-"));
     await writeFile(join(root, "keep.txt"), "x");
     const gitDir = join(root, ".git");
     await mkdir(gitDir);
@@ -242,7 +243,7 @@ describe("measurePath", () => {
   });
 
   it("can exclude a Git-owned root control entry", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-measure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-measure-"));
     await writeFile(join(root, "data.txt"), "keep");
     await writeFile(join(root, ".git"), "gitdir: /tmp/one\n");
     const before = await measurePath(root, {

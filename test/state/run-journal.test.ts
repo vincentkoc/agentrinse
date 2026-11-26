@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -46,7 +46,7 @@ const PLAN: CleanupPlan = {
 
 describe("run journal", () => {
   it("persists every action transition", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-run-"));
     const journal = await createRunJournal(
       root,
       PLAN,
@@ -69,7 +69,7 @@ describe("run journal", () => {
   });
 
   it("marks a run partial when applied and failed actions coexist", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-run-"));
     const plan: CleanupPlan = {
       ...PLAN,
       actions: [
@@ -92,7 +92,7 @@ describe("run journal", () => {
   });
 
   it("treats a rolled-back action as a failed run", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-run-"));
     const journal = await createRunJournal(root, PLAN);
     await journal.updateAction("action-1", {
       status: "rolled-back",
@@ -103,7 +103,7 @@ describe("run journal", () => {
   });
 
   it("persists an interrupted run without rewriting action truth", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-run-"));
     const journal = await createRunJournal(root, PLAN);
     await journal.updateAction("action-1", {
       status: "applying",
@@ -129,7 +129,7 @@ describe("run journal", () => {
   });
 
   it("tracks quarantined bytes without claiming immediate reclaim", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-run-"));
     const plan: CleanupPlan = {
       ...PLAN,
       riskCeiling: "recoverable",
@@ -177,7 +177,7 @@ describe("run journal", () => {
   });
 
   it("tracks provider-file quarantine bytes without claiming reclaim", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-run-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-run-"));
     const plan: CleanupPlan = {
       ...PLAN,
       riskCeiling: "recoverable",

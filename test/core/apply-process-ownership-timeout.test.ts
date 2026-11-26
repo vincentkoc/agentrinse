@@ -1,4 +1,5 @@
-import { lstat, mkdir, mkdtemp, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,7 +41,7 @@ function planWindow(): { createdAt: string; expiresAt: string } {
 }
 
 async function syntheticHome(prefix: string): Promise<string> {
-  const home = await realpath(await mkdtemp(join(tmpdir(), prefix)));
+  const home = await realpath(createFixtureDirectory(join(tmpdir(), prefix)));
   await assertDestructiveFixtureRoot(home);
   return home;
 }
