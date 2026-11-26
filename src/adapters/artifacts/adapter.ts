@@ -1,7 +1,12 @@
 import { lstat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { artifactInspectionBlocker } from "../../rules/build/inspection.js";
+import {
+  collectViteProjectCache,
+  classifyViteProjectCache,
+} from "../../rules/vite/project-cache.js";
+import { hasCacheTag, requiresCacheTag } from "../../rules/build/cache-tag.js";
+import { artifactDecisionBeforeHolderProbe } from "../../rules/build/inspection.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import { artifactNameSchema, type ArtifactRemoveAction } from "../../contracts/action.js";
@@ -11,6 +16,7 @@ import type { AdapterProbe } from "../../contracts/report.js";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import { sha256 } from "../../core/digest.js";
 import { inspectArtifactGitState } from "../../core/artifact-git-state.js";
+import { isArtifactAgentState } from "../../core/artifact-measurement.js";
 import { measurePath } from "../../core/measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "../../core/mount-boundaries.js";
 import {
@@ -179,21 +185,6 @@ export class ArtifactAuditAdapter implements AuditAdapter {
           const stats = await lstat(path);
           const isDirectory = stats.isDirectory();
           const isSymlink = stats.isSymbolicLink();
-          const measurement =
-            isDirectory && !isSymlink && this.options.measureBytes
-              ? await measurePath(path, {
-                  maxEntries: this.options.maxEntries,
-                  ...(context.signal === undefined ? {} : { signal: context.signal }),
-                })
-              : undefined;
-          const ownership =
-            isDirectory && !isSymlink
-              ? await this.processProbe(path)
-              : ({
-                  status: "unknown",
-                  matches: [],
-                  reason: "resource is not a real directory",
-                } satisfies ProcessOwnershipResult);
           const mounts =
             isDirectory && !isSymlink
               ? await this.mountProbe(path)
@@ -202,13 +193,28 @@ export class ArtifactAuditAdapter implements AuditAdapter {
                   paths: [],
                   reason: "resource is not a real directory",
                 } satisfies MountBoundaryResult);
+          const cacheTagVerified = requiresCacheTag(name)
+            ? isDirectory &&
+              !isSymlink &&
+              mounts.status === "clear" &&
+              stats.dev === projectStats.dev &&
+              (await hasCacheTag(path, stats.dev))
+            : undefined;
+          const measurement =
+            isDirectory && !isSymlink && cacheTagVerified !== false && this.options.measureBytes
+              ? await measurePath(path, {
+                  maxEntries: this.options.maxEntries,
+                  protectEntry: isArtifactAgentState,
+                  ...(context.signal === undefined ? {} : { signal: context.signal }),
+                })
+              : undefined;
           const gitState =
             isDirectory && !isSymlink
               ? await inspectArtifactGitState(projectRoot, name)
               : { status: "unknown" as const, reason: "resource is not a real directory" };
           const canonicalKey = `artifacts:build-artifact:${path}`;
 
-          resources.push({
+          const resource: ResourceSnapshot = {
             resource: {
               id: `artifacts:build-artifact:${sha256(canonicalKey)}`,
               adapter: this.id,
@@ -223,6 +229,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
             facts: {
               projectRoot,
               name,
+              ...(cacheTagVerified === undefined ? {} : { cacheTagVerified }),
               device: stats.dev,
               inode: stats.ino,
               mtimeMs: stats.mtimeMs,
@@ -237,16 +244,21 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               measurementTruncated: measurement?.truncated ?? false,
               specialEntries: measurement?.specialEntries ?? 0,
               vcsMetadataEntries: measurement?.vcsMetadataEntries ?? 0,
+              protectedAgentEntries: measurement?.protectedEntries ?? 0,
               gitState,
               mountBoundaries: measurement?.mountBoundaries ?? 0,
               isMountRoot: stats.dev !== projectStats.dev,
               entries: measurement?.entries,
-              processOwnership: ownership,
               mountBoundaryStatus: mounts.status,
               mountBoundaryPaths: mounts.paths,
               mountBoundaryReason: mounts.status === "unknown" ? mounts.reason : undefined,
             },
-          });
+          };
+          const decision = artifactDecisionBeforeHolderProbe(resource, this.options);
+          resource.facts.processOwnership = decision
+            ? { status: "not-probed", reason: decision.code }
+            : await this.processProbe(path);
+          resources.push(resource);
         } catch (error) {
           if (!isMissing(error)) {
             diagnostics.push({
@@ -258,73 +270,38 @@ export class ArtifactAuditAdapter implements AuditAdapter {
           }
         }
       }
+      context.signal?.throwIfAborted();
+      const viteCache = await collectViteProjectCache(context, projectRoot, this.mountProbe);
+      if (viteCache) resources.push(viteCache);
     }
 
     return { resources, diagnostics };
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
+    const inventory = classifyViteProjectCache(context, resource);
+    if (inventory) return inventory;
     const facts = resource.facts;
     const roots: RootEvidence[] = [];
     const warnings: Diagnostic[] = [];
     let state: Finding["state"] = "eligible";
     let confidence: Finding["confidence"] = "certain";
 
-    const blocker = artifactInspectionBlocker(facts);
-    if (blocker) {
-      state = "blocked";
-      confidence = blocker.confidence;
-      warnings.push({
-        severity: "warning",
-        code: blocker.code,
-        message: blocker.message,
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (
-      resource.measuredBytes === undefined ||
-      resource.measuredBytes < this.options.minBytes
-    ) {
-      state = "protected";
-      roots.push(
-        rootEvidence(
-          context,
-          "artifact-below-size-threshold",
-          `Artifact is smaller than ${this.options.minBytes} bytes.`,
-        ),
-      );
-    } else if (
-      typeof facts.ageMinutes !== "number" ||
-      facts.ageMinutes < this.options.minAgeMinutes
-    ) {
-      state = "protected";
-      roots.push(
-        rootEvidence(
-          context,
-          "recent-resource",
-          `Artifact is newer than ${this.options.minAgeMinutes} minutes.`,
-        ),
-      );
-    }
-
-    const gitState = facts.gitState as
-      | Awaited<ReturnType<typeof inspectArtifactGitState>>
-      | undefined;
-    if (state === "eligible" && gitState?.status === "tracked") {
-      state = "protected";
-      roots.push(
-        rootEvidence(context, "git-tracked-artifact", "Git tracks files inside this artifact."),
-      );
-    } else if (state === "eligible" && gitState?.status !== "clear") {
-      state = "blocked";
-      confidence = "unknown";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_GIT_STATUS_UNKNOWN",
-        message: `Git tracking could not be verified: ${gitState?.status === "unknown" ? gitState.reason : "missing evidence"}`,
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
+    const decision = artifactDecisionBeforeHolderProbe(resource, this.options);
+    if (decision) {
+      state = decision.state;
+      confidence = decision.confidence;
+      if (decision.state === "protected") {
+        roots.push(rootEvidence(context, decision.code, decision.message));
+      } else {
+        warnings.push({
+          severity: "warning",
+          code: decision.code,
+          message: decision.message,
+          adapter: this.id,
+          resourceId: resource.resource.id,
+        });
+      }
     }
 
     const ownership = facts.processOwnership as ProcessOwnershipResult | undefined;

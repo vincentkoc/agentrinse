@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, opendir, readlink } from "node:fs/promises";
 import { basename, join, relative } from "node:path";
 import type { Stats } from "node:fs";
+import type { DirectoryChangeProof } from "./directory-change-proof.js";
 
 const VCS_METADATA_NAMES = new Set([".git", ".hg", ".svn", ".jj"]);
 
@@ -11,6 +12,7 @@ export type Measurement = {
   symlinksSkipped: number;
   specialEntries: number;
   vcsMetadataEntries: number;
+  protectedEntries?: number;
   truncated: boolean;
   newestMtimeMs: number;
   fingerprint: string;
@@ -21,6 +23,8 @@ export type MeasureOptions = {
   maxEntries: number;
   signal?: AbortSignal;
   excludeRootEntries?: string[];
+  protectEntry?: (name: string) => boolean;
+  directoryProof?: DirectoryChangeProof;
 };
 
 type DirectoryEntry = {
@@ -90,6 +94,12 @@ export async function measurePath(
       break;
     }
 
+    if (path !== root && options.protectEntry?.(basename(path))) {
+      result.entries += 1;
+      result.protectedEntries = (result.protectedEntries ?? 0) + 1;
+      continue;
+    }
+
     const stats = await inspect(path);
     rootDevice ??= stats.dev;
     result.entries += 1;
@@ -144,6 +154,8 @@ export async function measurePath(
       continue;
     }
 
+    const proof = options.directoryProof;
+    const beforeRead = proof ? await proof.beforeRead(path) : undefined;
     const directory = await openDirectory(path);
     const names: string[] = [];
     try {
@@ -165,6 +177,7 @@ export async function measurePath(
     } finally {
       await closeDirectory(directory);
     }
+    if (proof && beforeRead) await proof.afterRead(path, beforeRead);
     names.sort((left, right) => right.localeCompare(left));
     for (const name of names) {
       pending.push(join(path, name));

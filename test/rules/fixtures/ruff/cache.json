@@ -1,0 +1,5 @@
+{
+  "rule": "ruff.cache",
+  "accept": [".ruff_cache"],
+  "reject": [".ruff_cache.old", "ruff"]
+}

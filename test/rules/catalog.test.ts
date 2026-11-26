@@ -161,6 +161,7 @@ describe("built-in rule fixtures", () => {
             facts: {
               projectRoot: project.root,
               name,
+              ...(descriptor.proof === "cachedir-tag" ? { cacheTagVerified: true } : {}),
               device: 1,
               inode: 2,
               mtimeMs: 0,

@@ -77,6 +77,7 @@ export type ProviderFileRule = z.infer<typeof providerFileRuleSchema>;
 export const projectArtifactRuleSchema = z.strictObject({
   id: z.string().regex(/^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/u),
   kind: z.literal("project-artifacts"),
+  proof: z.literal("cachedir-tag").optional(),
   names: z.array(component.refine((value) => value.toLowerCase() !== ".git")).min(1),
 });
 

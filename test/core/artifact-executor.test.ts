@@ -15,7 +15,7 @@ import { measurePath } from "../../src/core/measure.js";
 import { assertDestructiveFixtureRoot } from "../../src/core/safety.js";
 import { runFixtureGit } from "../helpers/git.js";
 
-async function fixture(): Promise<{
+async function fixture(nested = false): Promise<{
   action: ArtifactRemoveAction;
   project: string;
   target: string;
@@ -27,6 +27,7 @@ async function fixture(): Promise<{
   await mkdir(target, { recursive: true });
   await writeFile(join(project, "source.ts"), "keep");
   await writeFile(join(target, "cache.bin"), "remove");
+  if (nested) await mkdir(join(target, "cache"));
   const stats = await stat(target);
   const measurement = await measurePath(target, { maxEntries: 100 });
   return {
@@ -65,6 +66,46 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("executeArtifactRemove", () => {
+  it("restores history added deep in the isolated tree during the last owner refresh", async () => {
+    const value = await fixture(true);
+    await expect(
+      executeArtifactRemove(value.action, {
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        revalidateProtection: async (path) => {
+          await mkdir(join(path, "cache", ".codex"));
+          await writeFile(join(path, "cache", ".codex", "session.jsonl"), "keep");
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      message: expect.stringContaining("protected agent state"),
+    });
+    expect(await readFile(join(value.target, "cache", ".codex", "session.jsonl"), "utf8")).toBe(
+      "keep",
+    );
+  });
+  it("restores history inserted into an existing deep directory by the second authorization refresh", async () => {
+    const value = await fixture(true);
+    let refreshes = 0;
+    await expect(
+      executeArtifactRemove(value.action, {
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        revalidateProtection: async (path) => {
+          if (++refreshes !== 2) return;
+          await mkdir(join(path, "cache", ".codex"));
+          await writeFile(join(path, "cache", ".codex", "history.jsonl"), "preserve");
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      message: expect.stringContaining("final authorization"),
+    });
+    expect(refreshes).toBe(2);
+    expect(await readFile(join(value.target, "cache", ".codex", "history.jsonl"), "utf8")).toBe(
+      "preserve",
+    );
+  });
+
   it("restores an isolated artifact if its provider claims it before removal", async () => {
     const value = await fixture();
     await expect(
@@ -95,6 +136,27 @@ describe("executeArtifactRemove", () => {
     expect(await exists(artifactIsolationPath(value.action, "tracked-artifact"))).toBe(false);
   });
 
+  it("refreshes authority again if a provider claims the artifact during final measurement", async () => {
+    const value = await fixture();
+    let scans = 0;
+    await expect(
+      executeArtifactRemove(value.action, {
+        measure: async (path, options) => {
+          scans++;
+          return measurePath(path, options);
+        },
+        processProbe: async () => ({ status: "idle", matches: [] }),
+        revalidateProtection: async () => {
+          if (scans === 2) throw new Error("new provider claim");
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "rolled-back",
+      message: expect.stringContaining("ownership changed"),
+    });
+    expect(await readFile(join(value.target, "cache.bin"), "utf8")).toBe("remove");
+  });
+
   it("isolates and removes only the planned artifact", async () => {
     const value = await fixture();
     let nowMs = 0;
@@ -112,7 +174,7 @@ describe("executeArtifactRemove", () => {
       processProbe: async () => ({ status: "idle", matches: [] }),
     });
 
-    expect(checkedPaths).toEqual([value.target, result.isolationPath]);
+    expect(checkedPaths).toEqual([value.target, result.isolationPath, result.isolationPath]);
     expect(await exists(value.target)).toBe(false);
     expect(await exists(result.isolationPath)).toBe(false);
     expect(await readFile(join(value.project, "source.ts"), "utf8")).toBe("keep");

@@ -5,6 +5,7 @@ const root = new URL("../src/rules/", import.meta.url);
 const imports = [];
 const policies = [];
 const artifactNames = [];
+const cacheTagNames = [];
 const ids = new Set();
 const basename = /^[a-zA-Z0-9_-][a-zA-Z0-9._-]*$|^\.[a-zA-Z0-9_-][a-zA-Z0-9._-]*$/u;
 
@@ -23,7 +24,8 @@ for (const owner of (await readdir(root, { withFileTypes: true }))
     ids.add(id);
     if (rule.kind === "project-artifacts") {
       if (
-        Object.keys(rule).some((key) => !["id", "kind", "names"].includes(key)) ||
+        Object.keys(rule).some((key) => !["id", "kind", "names", "proof"].includes(key)) ||
+        (rule.proof !== undefined && rule.proof !== "cachedir-tag") ||
         !Array.isArray(rule.names) ||
         !rule.names.length
       )
@@ -37,6 +39,7 @@ for (const owner of (await readdir(root, { withFileTypes: true }))
         )
           throw new Error("Unsafe or duplicate project artifact in " + path);
         artifactNames.push(name);
+        if (rule.proof === "cachedir-tag") cacheTagNames.push(name);
       }
     } else if (rule.kind === "provider-file" && rule.provider === owner) {
       const binding = "rule" + policies.length;
@@ -59,6 +62,10 @@ const source = [
   "// oxfmt-ignore",
   "export const artifactNames = [",
   ...artifactNames.map((name) => "  " + JSON.stringify(name) + ","),
+  "] as const;",
+  "// oxfmt-ignore",
+  "export const cacheTagNames = [",
+  ...cacheTagNames.map((name) => "  " + JSON.stringify(name) + ","),
   "] as const;",
   "",
 ].join("\n");

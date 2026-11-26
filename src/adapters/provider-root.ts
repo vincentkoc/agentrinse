@@ -1,3 +1,4 @@
+import { isOpenClawProfileName } from "../rules/openclaw/profile.js";
 import { isAbsolute, join, resolve } from "node:path";
 
 import type { ProviderSpec } from "./provider-specs.js";
@@ -47,7 +48,7 @@ export function resolveProviderRoot(
     if (!profile || profile.toLowerCase() === "default") {
       return spec.defaultRoot(ownerHome, options.platform ?? process.platform);
     }
-    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u.test(profile)) {
+    if (!isOpenClawProfileName(profile)) {
       throw new Error("Invalid OPENCLAW_PROFILE");
     }
     return join(ownerHome, `.openclaw-${profile}`);

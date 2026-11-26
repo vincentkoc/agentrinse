@@ -3333,7 +3333,9 @@ Exit criteria:
 
 - Never removes the main worktree.
 - Never removes dirty, active, locked, provider-rooted, or unpushed work.
-- Trims only declared rebuildable artifacts.
+- Python tool caches `.pytest_cache`, `.mypy_cache` and `.ruff_cache` require explicit project selection and a standard CACHEDIR.TAG signature during discovery and live revalidation.
+- Inventory reports the default Vite cache only for an explicitly configured project that declares Vite in dependencies or devDependencies. The finding has zero estimated reclaim and carries no action.
+- Trims only declared rebuildable artifacts. A nested agent state root (such as `.codex` or `.claude`) blocks removal. Artifact measurement skips its contents, including during apply and the final check of the isolated directory. Before removal, the executor checks each previously enumerated directory for replacement or change since the final bounded scan.
 - Quarantines eligible worktrees on the same filesystem.
 - Creates a durable recovery ref before removal.
 - Restores a quarantined worktree without overwriting new paths.

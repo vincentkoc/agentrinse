@@ -79,6 +79,61 @@ describe("ArtifactAuditAdapter", () => {
     expect(artifactInspectionBlocker(facts)).toBeUndefined();
   });
 
+  it("probes holders only after the same structural, retention and Git checks used by classification", async () => {
+    const { context, projectRoot } = await fixture();
+    const names = ["dist", "build", ".venv", "node_modules"] as const;
+    for (const name of names.slice(0, 3)) {
+      const dir = join(projectRoot, name);
+      await mkdir(dir);
+      const file = join(dir, "data");
+      await writeFile(file, name === "dist" ? "" : "synthetic");
+      if (name !== "build") {
+        await utimes(file, new Date(0), new Date(0));
+        await utimes(dir, new Date(0), new Date(0));
+      }
+    }
+    await runFixtureGit(["-C", projectRoot, "init", "--quiet"], { home: projectRoot });
+    await runFixtureGit(["-C", projectRoot, "add", ".venv/data"], { home: projectRoot });
+    const calls: string[] = [];
+    const adapter = new ArtifactAuditAdapter(
+      {
+        projects: [{ root: projectRoot, names: [...names] }],
+        minAgeMinutes: 60,
+        minBytes: 1,
+        processCheck: "required",
+        measureBytes: true,
+        maxEntries: 100,
+      },
+      async (path) => {
+        calls.push(path);
+        return { status: "unknown", matches: [], reason: "probe unavailable" };
+      },
+      async () => ({ status: "clear", paths: [] }),
+    );
+    const { resources } = await adapter.collect(context, await adapter.probe(context));
+    expect(calls).toEqual([join(projectRoot, "node_modules")]);
+    for (const [i, code] of [
+      "artifact-below-size-threshold",
+      "recent-resource",
+      "git-tracked-artifact",
+    ].entries()) {
+      const resource = resources[i]!;
+      expect(resource.facts.processOwnership).toEqual({ status: "not-probed", reason: code });
+      const finding = await adapter.classify(context, resource);
+      expect(finding.roots).toContainEqual(expect.objectContaining({ code }));
+      expect(finding.candidateActions).toEqual([]);
+    }
+    for (const ownership of [resources[3]!.facts.processOwnership, { status: "not-probed" }]) {
+      const resource = resources[3]!;
+      const finding = await adapter.classify(context, {
+        ...resource,
+        facts: { ...resource.facts, processOwnership: ownership },
+      });
+      expect(finding.warnings[0]?.code).toBe("PROCESS_OWNERSHIP_UNKNOWN");
+      expect(finding.candidateActions).toEqual([]);
+    }
+  });
+
   it("protects tracked files inside a configured artifact", async () => {
     const { context, adapter, projectRoot, artifact, artifactFile } = await fixture();
     await runFixtureGit(["-C", projectRoot, "init", "--quiet"], { home: projectRoot });
@@ -96,6 +151,32 @@ describe("ArtifactAuditAdapter", () => {
     expect(finding.candidateActions).toEqual([]);
   });
 
+  it("retains nested agent storage and excludes it from measured bytes", async () => {
+    const { context, adapter, artifact } = await fixture();
+    await mkdir(join(artifact, "snapshot", ".Claude"), { recursive: true });
+    await writeFile(join(artifact, "snapshot", ".Claude", "transcript.jsonl"), "keep");
+    const { resources } = await adapter.collect(context, await adapter.probe(context));
+    expect(await adapter.classify(context, resources[0]!)).toMatchObject({
+      state: "blocked",
+      measuredBytes: 9,
+      estimatedReclaimBytes: 0,
+      candidateActions: [],
+      warnings: [{ code: "ARTIFACT_NESTED_AGENT_STATE" }],
+    });
+  });
+
+  it.each([
+    [".openclaw-dev", true],
+    [".openclaw-a_b-2", true],
+    [".openclaw-~", false],
+    [".openclaw-" + "x".repeat(65), false],
+  ] as const)("recognizes bounded profile root %s", async (name, protectedRoot) => {
+    const { context, adapter, artifact } = await fixture();
+    await mkdir(join(artifact, name));
+    const { resources } = await adapter.collect(context, await adapter.probe(context));
+    expect(resources[0]?.facts.protectedAgentEntries).toBe(protectedRoot ? 1 : 0);
+  });
+
   it("blocks an artifact containing a nested repository", async () => {
     const { context, adapter, artifact } = await fixture();
     const gitDirectory = join(artifact, ".git");
@@ -111,6 +192,10 @@ describe("ArtifactAuditAdapter", () => {
     const finding = await adapter.classify(context, collection.resources[0]!);
 
     expect(finding.state).toBe("blocked");
+    expect(finding.facts.processOwnership).toEqual({
+      status: "not-probed",
+      reason: "ARTIFACT_NESTED_VCS",
+    });
     expect(finding.warnings[0]?.code).toBe("ARTIFACT_NESTED_VCS");
     expect(finding.candidateActions).toEqual([]);
   });

@@ -103,7 +103,10 @@
                       ".cache",
                       "coverage",
                       "target",
-                      ".venv"
+                      ".mypy_cache",
+                      ".pytest_cache",
+                      ".venv",
+                      ".ruff_cache"
                     ]
                   },
                   "device": {

@@ -1,0 +1,6 @@
+{
+  "id": "pytest.cache",
+  "kind": "project-artifacts",
+  "names": [".pytest_cache"],
+  "proof": "cachedir-tag"
+}

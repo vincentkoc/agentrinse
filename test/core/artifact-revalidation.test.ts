@@ -94,6 +94,21 @@ describe("revalidateArtifactRemove", () => {
     });
   });
 
+  it("refuses newly nested agent state before probing holders", async () => {
+    const value = await fixture();
+    await mkdir(join(value.target, ".codex"));
+    await utimes(value.target, new Date(0), new Date(0));
+    const result = await revalidateArtifactRemove(value.action, value.home, value.config, {
+      processProbe: () => {
+        throw new Error("must skip holder inspection");
+      },
+    });
+    expect(result).toMatchObject({
+      status: "stale",
+      diagnostic: { code: "ARTIFACT_NESTED_AGENT_STATE" },
+    });
+  });
+
   it("accepts an unchanged idle artifact", async () => {
     const value = await fixture();
 

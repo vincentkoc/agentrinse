@@ -234,6 +234,10 @@
           "type": "string",
           "const": "project-artifacts"
         },
+        "proof": {
+          "type": "string",
+          "const": "cachedir-tag"
+        },
         "names": {
           "minItems": 1,
           "type": "array",

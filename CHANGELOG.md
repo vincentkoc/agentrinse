@@ -8,10 +8,17 @@ The project follows semantic versioning after its first supported release.
 
 ### Changed
 
+- Artifact discovery skips recursive process inspection for resources already excluded by filesystem, retention, or Git evidence. Findings identify which check ruled out that probe.
+- Artifact scans retain nested agent state (including named OpenClaw profiles) and exclude its contents from measurement. Apply records the identities and change times of inspected directories, then checks them again after the final ownership refresh.
+
 - Built-in cleanup rules now live under their resource owner. Contributors can add supported file-quarantine and project-artifact rules with a JSON descriptor and a fixture, then verify them with `pnpm rules:verify`.
 - Planning from a saved audit and applying a provider-file action now respect a disabled provider and the currently registered rule.
 
 ### Added
+
+- Configured projects that declare Vite can report its default local cache without measuring or planning removal of the cache.
+
+- Projects can opt into pytest, mypy and Ruff cache removal by exact name. Each cache must contain a valid CACHEDIR.TAG declaration at audit and apply time.
 
 - `agentrinse worktrees` inventories linked checkouts, standalone repositories,
   missing registrations, logical worktree sizes and direct Git administrative
