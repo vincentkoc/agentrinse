@@ -7,7 +7,7 @@ import { actionRiskSchema, type ActionRisk } from "../contracts/action.js";
 import type { CleanupRun } from "../contracts/run.js";
 import { applyCleanupPlan } from "../core/apply.js";
 import { CommandInterruptedError } from "../core/interruption.js";
-import { formatReclaimBytes } from "../output.js";
+import { formatRunReclaimBytes } from "../output.js";
 import { readJsonFile } from "../state/json-file.js";
 import { resolveStateRoot } from "../state/layout.js";
 
@@ -90,7 +90,7 @@ function renderRun(run: CleanupRun, journalPath: string): string {
   return [
     `run ${run.runId}: ${run.status}`,
     `applied ${applied}, skipped ${skipped}, failed ${failed}`,
-    `reclaimed ${formatReclaimBytes(run.reclaimedBytes, run.actions)}`,
+    `reclaimed ${formatRunReclaimBytes(run)}`,
     `quarantined ${run.quarantinedBytes ?? 0} bytes pending purge`,
     `journal ${journalPath}`,
     "",

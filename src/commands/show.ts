@@ -1,7 +1,7 @@
 import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
 import { auditReportSchema, type AuditReport } from "../contracts/report.js";
 import { cleanupRunSchema, type CleanupRun } from "../contracts/run.js";
-import { formatReclaimBytes } from "../output.js";
+import { formatRunReclaimBytes } from "../output.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 import { listJsonRecords, readJsonRecord } from "../state/records.js";
 
@@ -20,7 +20,7 @@ function renderRunDetails(run: CleanupRun): string {
   const lines = [
     `run ${run.runId}: ${run.status}`,
     `plan ${run.planId}`,
-    `reclaimed ${formatReclaimBytes(run.reclaimedBytes, run.actions)}`,
+    `reclaimed ${formatRunReclaimBytes(run)}`,
     `quarantined ${run.quarantinedBytes ?? 0} bytes pending purge`,
     "",
   ];

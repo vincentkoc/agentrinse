@@ -18,7 +18,7 @@ import { AuditPhaseDeadlineError, runAudit, type AuditProgressEvent } from "../c
 import { CommandInterruptedError } from "../core/interruption.js";
 import { createCleanupPlan } from "../core/plan.js";
 import { createCommandEnvelope, jsonDocument } from "../machine-output.js";
-import { formatReclaimBytes } from "../output.js";
+import { formatReclaimBytes, formatRunReclaimBytes } from "../output.js";
 import { writeJsonAtomic } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 
@@ -294,7 +294,11 @@ async function moleHandoff(
   }
 }
 
-function renderCloseout(summary: CloseoutSummary, actions: CleanupPlan["actions"]): string {
+function renderCloseout(
+  summary: CloseoutSummary,
+  actions: CleanupPlan["actions"],
+  run?: CleanupRun,
+): string {
   const lines = [
     "AgentRinse closeout",
     "",
@@ -307,9 +311,9 @@ function renderCloseout(summary: CloseoutSummary, actions: CleanupPlan["actions"
     `Plan: ${summary.planPath}`,
     `Config: ${summary.configPath}`,
   ];
-  if (summary.run !== undefined) {
+  if (summary.run !== undefined && run !== undefined) {
     lines.push(
-      `Run: ${summary.run.status} (${formatReclaimBytes(summary.run.reclaimedBytes, actions)} reclaimed, ${summary.run.quarantinedBytes} quarantined bytes)`,
+      `Run: ${summary.run.status} (${formatRunReclaimBytes(run)} reclaimed, ${summary.run.quarantinedBytes} quarantined bytes)`,
       `Journal: ${summary.run.journalPath}`,
     );
   }
@@ -322,7 +326,7 @@ function renderCloseout(summary: CloseoutSummary, actions: CleanupPlan["actions"
 function renderFleet(
   summary: FleetSummary,
   diagnostics: readonly Diagnostic[],
-  actions: CleanupPlan["actions"],
+  run?: CleanupRun,
 ): string {
   const riskCounts = ACTION_RISKS.map((risk) => `${risk}=${summary.candidatesByRisk[risk]}`).join(
     ", ",
@@ -356,10 +360,10 @@ function renderFleet(
       ...diagnostics.map((diagnostic) => `  ${diagnostic.code}: ${diagnostic.message}`),
     );
   }
-  if (summary.run !== undefined) {
+  if (summary.run !== undefined && run !== undefined) {
     lines.push(
       "",
-      `Run: ${summary.run.status} (${formatReclaimBytes(summary.run.reclaimedBytes, actions)} reclaimed, ${summary.run.quarantinedBytes} quarantined bytes)`,
+      `Run: ${summary.run.status} (${formatRunReclaimBytes(run)} reclaimed, ${summary.run.quarantinedBytes} quarantined bytes)`,
       `Journal: ${summary.run.journalPath}`,
     );
   }
@@ -693,7 +697,7 @@ export async function executeCleanCommand(
           }),
         )
       : summary.profile === "closeout"
-        ? renderCloseout(summary, plan.actions)
-        : renderFleet(summary, audit.diagnostics, plan.actions),
+        ? renderCloseout(summary, plan.actions, run)
+        : renderFleet(summary, audit.diagnostics, run),
   };
 }
