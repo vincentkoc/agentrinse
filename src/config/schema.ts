@@ -2,7 +2,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { z } from "zod";
 
-import { artifactNameSchema, type ArtifactName } from "../contracts/action.js";
+import { actionRiskSchema, artifactNameSchema, type ArtifactName } from "../contracts/action.js";
 
 export const adapterIdSchema = z.enum([
   "codex",
@@ -156,7 +156,7 @@ export const agentRinseConfigSchema = z
           .positive()
           .max(24 * 60)
           .default(30),
-        maxRisk: z.enum(["safe", "recoverable", "destructive", "experimental"]).default("safe"),
+        maxRisk: actionRiskSchema.default("safe"),
       })
       .default(() => ({ ttlMinutes: 30, maxRisk: "safe" as const })),
   })

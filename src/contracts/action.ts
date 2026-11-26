@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+// Order defines the inclusive plan ceiling and the display order of risk counts.
 export const actionRiskSchema = z.enum(["safe", "recoverable", "destructive", "experimental"]);
 
 export const artifactNameSchema = z.enum([

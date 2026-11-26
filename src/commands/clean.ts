@@ -22,7 +22,6 @@ import { writeJsonAtomic } from "../state/json-file.js";
 import { resolveStateRoot, stateLayout } from "../state/layout.js";
 
 const execFileAsync = promisify(execFile);
-const ACTION_RISKS = ["safe", "recoverable", "destructive", "experimental"] as const;
 type FleetRepository = NonNullable<AuditAdapterRegistryOptions["gitRepositories"]>[number];
 
 type CleanCommandBaseOptions = {
@@ -319,9 +318,9 @@ function renderCloseout(summary: CloseoutSummary): string {
 }
 
 function renderFleet(summary: FleetSummary, diagnostics: readonly Diagnostic[]): string {
-  const riskCounts = ACTION_RISKS.map((risk) => `${risk}=${summary.candidatesByRisk[risk]}`).join(
-    ", ",
-  );
+  const riskCounts = actionRiskSchema.options
+    .map((risk) => `${risk}=${summary.candidatesByRisk[risk]}`)
+    .join(", ");
   const lines = [
     "AgentRinse fleet cleanup",
     "",
@@ -644,7 +643,7 @@ export async function executeCleanCommand(
       : (() => {
           const candidates = audit.findings.flatMap((finding) => finding.candidateActions);
           const candidatesByRisk = Object.fromEntries(
-            ACTION_RISKS.map((risk) => [
+            actionRiskSchema.options.map((risk) => [
               risk,
               candidates.filter((action) => action.risk === risk).length,
             ]),
