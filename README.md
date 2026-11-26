@@ -145,7 +145,9 @@ the default checks `~/.codex/worktrees`, `$CODEX_HOME/worktrees` and
 defaults. Supply `--repo` for owners with no surviving checkout in those roots.
 Add `--project-roots` to include existing `.worktrees` and `.claude/worktrees`
 containers under each explicitly named primary checkout. Linked checkouts and
-symlinked containers are reported as problems. Registrations outside the
+symlinked containers are reported as problems. A derived container also requires
+a known local filesystem and no mount at or below the container or along its path
+from the owner. Registrations outside the
 selected containers appear separately with presence and owner.
 The scan covers direct checkouts and one grouping directory, with a 50,000-entry
 discovery limit. Discovery and optional measurement have separate three-minute

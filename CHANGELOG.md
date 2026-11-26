@@ -17,7 +17,7 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
-- `worktrees --repo <owner> --project-roots` includes repository-local `.worktrees` and `.claude/worktrees` containers in the checkout inventory and optional measurement.
+- `worktrees --repo <owner> --project-roots` includes repository-local `.worktrees` and `.claude/worktrees` containers in the checkout inventory and optional measurement. Derived containers with mount boundaries are withheld.
 
 - Configured projects that declare Vite can report its default local cache without measuring or planning removal of the cache.
 
