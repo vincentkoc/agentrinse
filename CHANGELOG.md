@@ -15,6 +15,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- Artifact plans and cleanup summaries identify logical byte counts. Completed totals use the actions that contributed reclaimed bytes. Sparse files and shared blocks can yield a smaller change in available disk space.
+
 - Tests no longer inherit the host Git signing, LFS, or credential config, which made
   worktree and Git fixtures slow enough to hit the 10-second timeout under a full
   suite on a many-core Mac. Those integration tests now allow 30 seconds, worktree

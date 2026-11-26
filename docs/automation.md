@@ -198,6 +198,8 @@ agentrinse clean --profile closeout --max-risk recoverable
 agentrinse clean --profile closeout --max-risk recoverable --apply --yes --json
 ```
 
+For `artifacts.remove`, `expectedReclaimBytes` in the plan and `reclaimedBytes` in the run journal count logical file lengths. Physical space recovered depends on allocated blocks and sharing. A sparse file may occupy fewer blocks than its logical size, and a copy-on-write clone may keep blocks allocated after removal. Mixed-action totals include these logical artifact bytes.
+
 Machine output separates `reclaimedBytes` from `quarantinedBytes`. A
 quarantined worktree has zero immediate reclaim until a separate purge.
 

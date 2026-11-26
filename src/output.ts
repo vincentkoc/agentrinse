@@ -1,3 +1,4 @@
+import type { CleanupRun } from "./contracts/run.js";
 import type { AuditReport } from "./contracts/report.js";
 
 const UNITS = ["B", "KiB", "MiB", "GiB", "TiB"] as const;
@@ -13,6 +14,20 @@ export function formatBytes(bytes: number): string {
 
   const precision = unit === 0 || value >= 10 ? 0 : 1;
   return `${value.toFixed(precision)} ${UNITS[unit]}`;
+}
+
+export function formatReclaimBytes(bytes: number, actions: readonly { type: string }[]): string {
+  const artifacts = actions.filter((action) => action.type === "artifacts.remove").length;
+  if (artifacts === 0) return `${bytes} bytes`;
+  if (artifacts === actions.length) return `${bytes} logical artifact bytes`;
+  return `${bytes} bytes (includes logical artifact bytes)`;
+}
+
+export function formatRunReclaimBytes(run: Pick<CleanupRun, "reclaimedBytes" | "actions">): string {
+  return formatReclaimBytes(
+    run.reclaimedBytes,
+    run.actions.filter((action) => (action.reclaimedBytes ?? 0) > 0),
+  );
 }
 
 export function renderAudit(report: AuditReport): string {

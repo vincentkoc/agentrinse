@@ -139,6 +139,7 @@ describe("ArtifactAuditAdapter", () => {
       type: "artifacts.remove",
       risk: "safe",
       expectedReclaimBytes: 9,
+      description: expect.stringContaining("9 logical artifact bytes"),
     });
   });
 
