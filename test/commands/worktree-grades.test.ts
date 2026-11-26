@@ -211,3 +211,46 @@ native(
   },
   30_000,
 );
+
+native(
+  "honors the configured timeout for both roster reads and separates missing status evidence from an identity mismatch",
+  async () => {
+    const { options } = await fixture();
+    const gitTimeoutMs = 14_321;
+    const stored = JSON.parse(await readFile(options.config, "utf8"));
+    await writeFile(options.config, JSON.stringify({ ...stored, audit: { gitTimeoutMs } }));
+    const timeouts: number[] = [];
+    const out = JSON.parse(
+      await executeWorktreeGrades(options, async (path, args, signal, limits) => {
+        if (args.includes("worktree")) timeouts.push(limits?.timeoutMs ?? 0);
+        if (args.includes("status"))
+          throw Object.assign(new Error("fixture command exceeded deadline"), { killed: true });
+        return inventoryGit(path, args, signal, limits);
+      }),
+    );
+    expect(timeouts).toEqual([gitTimeoutMs, gitTimeoutMs]);
+    expect(out.data.rows[0]).toMatchObject({
+      state: "unknown",
+      reasons: expect.arrayContaining(["git-evidence-incomplete", "git-status-timeout"]),
+    });
+    expect(out.data.rows[0].reasons).not.toContain("grade-identity-mismatch");
+  },
+);
+
+native(
+  "withholds unknown final roster coverage without claiming a registration changed",
+  async () => {
+    const { options } = await fixture();
+    let reads = 0;
+    const result = JSON.parse(
+      await executeWorktreeGrades(options, async (path, args, ...rest) => {
+        if (args.includes("worktree") && ++reads === 2) throw new Error("final roster unavailable");
+        return inventoryGit(path, args, ...rest);
+      }),
+    );
+    expect(result.data.rows[0]).toMatchObject({
+      state: "unknown",
+      reasons: ["final-roster-unverified"],
+    });
+  },
+);

@@ -115,11 +115,29 @@ function targetAdapter(
         return absent;
       }
       bindings.set(row.path, binding);
-      const run = (args: string[]) =>
-        session.run(row.path, args, context.signal!, {
-          timeoutMs: config.audit.gitTimeoutMs,
-          maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
-        });
+      const run = async (args: string[]) => {
+        context.signal?.throwIfAborted();
+        try {
+          return await session.run(row.path, args, context.signal!, {
+            timeoutMs: config.audit.gitTimeoutMs,
+            maxBuffer: GIT_OUTPUT_MAX_BUFFER_BYTES,
+          });
+        } catch (error) {
+          if (args.includes("status")) {
+            const failure = error as NodeJS.ErrnoException & { killed?: boolean };
+            row.reasons = [
+              context.signal?.aborted
+                ? "grade-deadline"
+                : failure.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+                  ? "git-status-output-limit"
+                  : failure.killed
+                    ? "git-status-timeout"
+                    : "git-status-unavailable",
+            ];
+          }
+          throw error;
+        }
+      };
       const expected = [row.path, binding.admin, owner.common].join("\n") + "\n";
       try {
         if (
@@ -195,6 +213,7 @@ export async function executeWorktreeGrades(
             repo,
             ["worktree", "list", "--porcelain", "-z"],
             AbortSignal.timeout(config.audit.gitTimeoutMs),
+            { timeoutMs: config.audit.gitTimeoutMs },
           ),
         );
         if (records[0]?.path === repo && selectedRecord(records, repo)) return records;
@@ -204,7 +223,9 @@ export async function executeWorktreeGrades(
       return undefined;
     };
     const records = await roster();
-    if (records) {
+    if (!records) {
+      for (const row of rows) row.reasons = ["native-roster-unverified"];
+    } else {
       registered = records.length;
       const reachability = new ReachabilityIndex();
       // Preserve provider ownership and every configured pin, with no sibling or artifact consumer.
@@ -251,16 +272,21 @@ export async function executeWorktreeGrades(
         for (const row of rows) {
           const binding = bindings.get(row.path);
           if (!binding) continue;
+          if (!checked || !after) {
+            row.reasons = [checked ? "final-roster-unverified" : "owner-recheck-unverified"];
+            continue;
+          }
           const record = selectedRecord(records, row.path)!;
-          const refreshed = checked && (await selectedBinding(row.path, owner, checked.mounts));
-          if (
-            !after ||
-            !isDeepStrictEqual(record, selectedRecord(after, row.path)) ||
-            !refreshed ||
-            !sameMount(row.path) ||
-            !sameMount(binding.admin) ||
-            !sameSelectedBinding(binding, refreshed)
-          ) {
+          if (!isDeepStrictEqual(record, selectedRecord(after, row.path))) {
+            row.reasons = ["registration-changed"];
+            continue;
+          }
+          const refreshed = await selectedBinding(row.path, owner, checked.mounts);
+          if (!refreshed || !sameMount(row.path) || !sameMount(binding.admin)) {
+            row.reasons = ["checkout-recheck-unverified"];
+            continue;
+          }
+          if (!sameSelectedBinding(binding, refreshed)) {
             row.reasons = ["registration-changed"];
             continue;
           }
@@ -269,12 +295,38 @@ export async function executeWorktreeGrades(
           );
           if (!finding) continue;
           if (
+            typeof finding.facts.head !== "string" ||
+            typeof finding.facts.repositoryCommonDir !== "string" ||
+            (record.branch !== undefined && typeof finding.facts.branch !== "string")
+          ) {
+            // The physical binding was verified. An unfinished Git probe is missing evidence,
+            // not a contradiction. Keep independent provider, pin and native lock observations.
+            const retained = finding.roots.filter(
+              (root) =>
+                !["git", "process"].includes(root.source) ||
+                ["git-lock", "detached-worktree", "worktree-registration-unsafe"].includes(
+                  root.code,
+                ),
+            );
+            row.reasons = [
+              ...new Set([
+                "git-evidence-incomplete",
+                ...row.reasons.filter((reason) => reason !== "grade-incomplete"),
+                ...retained.map((root) => root.code),
+                ...(reachability.activeGitRefs(finding.observedAt).length
+                  ? ["git-ref-inspection-incomplete"]
+                  : []),
+              ]),
+            ].sort();
+            continue;
+          }
+          if (
             finding.facts.head !== record.head ||
             finding.facts.repositoryCommonDir !== owner.common ||
             (record.branch !== undefined &&
               finding.facts.branch !== record.branch.replace(/^refs\/heads\//u, ""))
           ) {
-            row.reasons = ["grade-identity-unverified"];
+            row.reasons = ["grade-identity-mismatch"];
             continue;
           }
           row.resourceId = finding.resource.id;
