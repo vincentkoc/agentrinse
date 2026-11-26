@@ -97,11 +97,22 @@ describe("executeArtifactRemove", () => {
 
   it("isolates and removes only the planned artifact", async () => {
     const value = await fixture();
+    let nowMs = 0;
+    const checkedPaths: string[] = [];
     const result = await executeArtifactRemove(value.action, {
       id: () => "success",
+      authorization: { expiresAtMs: 2, now: () => new Date(nowMs) },
+      revalidateBeforeIsolation: async () => {
+        checkedPaths.push(value.target);
+        nowMs = 1;
+      },
+      revalidateProtection: async (isolated) => {
+        checkedPaths.push(isolated);
+      },
       processProbe: async () => ({ status: "idle", matches: [] }),
     });
 
+    expect(checkedPaths).toEqual([value.target, result.isolationPath]);
     expect(await exists(value.target)).toBe(false);
     expect(await exists(result.isolationPath)).toBe(false);
     expect(await readFile(join(value.project, "source.ts"), "utf8")).toBe("keep");
@@ -275,6 +286,37 @@ describe("executeArtifactRemove", () => {
     expect(await exists(value.target)).toBe(true);
   });
 
+  it.each(["source", "destination"] as const)(
+    "rechecks the %s after the protection refresh",
+    async (endpoint) => {
+      const value = await fixture();
+      const isolation = artifactIsolationPath(value.action, "refresh-race");
+      let moved = false;
+      const result = executeArtifactRemove(value.action, {
+        id: () => "refresh-race",
+        revalidateBeforeIsolation: async () => {
+          if (endpoint === "source") {
+            await rename(value.target, value.target + ".original");
+            await mkdir(value.target);
+          } else {
+            await mkdir(isolation);
+          }
+        },
+        move: async () => {
+          moved = true;
+        },
+      });
+      if (endpoint === "source")
+        await expect(result).rejects.toMatchObject({
+          diagnosticCode: "ARTIFACT_IDENTITY_CHANGED",
+          outcome: "skipped-stale",
+        });
+      else await expect(result).rejects.toThrow("refusing to overwrite");
+      expect(moved).toBe(false);
+      expect(await exists(value.target)).toBe(true);
+    },
+  );
+
   it("does not isolate an artifact after authorization expires", async () => {
     const value = await fixture();
     let moved = false;
@@ -291,6 +333,30 @@ describe("executeArtifactRemove", () => {
         },
       }),
     ).rejects.toMatchObject({ outcome: "skipped-stale" });
+
+    expect(moved).toBe(false);
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("skips isolation when authorization expires during the protection refresh", async () => {
+    const value = await fixture();
+    let nowMs = 0;
+    let moved = false;
+
+    await expect(
+      executeArtifactRemove(value.action, {
+        authorization: { expiresAtMs: 1, now: () => new Date(nowMs) },
+        revalidateBeforeIsolation: async () => {
+          nowMs = 1;
+        },
+        move: async () => {
+          moved = true;
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "PLAN_EXPIRED_DURING_APPLY",
+    });
 
     expect(moved).toBe(false);
     expect(await exists(value.target)).toBe(true);

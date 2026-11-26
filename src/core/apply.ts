@@ -20,11 +20,12 @@ import {
   executeArtifactRemove,
   type ArtifactExecutionResult,
 } from "./artifact-executor.js";
+import { currentArtifactProtectionRoots } from "./artifact-protection.js";
 import {
   revalidateArtifactRemove,
   type ArtifactRevalidationResult,
 } from "./artifact-revalidation.js";
-import { sha256 } from "./digest.js";
+import { sha256, sha256Json } from "./digest.js";
 import {
   DatabaseExecutionError,
   executeDatabaseVacuum,
@@ -278,6 +279,63 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
                 authorization: {
                   expiresAtMs: Date.parse(plan.expiresAt),
                   now: clock,
+                },
+                revalidateBeforeIsolation: async () => {
+                  const currentConfig =
+                    options.dependencies?.loadCurrentConfig === undefined
+                      ? undefined
+                      : agentRinseConfigSchema.parse(
+                          await options.dependencies.loadCurrentConfig(),
+                        );
+                  const currentDigest = currentConfig && sha256Json(currentConfig);
+                  const configs = [config];
+                  if (currentConfig && currentDigest !== plan.configDigest) {
+                    // Pins may only add protection. Any other config drift requires a fresh plan.
+                    if (sha256Json({ ...currentConfig, pins: config.pins }) !== plan.configDigest) {
+                      throw new ArtifactExecutionError(
+                        "artifact cleanup policy changed after planning",
+                        "skipped-stale",
+                        isolationPath,
+                        { diagnosticCode: "ARTIFACT_POLICY_CHANGED" },
+                      );
+                    }
+                    configs.push(currentConfig);
+                  }
+                  for (const protectionConfig of configs) {
+                    const roots = await currentArtifactProtectionRoots(
+                      action,
+                      plan.home,
+                      protectionConfig,
+                      clock(),
+                    );
+                    if (roots.length > 0) {
+                      const codes = [...new Set(roots.map((root) => root.code))].sort();
+                      throw new ArtifactExecutionError(
+                        `artifact is protected before isolation: ${codes.join(", ")}`,
+                        "skipped-stale",
+                        isolationPath,
+                        {
+                          diagnosticCode: codes.includes("unknown-provider-state")
+                            ? "ARTIFACT_PROTECTION_UNKNOWN"
+                            : "ARTIFACT_PROTECTION_CHANGED",
+                        },
+                      );
+                    }
+                  }
+                  // Provider and Git inspection may outlast the first configuration read.
+                  if (
+                    options.dependencies?.loadCurrentConfig &&
+                    sha256Json(
+                      agentRinseConfigSchema.parse(await options.dependencies.loadCurrentConfig()),
+                    ) !== currentDigest
+                  ) {
+                    throw new ArtifactExecutionError(
+                      "artifact protection configuration changed during inspection",
+                      "skipped-stale",
+                      isolationPath,
+                      { diagnosticCode: "ARTIFACT_PROTECTION_CHANGED" },
+                    );
+                  }
                 },
               }))
           )(action, isolationId);

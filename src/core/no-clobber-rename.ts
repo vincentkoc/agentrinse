@@ -182,21 +182,31 @@ async function loadNativeRenameAt(platform: NodeJS.Platform): Promise<NativeRena
   });
 }
 
-export async function renameNoReplace(
-  source: string,
-  destination: string,
+export async function prepareRenameNoReplace(
   platform: NodeJS.Platform = process.platform,
-): Promise<void> {
+): Promise<(source: string, destination: string) => Promise<void>> {
   let nativeRenamePromise = nativeRenamePromises.get(platform);
   if (nativeRenamePromise === undefined) {
     nativeRenamePromise = loadNativeRename(platform);
     nativeRenamePromises.set(platform, nativeRenamePromise);
   }
   const nativeRename = await nativeRenamePromise;
-  const result = nativeRename(source, destination);
-  if (result.result !== 0) {
-    throw renameError(source, destination, result.errnoNames, result.errno);
-  }
+  // Dispatch the prepared syscall before yielding to any other asynchronous work.
+  return async (source, destination) => {
+    const result = nativeRename(source, destination);
+    if (result.result !== 0) {
+      throw renameError(source, destination, result.errnoNames, result.errno);
+    }
+  };
+}
+
+export async function renameNoReplace(
+  source: string,
+  destination: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  const move = await prepareRenameNoReplace(platform);
+  await move(source, destination);
 }
 
 export async function renameAtNoReplace(

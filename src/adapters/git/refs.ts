@@ -15,6 +15,7 @@ async function gitRefContainsHead(
   runGit: RepositoryGitRunner,
   head: string,
   gitRef: string,
+  requireCompleteHistory = false,
 ): Promise<boolean> {
   if (!(await gitRefExists(runGit, gitRef))) {
     return false;
@@ -22,7 +23,16 @@ async function gitRefContainsHead(
   if (gitRef.startsWith("refs/tags/")) {
     return (await runGit(["rev-parse", `${gitRef}^{commit}`])).trim() === head;
   }
-  return (await runGit(["rev-list", "--max-count=1", head, "--not", gitRef])).trim() === "";
+  const contains =
+    (await runGit(["rev-list", "--max-count=1", head, "--not", gitRef])).trim() === "";
+  if (
+    !contains &&
+    requireCompleteHistory &&
+    (await runGit(["rev-parse", "--is-shallow-repository"])).trim() !== "false"
+  ) {
+    throw new Error("shallow Git history cannot rule out an artifact ref pin");
+  }
+  return contains;
 }
 
 export async function isPushedHead(
@@ -53,10 +63,11 @@ export async function matchingGitRefPins(
   runGit: RepositoryGitRunner,
   head: string,
   gitRefs: readonly string[],
+  options: { requireCompleteHistory?: boolean } = {},
 ): Promise<string[]> {
   const matches: string[] = [];
   for (const gitRef of gitRefs) {
-    if (await gitRefContainsHead(runGit, head, gitRef)) {
+    if (await gitRefContainsHead(runGit, head, gitRef, options.requireCompleteHistory)) {
       matches.push(gitRef);
     }
   }

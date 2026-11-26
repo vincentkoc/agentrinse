@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { lstatSync, rmSync, type Stats } from "node:fs";
-import { lstat, rename } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { artifactMeasurementChanged } from "./artifact-measurement.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
+import { prepareRenameNoReplace } from "./no-clobber-rename.js";
 import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -38,6 +39,7 @@ export type ArtifactExecutionResult = {
 };
 
 export type ArtifactExecutorDependencies = {
+  revalidateBeforeIsolation?: () => Promise<void>;
   revalidateProtection?: (isolationPath: string) => Promise<void>;
   id?: () => string;
   inspect?: (path: string) => Promise<Stats>;
@@ -97,11 +99,25 @@ export async function executeArtifactRemove(
   dependencies: ArtifactExecutorDependencies = {},
 ): Promise<ArtifactExecutionResult> {
   const inspect = dependencies.inspect ?? lstat;
-  const move = dependencies.move ?? rename;
+  const move = dependencies.move ?? (await prepareRenameNoReplace());
   const measure = dependencies.measure ?? measurePath;
   const processProbe = dependencies.processProbe ?? findProcessesUsingPath;
   const mountProbe = dependencies.mountProbe ?? findMountBoundaries;
   const isolationPath = artifactIsolationPath(action, dependencies.id?.() ?? randomUUID());
+
+  try {
+    await dependencies.revalidateBeforeIsolation?.();
+  } catch (error) {
+    if (error instanceof ArtifactExecutionError) {
+      throw error;
+    }
+    throw new ArtifactExecutionError(
+      "artifact protection could not be refreshed before isolation",
+      "skipped-stale",
+      isolationPath,
+      { cause: error, diagnosticCode: "ARTIFACT_PROTECTION_UNKNOWN" },
+    );
+  }
 
   if (await pathExists(isolationPath, inspect)) {
     throw new ArtifactExecutionError(
@@ -134,6 +150,7 @@ export async function executeArtifactRemove(
     );
   }
 
+  // Refreshing protection can outlast the plan. Check its deadline at the move.
   if (
     dependencies.authorization !== undefined &&
     dependencies.authorization.now().getTime() >= dependencies.authorization.expiresAtMs
