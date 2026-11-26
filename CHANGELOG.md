@@ -45,6 +45,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- Git inventory counts loose objects that arrived before their fanout directory was scanned. It withholds entries when the directory is replaced or changes during that scan.
+
 - Worktree inventory explains unresolved entries, including empty groups, groups containing files and Git inspection failures.
 
 - Git inventory keeps independently verified pack, loose-object and worktree counts when an unrelated index or fetch update changes the common directory. Changed inventory sections are withheld. A change to the repository configuration triggers a fresh object-format check before loose names are counted.
