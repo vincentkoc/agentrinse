@@ -287,10 +287,20 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
                       : agentRinseConfigSchema.parse(
                           await options.dependencies.loadCurrentConfig(),
                         );
-                  const configs =
-                    currentConfig === undefined || sha256Json(currentConfig) === plan.configDigest
-                      ? [config]
-                      : [config, currentConfig];
+                  const currentDigest = currentConfig && sha256Json(currentConfig);
+                  const configs = [config];
+                  if (currentConfig && currentDigest !== plan.configDigest) {
+                    // Pins may only add protection. Any other config drift requires a fresh plan.
+                    if (sha256Json({ ...currentConfig, pins: config.pins }) !== plan.configDigest) {
+                      throw new ArtifactExecutionError(
+                        "artifact cleanup policy changed after planning",
+                        "skipped-stale",
+                        isolationPath,
+                        { diagnosticCode: "ARTIFACT_POLICY_CHANGED" },
+                      );
+                    }
+                    configs.push(currentConfig);
+                  }
                   for (const protectionConfig of configs) {
                     const roots = await currentArtifactProtectionRoots(
                       action,
@@ -311,6 +321,20 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
                         },
                       );
                     }
+                  }
+                  // Provider and Git inspection may outlast the first configuration read.
+                  if (
+                    options.dependencies?.loadCurrentConfig &&
+                    sha256Json(
+                      agentRinseConfigSchema.parse(await options.dependencies.loadCurrentConfig()),
+                    ) !== currentDigest
+                  ) {
+                    throw new ArtifactExecutionError(
+                      "artifact protection configuration changed during inspection",
+                      "skipped-stale",
+                      isolationPath,
+                      { diagnosticCode: "ARTIFACT_PROTECTION_CHANGED" },
+                    );
                   }
                 },
               }))

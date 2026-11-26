@@ -286,6 +286,37 @@ describe("executeArtifactRemove", () => {
     expect(await exists(value.target)).toBe(true);
   });
 
+  it.each(["source", "destination"] as const)(
+    "rechecks the %s after the protection refresh",
+    async (endpoint) => {
+      const value = await fixture();
+      const isolation = artifactIsolationPath(value.action, "refresh-race");
+      let moved = false;
+      const result = executeArtifactRemove(value.action, {
+        id: () => "refresh-race",
+        revalidateBeforeIsolation: async () => {
+          if (endpoint === "source") {
+            await rename(value.target, value.target + ".original");
+            await mkdir(value.target);
+          } else {
+            await mkdir(isolation);
+          }
+        },
+        move: async () => {
+          moved = true;
+        },
+      });
+      if (endpoint === "source")
+        await expect(result).rejects.toMatchObject({
+          diagnosticCode: "ARTIFACT_IDENTITY_CHANGED",
+          outcome: "skipped-stale",
+        });
+      else await expect(result).rejects.toThrow("refusing to overwrite");
+      expect(moved).toBe(false);
+      expect(await exists(value.target)).toBe(true);
+    },
+  );
+
   it("does not isolate an artifact after authorization expires", async () => {
     const value = await fixture();
     let moved = false;

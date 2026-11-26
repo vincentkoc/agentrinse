@@ -266,10 +266,11 @@ After acquiring the exclusive lock, every action rechecks:
 8. current working directory ownership
 9. same-user process cwd and file-descriptor ownership
 10. absence of root or nested filesystem mount boundaries
-11. current provider session roots and user pins, including configuration
-    reloaded after planning
+11. current provider session roots and user pins, including Git refs bound to
+    enclosing worktrees. Changes to non-pin configuration require a new plan.
+    A second configuration read detects changes during the protection refresh.
 12. unexpired plan authorization after refreshing protection and immediately
-    before isolation
+    before an exclusive move that cannot overwrite an existing isolation path
 
 Any uncertainty produces `skipped-stale`. Apply never widens the action or
 substitutes another target.

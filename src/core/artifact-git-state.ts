@@ -12,41 +12,24 @@ export type ArtifactGitState =
   | { status: "tracked" }
   | { status: "unknown"; reason: string };
 
-export async function inspectArtifactGitState(
-  projectRoot: string,
-  name: ArtifactName,
-): Promise<ArtifactGitState> {
+export async function findArtifactGitRepository(projectRoot: string): Promise<string | undefined> {
   let directory = projectRoot;
-  let repositoryFound = false;
-
   while (true) {
     try {
       const marker = await lstat(join(directory, ".git"));
-      if (!marker.isFile() && !marker.isDirectory()) {
-        return { status: "unknown", reason: "Git metadata is not a regular file or directory" };
-      }
-      repositoryFound = true;
-      break;
+      if (!marker.isFile() && !marker.isDirectory())
+        throw new Error("Git metadata is not a regular file or directory");
+      return directory;
     } catch (error) {
-      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
-        return {
-          status: "unknown",
-          reason: error instanceof Error ? error.message : String(error),
-        };
-      }
+      if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
     }
-
     const parent = dirname(directory);
-    if (parent === directory) {
-      break;
-    }
+    if (parent === directory) return undefined;
     directory = parent;
   }
+}
 
-  if (!repositoryFound) {
-    return { status: "clear" };
-  }
-
+export async function runArtifactGit(projectRoot: string, args: string[]): Promise<string> {
   const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
   for (const key of Object.keys(env)) {
     if (key.startsWith("GIT_") && key !== "GIT_OPTIONAL_LOCKS") {
@@ -54,13 +37,29 @@ export async function inspectArtifactGitState(
     }
   }
 
+  const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
+    encoding: "utf8",
+    env,
+    timeout: 10_000,
+    maxBuffer: 1024 * 1024,
+  });
+  return result.stdout;
+}
+
+export async function inspectArtifactGitState(
+  projectRoot: string,
+  name: ArtifactName,
+): Promise<ArtifactGitState> {
   try {
-    const result = await execFileAsync(
-      "git",
-      ["-C", projectRoot, "ls-files", "--cached", "-z", "--", `:(literal,icase)${name}`],
-      { encoding: "utf8", env, maxBuffer: 1024 * 1024, timeout: 10_000 },
-    );
-    return result.stdout === "" ? { status: "clear" } : { status: "tracked" };
+    if (!(await findArtifactGitRepository(projectRoot))) return { status: "clear" };
+    const output = await runArtifactGit(projectRoot, [
+      "ls-files",
+      "--cached",
+      "-z",
+      "--",
+      `:(literal,icase)${name}`,
+    ]);
+    return output === "" ? { status: "clear" } : { status: "tracked" };
   } catch (error) {
     return {
       status: "unknown",

@@ -1,9 +1,38 @@
+import { dirname } from "node:path";
+import { matchingGitRefPins } from "../adapters/git/refs.js";
+import { findArtifactGitRepository, runArtifactGit } from "./artifact-git-state.js";
 import { createAuditAdapters } from "../adapters/registry.js";
 import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import type { RootEvidence } from "../contracts/finding.js";
 import { ReachabilityIndex } from "./reachability.js";
+
+async function bindArtifactGitRefPins(
+  reachability: ReachabilityIndex,
+  project: string,
+  observedAt: string,
+): Promise<void> {
+  const pins = reachability.activeGitRefs(observedAt);
+  if (pins.length === 0) return;
+  // Ancestor worktrees can protect nested repositories too. Inspect only owners of this project.
+  let directory = project;
+  while (true) {
+    const root = await findArtifactGitRepository(directory);
+    if (!root) return;
+    const run = (args: string[]) => runArtifactGit(root, args);
+    const head = (await run(["rev-parse", "--verify", "HEAD"])).trim();
+    const branch = (await run(["rev-parse", "--symbolic-full-name", "HEAD"])).trim();
+    const refs = await matchingGitRefPins(run, head, pins);
+    if (branch.startsWith("refs/heads/")) {
+      refs.push(branch, (await run(["for-each-ref", "--format=%(upstream)", "--", branch])).trim());
+    }
+    reachability.bindGitRefsToPath(root, refs, observedAt);
+    const parent = dirname(root);
+    if (parent === root) return;
+    directory = parent;
+  }
+}
 
 export async function currentArtifactProtectionRoots(
   action: ArtifactRemoveAction,
@@ -23,9 +52,8 @@ export async function currentArtifactProtectionRoots(
     await adapter.collect(context, probe);
   }
 
-  // Artifact actions have no Git ref facts, so unresolved ref pins must protect them.
   const observedAt = now.toISOString();
-  reachability.protectUnresolvedGitRefs(observedAt);
+  await bindArtifactGitRefPins(reachability, action.target.projectRoot, observedAt);
   return reachability.rootsForResource(
     {
       id: action.resourceId,

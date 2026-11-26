@@ -50,7 +50,9 @@ The project follows semantic versioning after its first supported release.
 
 - Artifact removal refreshes provider session roots and user pins immediately
   before isolation, and skips a saved plan when protection changed, cannot be
-  inspected, or the plan expires during the refresh.
+  inspected, policy changed, or the plan expires during the refresh. Git ref
+  pins use the artifact’s enclosing worktrees. The final identity checks and
+  exclusive move preserve a replacement artifact or existing isolation path.
 
 ## [0.9.1] - 2026-10-29
 

@@ -28,6 +28,8 @@ import { ApplySafetyError, applyCleanupPlan } from "../../src/core/apply.js";
 import { sha256Json } from "../../src/core/digest.js";
 import { CommandInterruptedError } from "../../src/core/interruption.js";
 import { measurePath } from "../../src/core/measure.js";
+import { currentArtifactProtectionRoots } from "../../src/core/artifact-protection.js";
+import { runFixtureGit } from "../helpers/git.js";
 import { cleanupPlanId } from "../../src/core/plan.js";
 import { ProviderFileExecutionError } from "../../src/core/provider-file-executor.js";
 import { inspectProviderFile } from "../../src/core/provider-file-identity.js";
@@ -396,6 +398,82 @@ describe("applyCleanupPlan", () => {
     });
     expect(await exists(value.target)).toBe(true);
     expect(await readFile(join(value.project, "source.ts"), "utf8")).toBe("keep");
+  });
+
+  it.each(["scope", "size", "age"] as const)(
+    "keeps the artifact when current %s policy invalidates its plan",
+    async (change) => {
+      const value = await fixture();
+      const current = structuredClone(value.config);
+      if (change === "scope") current.artifacts.projects = [];
+      if (change === "size") current.artifacts.minBytes = value.action.target.measuredBytes + 1;
+      if (change === "age") current.artifacts.minAgeMinutes = 100_000;
+      const result = await applyCleanupPlan({
+        input: value.plan,
+        config: value.config,
+        stateRoot: value.stateRoot,
+        dependencies: {
+          clock: CLOCK,
+          loadCurrentConfig: async () => current,
+          revalidate: async () => ({
+            status: "valid",
+            measurement: await measurePath(value.target, { maxEntries: 100 }),
+          }),
+        },
+      });
+      expect(result.run.actions[0]).toMatchObject({
+        status: "skipped-stale",
+        diagnostic: { code: "ARTIFACT_POLICY_CHANGED" },
+      });
+      expect(await exists(value.target)).toBe(true);
+    },
+  );
+
+  it("keeps the artifact when configuration changes during the protection refresh", async () => {
+    const value = await fixture();
+    const changed = structuredClone(value.config);
+    changed.pins = [{ path: value.target }];
+    const loadCurrentConfig = vi
+      .fn()
+      .mockResolvedValueOnce(value.config)
+      .mockResolvedValue(changed);
+    const result = await applyCleanupPlan({
+      input: value.plan,
+      config: value.config,
+      stateRoot: value.stateRoot,
+      dependencies: {
+        clock: CLOCK,
+        loadCurrentConfig,
+        revalidate: async () => ({
+          status: "valid",
+          measurement: await measurePath(value.target, { maxEntries: 100 }),
+        }),
+      },
+    });
+    expect(result.run.actions[0]).toMatchObject({
+      status: "skipped-stale",
+      diagnostic: { code: "ARTIFACT_PROTECTION_CHANGED" },
+    });
+    expect(await exists(value.target)).toBe(true);
+  });
+
+  it("binds Git ref pins to the artifact's owning worktree", async () => {
+    const value = await fixture();
+    const git = (...args: string[]) =>
+      runFixtureGit(args, { cwd: value.project, home: value.plan.home });
+    await git("init", "-b", "main");
+    await git("commit", "--allow-empty", "-m", "first");
+    await git("branch", "other");
+    await git("commit", "--allow-empty", "-m", "second");
+    value.config.adapters.git = { enabled: true, root: value.project };
+    value.config.pins = [{ gitRef: "refs/heads/other" }];
+    expect(
+      await currentArtifactProtectionRoots(value.action, value.plan.home, value.config, CLOCK()),
+    ).toEqual([]);
+    value.config.pins = [{ gitRef: "refs/heads/main" }];
+    expect(
+      await currentArtifactProtectionRoots(value.action, value.plan.home, value.config, CLOCK()),
+    ).toEqual([expect.objectContaining({ code: "user-pin" })]);
   });
 
   it("skips artifact removal when the current config adds a pin", async () => {
