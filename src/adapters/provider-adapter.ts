@@ -1,3 +1,4 @@
+import { collectProviderFiles } from "./provider-file-discovery.js";
 import { lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -24,8 +25,6 @@ import {
   type CodexDatabaseDependencies,
   type CodexDatabaseInspection,
 } from "./codex-database.js";
-import { collectClaudeChangelogCache } from "./claude-cache.js";
-import { collectClaudeDebugLogs } from "./claude-debug.js";
 import { inspectClaudeNativeRetention, usesClaudeNativeRetention } from "./claude-retention.js";
 import { copilotNativeMaintenanceFor } from "./copilot-maintenance.js";
 import {
@@ -40,7 +39,6 @@ import { collectOpenClaw } from "./openclaw.js";
 import { OPENCLAW_OWNER_UNKNOWN } from "./openclaw-ownership.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
-import { collectZedRotatedLog } from "./zed-logs.js";
 
 export type ProviderAdapterOptions = {
   root?: string;
@@ -196,18 +194,11 @@ export class ProviderAuditAdapter implements AuditAdapter {
         });
       }
       if (
-        this.spec.id === "zed" &&
         probe.status === "absent" &&
         this.options.quickInventory !== true &&
         this.options.inventoryResources !== false
       ) {
-        const collection = await collectZedRotatedLog(context, {
-          ...(this.options.root === undefined ? {} : { root: this.options.root }),
-          ...(this.options.platform === undefined ? {} : { platform: this.options.platform }),
-          ...(this.options.environment === undefined
-            ? {}
-            : { environment: this.options.environment }),
-        });
+        const collection = await collectProviderFiles(this.spec.id, context, this.options);
         for (const resource of collection.resources) {
           observer?.reportResource(resource);
         }
@@ -466,24 +457,10 @@ export class ProviderAuditAdapter implements AuditAdapter {
       }
     }
 
-    if (this.options.quickInventory !== true && this.spec.id === "claude") {
-      const debugLogs = await collectClaudeDebugLogs(context, probe.root, this.options.maxEntries);
-      const changelogCache = await collectClaudeChangelogCache(context, probe.root);
-      addResources(...debugLogs.resources);
-      addResources(...changelogCache.resources);
-      addDiagnostics(...debugLogs.diagnostics);
-      addDiagnostics(...changelogCache.diagnostics);
-    }
-    if (this.options.quickInventory !== true && this.spec.id === "zed") {
-      const rotatedLog = await collectZedRotatedLog(context, {
-        ...(this.options.root === undefined ? {} : { root: this.options.root }),
-        ...(this.options.platform === undefined ? {} : { platform: this.options.platform }),
-        ...(this.options.environment === undefined
-          ? {}
-          : { environment: this.options.environment }),
-      });
-      addResources(...rotatedLog.resources);
-      addDiagnostics(...rotatedLog.diagnostics);
+    if (this.options.quickInventory !== true) {
+      const files = await collectProviderFiles(this.spec.id, context, this.options, probe.root);
+      addResources(...files.resources);
+      addDiagnostics(...files.diagnostics);
     }
 
     return { resources, diagnostics };

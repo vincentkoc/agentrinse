@@ -6,7 +6,7 @@ import type { ResourceKind, ResourceSnapshot } from "../contracts/resource.js";
 import { sha256 } from "../core/digest.js";
 import { measurePath } from "../core/measure.js";
 import { inspectProviderFile } from "../core/provider-file-identity.js";
-import { OPENCLAW_SHELL_SNAPSHOT_POLICY } from "../core/provider-file-policy.js";
+import { matchProviderFilePolicy } from "../rules/file-rule.js";
 import type { ReachabilityIndex } from "../core/reachability.js";
 import { inspectOpenClawDatabase, type OpenClawWorktree } from "./openclaw-database.js";
 import { openClawOwnership } from "./openclaw-ownership.js";
@@ -336,18 +336,16 @@ export async function collectOpenClaw(
   async function cache(path: string, dir: boolean) {
     if (basename(path) !== "shell-snapshots" || !dir) return report(path, "cache");
     await scan(path, async (child, directory) => {
-      if (
-        directory ||
-        !OPENCLAW_SHELL_SNAPSHOT_POLICY.matchesRelativePath(relative(physical, child))
-      )
-        return report(child, "cache");
+      const rule = matchProviderFilePolicy(
+        "openclaw",
+        "openclaw.shell-snapshot",
+        relative(physical, child),
+      );
+      if (directory || !rule) return report(child, "cache");
       const stats = await lstat(child);
       const ageDays = (context.now.getTime() - stats.mtimeMs) / day;
       const facts: Facts = { nativeSweepDays: 3, olderThanNativeRetention: ageDays > 3 };
-      if (
-        ageDays >= OPENCLAW_SHELL_SNAPSHOT_POLICY.minAgeMinutes / 1440 &&
-        ["darwin", "linux"].includes(process.platform)
-      ) {
+      if (ageDays >= rule.minAgeDays && ["darwin", "linux"].includes(process.platform)) {
         if (owner.registry.status === "uncheckpointed") {
           facts.identityStatus = "uncheckpointed";
         } else {
@@ -356,11 +354,11 @@ export async function collectOpenClaw(
               child,
               physical,
               "openclaw",
-              OPENCLAW_SHELL_SNAPSHOT_POLICY.contentPrefix,
+              rule.contentPrefix,
             );
             Object.assign(facts, {
               reportOnly: false,
-              policyId: OPENCLAW_SHELL_SNAPSHOT_POLICY.id,
+              policyId: rule.id,
               providerFileIdentity: identity,
               maintenanceAction: "provider.file-quarantine",
             });

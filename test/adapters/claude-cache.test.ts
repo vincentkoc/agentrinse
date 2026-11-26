@@ -7,10 +7,7 @@ import { describe, expect, it } from "vitest";
 import { ProviderAuditAdapter } from "../../src/adapters/provider-adapter.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
-import {
-  CLAUDE_CHANGELOG_CACHE_POLICY_ID,
-  isClaudeChangelogCacheRelativePath,
-} from "../../src/core/provider-file-policy.js";
+import { matchProviderFilePolicy } from "../../src/rules/file-rule.js";
 
 const NOW = new Date("2026-07-27T00:00:00.000Z");
 
@@ -55,7 +52,7 @@ describe("Claude changelog cache cleanup", () => {
     const probe = await claude.probe(context);
     const collection = await claude.collect(context, probe);
     const exactCaches = collection.resources.filter(
-      (resource) => resource.facts.policyId === CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+      (resource) => resource.facts.policyId === "claude.changelog-cache",
     );
     const finding = await claude.classify(context, exactCaches[0]!);
 
@@ -80,7 +77,7 @@ describe("Claude changelog cache cleanup", () => {
         {
           type: "provider.file-quarantine",
           adapter: "claude",
-          policyId: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+          policyId: "claude.changelog-cache",
           risk: "recoverable",
           expectedReclaimBytes: 0,
           quarantineTtlMinutes: 7 * 24 * 60,
@@ -104,9 +101,7 @@ describe("Claude changelog cache cleanup", () => {
     const collection = await claude.collect(context, probe);
 
     expect(
-      collection.resources.some(
-        (resource) => resource.facts.policyId === CLAUDE_CHANGELOG_CACHE_POLICY_ID,
-      ),
+      collection.resources.some((resource) => resource.facts.policyId === "claude.changelog-cache"),
     ).toBe(false);
   });
 
@@ -124,7 +119,7 @@ describe("Claude changelog cache cleanup", () => {
 
     expect(
       directoryCollection.resources.some(
-        (resource) => resource.facts.policyId === CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+        (resource) => resource.facts.policyId === "claude.changelog-cache",
       ),
     ).toBe(false);
 
@@ -140,18 +135,28 @@ describe("Claude changelog cache cleanup", () => {
 
     expect(
       fileCollection.resources.some(
-        (resource) => resource.facts.policyId === CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+        (resource) => resource.facts.policyId === "claude.changelog-cache",
       ),
     ).toBe(false);
   });
 
   it("matches only the exact Claude changelog cache path", () => {
-    expect(isClaudeChangelogCacheRelativePath(`cache${sep}changelog.md`)).toBe(true);
-    expect(isClaudeChangelogCacheRelativePath("cache/my-closed-issues.json")).toBe(false);
-    expect(isClaudeChangelogCacheRelativePath("cache/nested/changelog.md")).toBe(false);
-    expect(isClaudeChangelogCacheRelativePath("changelog.md")).toBe(false);
+    expect(
+      !!matchProviderFilePolicy("claude", "claude.changelog-cache", `cache${sep}changelog.md`),
+    ).toBe(true);
+    expect(
+      !!matchProviderFilePolicy("claude", "claude.changelog-cache", "cache/my-closed-issues.json"),
+    ).toBe(false);
+    expect(
+      !!matchProviderFilePolicy("claude", "claude.changelog-cache", "cache/nested/changelog.md"),
+    ).toBe(false);
+    expect(!!matchProviderFilePolicy("claude", "claude.changelog-cache", "changelog.md")).toBe(
+      false,
+    );
     if (sep === "/") {
-      expect(isClaudeChangelogCacheRelativePath("cache\\changelog.md")).toBe(false);
+      expect(
+        !!matchProviderFilePolicy("claude", "claude.changelog-cache", "cache\\changelog.md"),
+      ).toBe(false);
     }
   });
 });
