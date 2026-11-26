@@ -94,6 +94,16 @@ describe("provider file policy", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("refuses a saved file action after the provider is disabled", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-disabled-provider-"));
+    const action = await actionFor(join(home, ".claude"), join("debug", "old.txt"));
+    const config = {
+      ...DEFAULT_CONFIG,
+      adapters: { ...DEFAULT_CONFIG.adapters, claude: { enabled: false } },
+    };
+    await expect(authorizeProviderFileAction(action, home, config)).rejects.toThrow(/enabled/);
+  });
+
   it.each(["debug/session.jsonl", "debug/nested/session.txt", "projects/session.txt"])(
     "rejects the non-policy path %s",
     async (relativePath) => {

@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 
 import { resolveProviderRoot } from "../adapters/provider-root.js";
 import { hasOpenClawJournal } from "../adapters/openclaw-database.js";
-import { PROVIDER_SPECS } from "../adapters/provider-specs.js";
+import { isProviderEnabled, PROVIDER_SPECS } from "../adapters/provider-specs.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { ProviderFileQuarantineAction } from "../contracts/action.js";
 import { matchProviderFilePolicy, type ProviderFileRule } from "../rules/file-rule.js";
@@ -47,6 +47,11 @@ export async function authorizeProviderFileAction(
   const explicitRoot = config.adapters[action.adapter]?.root;
   if (action.adapter === "openclaw" && config.adapters.openclaw?.enabled !== true) {
     throw new Error("OpenClaw snapshot quarantine requires the OpenClaw adapter to be enabled");
+  }
+  if (!isProviderEnabled(config, action.adapter)) {
+    throw new Error(
+      "Provider-file quarantine requires the " + action.adapter + " adapter to be enabled",
+    );
   }
   const policy = matchProviderFilePolicy(
     action.adapter,

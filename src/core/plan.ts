@@ -1,3 +1,5 @@
+import { isProviderEnabled } from "../adapters/provider-specs.js";
+import { matchProviderFilePolicy } from "../rules/file-rule.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import { actionRiskSchema, type ActionRisk } from "../contracts/action.js";
 import { cleanupPlanSchema, type CleanupPlan } from "../contracts/plan.js";
@@ -26,6 +28,12 @@ export function createCleanupPlan(
     .filter((finding) => finding.state === "eligible")
     .flatMap((finding) => finding.candidateActions)
     .filter((action) => RISK_ORDER[action.risk] <= RISK_ORDER[config.plan.maxRisk])
+    .filter(
+      (action) =>
+        action.type !== "provider.file-quarantine" ||
+        (isProviderEnabled(config, action.adapter) &&
+          matchProviderFilePolicy(action.adapter, action.policyId, action.target.relativePath)),
+    )
     .sort((left, right) => left.actionId.localeCompare(right.actionId));
   const planWithoutId = {
     schemaVersion: 1 as const,
