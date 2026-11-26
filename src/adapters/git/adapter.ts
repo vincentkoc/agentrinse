@@ -25,8 +25,8 @@ import {
   type ProcessOwnershipResult,
 } from "../../core/process-ownership.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
-import { worktreeProtectionRoots } from "./protection-policy.js";
-import { shouldDeferProcessOwnership } from "./cheap-protection.js";
+import { worktreeProtectionRoots } from "../../rules/git/worktree.js";
+import { shouldDeferProcessOwnership } from "../../rules/git/registration.js";
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "./porcelain.js";
 import { isPushedHead, matchingGitRefPins } from "./refs.js";
 import {

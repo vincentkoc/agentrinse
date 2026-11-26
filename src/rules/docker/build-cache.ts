@@ -1,5 +1,8 @@
 import type { RootEvidence } from "../../contracts/finding.js";
-import { dockerBuildCacheIsOldEnough, type DockerBuildCacheRecord } from "./owner.js";
+import {
+  dockerBuildCacheIsOldEnough,
+  type DockerBuildCacheRecord,
+} from "../../adapters/docker/owner.js";
 
 export function estimatedCacheReclaimBytes(cache: DockerBuildCacheRecord): number | undefined {
   if (cache.sizeEvidence.kind !== "exact") return undefined;

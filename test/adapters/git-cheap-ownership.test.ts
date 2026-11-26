@@ -8,7 +8,7 @@ import { GitWorktreeAuditAdapter } from "../../src/adapters/git/adapter.js";
 import {
   cheapWorktreeProtections,
   shouldDeferProcessOwnership,
-} from "../../src/adapters/git/cheap-protection.js";
+} from "../../src/rules/git/registration.js";
 import type { GitWorktreeRecord } from "../../src/adapters/git/porcelain.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 
