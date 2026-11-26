@@ -17,6 +17,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- `worktrees --repo <owner> --project-roots` includes repository-local `.worktrees` and `.claude/worktrees` containers in the checkout inventory and optional measurement. Derived containers with mount boundaries are withheld.
+
 - Configured projects that declare Vite can report its default local cache without measuring or planning removal of the cache.
 
 - Projects can opt into pytest, mypy and Ruff cache removal by exact name. Each cache must contain a valid CACHEDIR.TAG declaration at audit and apply time.
