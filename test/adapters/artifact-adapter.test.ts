@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { artifactInspectionBlocker } from "../../src/rules/build/inspection.js";
+import { collectProviderReachability } from "../../src/adapters/provider-reachability.js";
 import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";
@@ -275,6 +276,60 @@ describe("ArtifactAuditAdapter", () => {
     expect(finding.roots.map((root) => root.code)).toContain("active-session");
     expect(finding.candidateActions).toEqual([]);
   });
+
+  it.each(["exact", "ancestor", "inside-cache", "sibling"] as const)(
+    "attributes a Claude %s registration to the configured project",
+    async (relation) => {
+      const { context, projectRoot, artifact } = await fixture();
+      const registered =
+        relation === "exact"
+          ? projectRoot
+          : relation === "ancestor"
+            ? context.home
+            : relation === "inside-cache"
+              ? join(artifact, "registered-subproject")
+              : join(projectRoot, "separate-directory");
+      await writeFile(
+        join(context.home, ".claude.json"),
+        JSON.stringify({ projects: { [registered]: {} } }),
+      );
+      const index = new ReachabilityIndex();
+      expect(
+        await collectProviderReachability("claude", context, join(context.home, ".claude"), index),
+      ).toEqual([]);
+      const adapter = new ArtifactAuditAdapter(
+        {
+          projects: [{ root: projectRoot, names: ["node_modules"] }],
+          minAgeMinutes: 60,
+          minBytes: 1,
+          processCheck: "required",
+          measureBytes: true,
+          maxEntries: 100,
+        },
+        async () => ({ status: "idle", matches: [] }),
+        async () => ({ status: "clear", paths: [] }),
+        index,
+      );
+      const collection = await adapter.collect(context, await adapter.probe(context));
+      const finding = await adapter.classify(context, collection.resources[0]!);
+      const roots = finding.roots.filter((r) => r.source === "claude");
+      if (relation === "sibling") {
+        expect(roots).toEqual([]);
+        expect(finding.state).toBe("eligible");
+      } else {
+        const code =
+          relation === "exact"
+            ? "registered-project"
+            : relation === "ancestor"
+              ? "registered-project-ancestor"
+              : "registered-project-descendant";
+        expect(roots).toMatchObject([{ code }]);
+        expect(JSON.stringify(roots)).not.toContain(context.home);
+        expect(finding.state).toBe("protected");
+        expect(finding.candidateActions).toEqual([]);
+      }
+    },
+  );
 
   it("does not treat global unknown provider state as artifact ownership", async () => {
     const { context, projectRoot } = await fixture();

@@ -4,7 +4,11 @@ import { isAbsolute, join, resolve } from "node:path";
 import type { AuditContext } from "../contracts/adapter.js";
 import type { Diagnostic } from "../contracts/diagnostic.js";
 import { sha256 } from "../core/digest.js";
-import type { ReachabilityIndex } from "../core/reachability.js";
+import {
+  describeProjectRegistration,
+  exactProjectRegistration,
+} from "../rules/claude/project-registration.js";
+import type { ReachabilityIndex, ReachabilityRoot } from "../core/reachability.js";
 import type { ProviderAdapterId } from "./provider-specs.js";
 
 type JsonObject = Record<string, unknown>;
@@ -67,6 +71,7 @@ function addPathRoot(
     detail: string;
     field: string;
     scope?: "overlap" | "subtree";
+    describeMatch?: ReachabilityRoot["describeMatch"];
   },
 ): boolean {
   if (!isAbsolute(input.path)) {
@@ -78,6 +83,7 @@ function addPathRoot(
     code: input.code,
     source: input.source,
     detail: input.detail,
+    ...(input.describeMatch ? { describeMatch: input.describeMatch } : {}),
     evidenceRef: sha256(`${input.source}\0${input.field}\0${path}`),
     ...(input.scope === undefined ? {} : { scope: input.scope }),
   });
@@ -322,9 +328,9 @@ async function collectClaudeReachability(
     if (
       !addPathRoot(index, {
         path,
-        code: "recent-session",
+        ...exactProjectRegistration,
         source: "claude",
-        detail: "Claude project metadata references this workspace.",
+        describeMatch: describeProjectRegistration,
         field: "projects",
       })
     ) {

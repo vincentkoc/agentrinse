@@ -53,6 +53,8 @@ The project follows semantic versioning after its first supported release.
 
 - Process holders, session roots, and artifact project scopes now recognize child names such as `..cache` when checking path containment.
 
+- Claude project registrations now identify whether the workspace, a parent directory, or a project inside it is registered. All three matches retain their existing protection.
+
 - Artifact plans and cleanup summaries identify logical byte counts. Completed totals use the actions that contributed reclaimed bytes. Sparse files and shared blocks can yield a smaller change in available disk space.
 
 - Tests no longer inherit the host Git signing, LFS, or credential config, which made

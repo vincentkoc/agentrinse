@@ -67,7 +67,7 @@ export async function currentArtifactProtectionRoots(
         displayName: action.target.name,
         path,
       },
-      {},
+      { projectRoot: action.target.projectRoot },
       observedAt,
     ),
   );

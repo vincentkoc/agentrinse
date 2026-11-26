@@ -59,6 +59,8 @@ Transcripts, prompt history, checkpoint files, task state, settings,
 credentials, plugins, undocumented caches, and native orphaned-worktree
 cleanup stay provider-owned.
 
+Claude project keys in `~/.claude.json` establish a retained registration. Evidence distinguishes the registered workspace, a registered parent directory, and a registered project within the workspace. Each overlap keeps its existing protection. A registration supplies no session timestamp. Reports use static descriptions and hashed evidence references.
+
 AgentRinse reports Claude's native startup retention for project sessions,
 debug data, `paste-cache`, and `image-cache`. It reads only the direct user
 `settings.json`, with a 1 MiB limit and stable-file check. A valid user

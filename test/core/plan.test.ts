@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
-import type { AuditReport } from "../../src/contracts/report.js";
+import { auditReportSchema, type AuditReport } from "../../src/contracts/report.js";
 import { createCleanupPlan } from "../../src/core/plan.js";
 
 const AUDIT: AuditReport = {
@@ -22,6 +22,43 @@ describe("createCleanupPlan", () => {
     expect(plan.actions).toEqual([]);
     expect(plan.expectedReclaimBytes).toBe(0);
     expect(plan.expiresAt).toBe("2026-07-23T02:30:00.000Z");
+  });
+
+  it("reads saved Claude recent-session protection from earlier audits", () => {
+    const root = {
+      code: "recent-session",
+      source: "claude",
+      observedAt: AUDIT.completedAt,
+      detail: "Claude project metadata references this workspace.",
+    };
+    const saved = auditReportSchema.parse({
+      ...AUDIT,
+      findings: [
+        {
+          schemaVersion: 1,
+          findingId: "legacy",
+          auditId: AUDIT.auditId,
+          observedAt: AUDIT.completedAt,
+          resource: {
+            id: "git:worktree:fixture",
+            kind: "git-worktree",
+            adapter: "git",
+            canonicalKey: "fixture",
+            displayName: "fixture",
+          },
+          state: "protected",
+          confidence: "certain",
+          facts: {},
+          roots: [root],
+          candidateActions: [],
+          warnings: [],
+        },
+      ],
+    });
+    expect(saved.findings[0]?.roots).toEqual([root]);
+    expect(createCleanupPlan(saved, DEFAULT_CONFIG, new Date(AUDIT.completedAt)).actions).toEqual(
+      [],
+    );
   });
 
   it("is deterministic for identical inputs", () => {

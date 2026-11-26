@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 
 import { isPathInside } from "./safety.js";
 
@@ -13,6 +13,10 @@ export type ReachabilityRoot = ReachabilityEvidence & {
   path: string;
   scope?: "exact" | "overlap" | "subtree";
   resourceKinds?: readonly ResourceKind[];
+  describeMatch?: (
+    registeredPath: string,
+    workspacePath: string,
+  ) => Pick<RootEvidence, "code" | "detail">;
 };
 
 export class ReachabilityIndex {
@@ -109,7 +113,12 @@ export class ReachabilityIndex {
     });
   }
 
-  private pathRoots(path: string, observedAt: string, resourceKind?: ResourceKind): RootEvidence[] {
+  private pathRoots(
+    path: string,
+    observedAt: string,
+    resourceKind?: ResourceKind,
+    workspacePath = path,
+  ): RootEvidence[] {
     const target = resolve(path);
     const matchingRoots = [...this.roots.values()]
       .filter((root) => this.isCurrent(root, observedAt))
@@ -125,8 +134,20 @@ export class ReachabilityIndex {
             ? isPathInside(root.path, target)
             : isPathInside(root.path, target) || isPathInside(target, root.path),
       )
-      .map(({ path: _path, scope: _scope, resourceKinds: _resourceKinds, ...root }) =>
-        this.evidence(root, observedAt),
+      .map(
+        ({
+          path: registeredPath,
+          scope: _scope,
+          resourceKinds: _resourceKinds,
+          describeMatch,
+          ...root
+        }) =>
+          this.evidence(
+            describeMatch
+              ? { ...root, ...describeMatch(registeredPath, resolve(workspacePath)) }
+              : root,
+            observedAt,
+          ),
       );
     const globalRoots = [...this.globalRoots.values()]
       .filter((root) => this.isCurrent(root, observedAt))
@@ -144,10 +165,19 @@ export class ReachabilityIndex {
     facts: Record<string, unknown>,
     observedAt: string,
   ): RootEvidence[] {
+    // Artifact protection still intersects the resource path. Its workspace label describes the configured project.
+    const workspacePath =
+      resource.kind === "build-artifact" &&
+      resource.path !== undefined &&
+      typeof facts.projectRoot === "string" &&
+      isAbsolute(facts.projectRoot) &&
+      isPathInside(facts.projectRoot, resource.path)
+        ? facts.projectRoot
+        : resource.path;
     const roots =
       resource.path === undefined
         ? this.pathRoots("/", observedAt, resource.kind)
-        : this.pathRoots(resource.path, observedAt, resource.kind);
+        : this.pathRoots(resource.path, observedAt, resource.kind, workspacePath);
     for (const [key, root] of this.resourceRoots) {
       if (key.startsWith(`${resource.id}\0`) && this.isCurrent(root, observedAt)) {
         roots.push(this.evidence(root, observedAt));
