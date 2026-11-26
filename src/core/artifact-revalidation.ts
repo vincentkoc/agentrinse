@@ -1,3 +1,4 @@
+import { artifactMeasurementChanged } from "./artifact-measurement.js";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
@@ -176,14 +177,7 @@ export async function revalidateArtifactRemove(
     const measurement = await (dependencies.measure ?? measurePath)(targetPath, {
       maxEntries: config.audit.maxEntries,
     });
-    if (
-      measurement.truncated ||
-      measurement.bytes !== action.target.measuredBytes ||
-      measurement.newestMtimeMs !== action.target.newestMtimeMs ||
-      measurement.fingerprint !== action.target.fingerprint ||
-      measurement.mountBoundaries > 0 ||
-      measurement.vcsMetadataEntries > 0
-    ) {
+    if (artifactMeasurementChanged(measurement, action.target)) {
       return stale(
         action,
         "ARTIFACT_CONTENT_CHANGED",
