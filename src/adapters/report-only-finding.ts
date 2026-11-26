@@ -9,6 +9,7 @@ export function reportOnlyFinding(
   source: string,
   confidence: Finding["confidence"],
   reasons: Pick<RootEvidence, "code" | "detail">[],
+  options: { estimatedReclaimBytes?: number; warnings?: Finding["warnings"] } = {},
 ): Finding {
   const observedAt = context.now.toISOString();
   return {
@@ -23,6 +24,9 @@ export function reportOnlyFinding(
     facts: resource.facts,
     candidateActions: [],
     ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-    warnings: [],
+    ...(options.estimatedReclaimBytes === undefined
+      ? {}
+      : { estimatedReclaimBytes: options.estimatedReclaimBytes }),
+    warnings: options.warnings ?? [],
   };
 }

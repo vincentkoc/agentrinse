@@ -1,3 +1,5 @@
+import { buildCacheProtection, estimatedCacheReclaimBytes } from "./cache-policy.js";
+import { reportOnlyFinding } from "../report-only-finding.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";
 import type { Finding } from "../../contracts/finding.js";
@@ -6,7 +8,6 @@ import type { ResourceKind, ResourceSnapshot } from "../../contracts/resource.js
 import { sha256 } from "../../core/digest.js";
 import {
   createDockerRunner,
-  dockerBuildCacheIsOldEnough,
   inspectDockerBuildCache,
   inspectDockerContext,
   inspectDockerScope,
@@ -324,18 +325,15 @@ export class DockerAuditAdapter implements AuditAdapter {
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
-    const observedAt = context.now.toISOString();
     const cache =
       resource.resource.kind === "docker-build-cache" ? buildCacheRecord(resource) : undefined;
     const root =
       cache === undefined
         ? {
             code: "docker-resource-report-only",
-            source: "docker",
-            observedAt,
             detail: "Docker resources are inventoried without mutation.",
           }
-        : this.buildCacheRoot(cache, context.now, observedAt);
+        : buildCacheProtection(cache, context.now);
     const warnings: Diagnostic[] =
       cache?.shared === true
         ? [
@@ -350,77 +348,10 @@ export class DockerAuditAdapter implements AuditAdapter {
           ]
         : [];
 
-    return {
-      schemaVersion: 1,
-      findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-      auditId: context.auditId,
-      observedAt,
-      resource: resource.resource,
-      state: "protected",
-      confidence: "certain",
-      roots: [root],
-      facts: resource.facts,
-      candidateActions: [],
-      ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-      ...(cache === undefined
-        ? {}
-        : cache.sizeEvidence.kind === "exact"
-          ? {
-              estimatedReclaimBytes:
-                cache.reclaimable && !cache.shared ? cache.sizeEvidence.bytes : 0,
-            }
-          : {}),
+    const estimatedReclaimBytes = cache && estimatedCacheReclaimBytes(cache);
+    return reportOnlyFinding(context, resource, this.id, "certain", [root], {
+      ...(estimatedReclaimBytes === undefined ? {} : { estimatedReclaimBytes }),
       warnings,
-    };
-  }
-
-  private buildCacheRoot(cache: DockerBuildCacheRecord, now: Date, observedAt: string) {
-    if (cache.mutable) {
-      return {
-        code: "docker-build-cache-mutable",
-        source: "docker",
-        observedAt,
-        detail: "Docker reports this build-cache record as mutable.",
-      };
-    }
-    if (!cache.reclaimable) {
-      return {
-        code: "docker-build-cache-in-use",
-        source: "docker",
-        observedAt,
-        detail: "Docker reports this build-cache record as not reclaimable.",
-      };
-    }
-    if (cache.recordType === undefined) {
-      return {
-        code: "docker-build-cache-type-unknown",
-        source: "docker",
-        observedAt,
-        detail: "Buildx did not expose this cache record's type.",
-      };
-    }
-    if (cache.recordType === "internal" || cache.recordType === "frontend") {
-      return {
-        code: "docker-build-cache-internal",
-        source: "docker",
-        observedAt,
-        detail: `Docker classifies this as ${cache.recordType} build cache.`,
-      };
-    }
-    if (!dockerBuildCacheIsOldEnough(cache, now)) {
-      return {
-        code: "docker-build-cache-recent",
-        source: "docker",
-        observedAt,
-        detail: "The cache record lacks conservative proof that it is at least seven days old.",
-      };
-    }
-    return {
-      code: "docker-build-cache-mutation-unbound",
-      source: "docker",
-      observedAt,
-      detail:
-        "Buildx prune re-resolves context and builder names and cannot condition deletion on the revalidated daemon and worker identity.",
-    };
+    });
   }
 }

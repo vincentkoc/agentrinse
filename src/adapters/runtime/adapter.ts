@@ -1,3 +1,4 @@
+import { reportOnlyFinding } from "../report-only-finding.js";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { access, lstat, readdir, realpath } from "node:fs/promises";
@@ -358,27 +359,11 @@ export class RuntimeAuditAdapter implements AuditAdapter {
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
-    const observedAt = context.now.toISOString();
-    return {
-      schemaVersion: 1,
-      findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-      auditId: context.auditId,
-      observedAt,
-      resource: resource.resource,
-      state: "protected",
-      confidence: "certain",
-      roots: [
-        {
-          code: "runtime-owner-report-only",
-          source: this.id,
-          observedAt,
-          detail: "Agent runtime maintenance remains owned by its installer or package manager.",
-        },
-      ],
-      facts: resource.facts,
-      candidateActions: [],
-      ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-      warnings: [],
-    };
+    return reportOnlyFinding(context, resource, this.id, "certain", [
+      {
+        code: "runtime-owner-report-only",
+        detail: "Agent runtime maintenance remains owned by its installer or package manager.",
+      },
+    ]);
   }
 }
