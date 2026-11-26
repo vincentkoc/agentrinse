@@ -6,6 +6,10 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `doctor` verifies saved plan configurations against the values recorded when the plan was created. Plans from older releases remain readable after new configuration defaults are added.
+
 ## [1.0.0] - 2026-11-27
 
 AgentRinse can now inventory Git object stores, worktrees and developer caches

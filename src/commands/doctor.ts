@@ -684,7 +684,9 @@ async function planDirectoryChecks(directory: string): Promise<DoctorCheck[]> {
   for (const name of configNames) {
     const planId = name.slice(0, -configSuffix.length);
     try {
-      const config = agentRinseConfigSchema.parse(await readJsonFile(join(directory, name)));
+      const config = await readJsonFile(join(directory, name));
+      // Plans bind the saved config, before newer schema defaults are filled in.
+      agentRinseConfigSchema.parse(config);
       const plan = plans.get(planId);
       if (
         planId.length === 0 ||
