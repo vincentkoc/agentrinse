@@ -23,6 +23,7 @@ The project follows semantic versioning after its first supported release.
 - `agentrinse storage` reports bounded direct cache metadata, protected storage locations, sparse VM disk sizes and kernel mount types. Shared filesystem extents carry no physical reclaim estimate.
 - Storage inventory groups Git pack and temporary filenames across explicit durable owners. OpenClaw Crabbox source staging reports bounded v2 receipt evidence independently of controller and payload data.
 - Opt-in storage measurement counts nested metadata in selected developer caches and receipt-verified Crabbox capsules, identifying excluded or budget-limited bytes. Historical lease counts remain separate from live-holder evidence.
+- Crabbox storage reports verify staging and payload identities across measurement. Relocated, replaced, linked and mounted entries report incomplete coverage.
 
 - `agentrinse worktrees` inventories linked checkouts, standalone repositories,
   missing registrations, logical worktree sizes and direct Git administrative

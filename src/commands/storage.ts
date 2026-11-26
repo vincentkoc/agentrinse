@@ -253,6 +253,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
         (r.coverage !== "direct-complete" && !(r.coverage === "missing" && !staging.length)) ||
         r.receiptsOmitted > 0 ||
         r.unverifiedEntries > 0 ||
+        r.excluded > 0 ||
         r.entries.some((e) => e.measurement && e.measurement.extent !== "complete"),
     );
   return {
@@ -323,7 +324,9 @@ export async function executeStorageCommand(options: StorageOptions) {
           "  mirror index: " +
           r.mirrorIndex +
           "; receipts omitted: " +
-          r.receiptsOmitted,
+          r.receiptsOmitted +
+          "; withheld entries: " +
+          r.excluded,
         ...r.entries.map(
           (e) =>
             "  " +

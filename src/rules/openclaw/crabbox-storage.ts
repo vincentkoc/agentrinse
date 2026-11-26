@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join, parse } from "node:path";
 import { lstat } from "node:fs/promises";
 import { z } from "zod";
@@ -12,17 +13,23 @@ import {
 } from "../../core/storage-observation.js";
 import { coveringMount, type StorageMount } from "../../core/storage-mounts.js";
 
+import { currentStagingIdentity, directoryIdentity } from "./crabbox-identity.js";
+
 const prefix = "openclaw-crabbox-sync-";
 const limit = 32 * 1024;
 const mirrorReviewAgeMs = 48 * 60 * 60 * 1000;
-const identity = z.object({ dev: z.string(), ino: z.string() });
+
 const receipt = z.object({
   version: z.literal(2),
   id: z.uuid(),
   kind: z.enum(["worktree", "capsule"]),
   ownerPid: z.number().int().min(2),
-  rootIdentity: identity,
-  payloadIdentity: identity,
+  rootIdentity: directoryIdentity,
+  identityRecordedAtNs: z
+    .string()
+    .regex(/^[1-9]\d*$/u)
+    .optional(),
+  payloadIdentity: directoryIdentity,
   durable: z.boolean(),
   repository: z.string(),
   manifest: z
@@ -36,7 +43,7 @@ const receipt = z.object({
   mirror: z
     .object({
       key: z.string().regex(/^[a-f0-9]{64}$/u),
-      slotIdentity: identity,
+      slotIdentity: directoryIdentity,
       idle: z.boolean(),
       lastUsed: z.number().int().nonnegative(),
       disposing: z.literal(true).optional(),
@@ -44,7 +51,24 @@ const receipt = z.object({
     .optional(),
 });
 
-async function inspectReceipt(entry: DirectEntry, mounts: StorageMount[], now: number) {
+type ReceiptObservation = {
+  classification: string;
+  receipt: string;
+  fingerprint?: string;
+  identityReview?: string;
+  state?: string;
+  users?: string;
+  recordedLeaseCount?: number;
+  liveHolders?: "unverified";
+  lastUseReview?: "at-least-48-hours" | "under-48-hours";
+  idle?: boolean;
+  lastUsedMs?: number | null;
+};
+async function inspectReceipt(
+  entry: DirectEntry,
+  mounts: StorageMount[],
+  now: number,
+): Promise<ReceiptObservation> {
   const path = join(entry.path, "staging.json");
   if (coveringMount(path, mounts) !== coveringMount(entry.path, mounts))
     return { classification: "unverified-staging", receipt: "mount-boundary" };
@@ -86,16 +110,16 @@ async function inspectReceipt(entry: DirectEntry, mounts: StorageMount[], now: n
       const data = receipt.parse(
         JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer)),
       );
-      if (
-        data.rootIdentity.dev !== entry.stats.dev.toString() ||
-        data.rootIdentity.ino !== entry.stats.ino.toString()
-      ) {
+      const recorded = data.identityRecordedAtNs
+        ? BigInt(data.identityRecordedAtNs)
+        : before.mtimeNs;
+      const deadline = recorded < before.mtimeNs ? recorded : before.mtimeNs;
+      if (!(await currentStagingIdentity(entry, data, mounts, deadline)))
         return {
           classification: "unverified-staging",
           receipt: "current-identity-mismatch",
           identityReview: "producer-stable-identity-required",
         };
-      }
       if (
         entry.name !== prefix + data.id ||
         !sameObservation(before, await lstat(path, { bigint: true })) ||
@@ -122,6 +146,7 @@ async function inspectReceipt(entry: DirectEntry, mounts: StorageMount[], now: n
             ? "reported-mirror"
             : "reported-" + data.kind,
         receipt: "v2-observation",
+        fingerprint: createHash("sha256").update(buffer).digest("hex"),
         state: data.state,
         users: data.users,
         recordedLeaseCount: data.leases?.length ?? 0,
@@ -151,6 +176,7 @@ export async function collectCrabboxStorage(
   now: number,
   receiptBudget: EntryBudget,
   measure = false,
+  measureTree = measureCacheTree,
 ) {
   const scan = await directStorageEntries(root, mounts, budget);
   const entries = [];
@@ -174,15 +200,25 @@ export async function collectCrabboxStorage(
       continue;
     }
     if (validId) receiptBudget.remaining--;
-    const evidence = validId
+    let observation: ReceiptObservation = validId
       ? await inspectReceipt(entry, mounts!, now)
       : { classification: "legacy-or-unidentified", receipt: "uninspected" };
-    const verified = evidence.receipt === "v2-observation";
-    if (!verified) unverifiedEntries++;
-    const measurement =
-      measure && verified
-        ? await measureCacheTree(entry.path, entry.stats, mounts!, budget)
-        : undefined;
+    let measurement;
+    if (measure && observation.fingerprint) {
+      measurement = await measureTree(entry.path, entry.stats, mounts!, budget);
+      const after = await inspectReceipt(entry, mounts!, now);
+      if (after.fingerprint !== observation.fingerprint) {
+        observation = {
+          classification: "unverified-staging",
+          receipt: "changed-during-measurement",
+        };
+        measurement = undefined;
+      } else {
+        observation = after;
+      }
+    }
+    if (!observation.fingerprint) unverifiedEntries++;
+    const { fingerprint: _, ...evidence } = observation;
     entries.push({
       path: entry.path,
       ...evidence,
@@ -193,7 +229,10 @@ export async function collectCrabboxStorage(
   }
   return {
     root,
-    coverage: scan.coverage,
+    coverage:
+      scan.coverage === "direct-complete" && (scan.excluded || unverifiedEntries || receiptsOmitted)
+        ? "direct-partial"
+        : scan.coverage,
     entries,
     mirrorIndex,
     otherEntries,

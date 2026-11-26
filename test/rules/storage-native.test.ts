@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { link, lstat, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, realpath, rename, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { directStorageEntries } from "../../src/core/storage-observation.js";
 import { measureCacheTree } from "../../src/core/storage-measurement.js";
 import { collectPackStorage } from "../../src/rules/git/pack-storage.js";
+import { currentStagingIdentity } from "../../src/rules/openclaw/crabbox-identity.js";
 import { collectCrabboxStorage } from "../../src/rules/openclaw/crabbox-storage.js";
 import { inventoryStorage, executeStorageCommand } from "../../src/commands/storage.js";
 import { parseStorageMounts } from "../../src/core/storage-mounts.js";
@@ -97,9 +98,26 @@ it("accounts pack names per durable owner and deduplicates global files and comm
 async function capsule(root: string, extra: Record<string, unknown> = {}) {
   const id = randomUUID(),
     path = join(root, "openclaw-crabbox-sync-" + id);
-  await mkdir(path, { recursive: true });
-  const stats = await lstat(path, { bigint: true }),
-    identity = { dev: String(stats.dev), ino: String(stats.ino) };
+  const payload = join(path, "payload");
+  await mkdir(payload, { recursive: true });
+  async function identityOf(directory: string) {
+    const stats = await lstat(directory, { bigint: true });
+    return {
+      dev: String(stats.dev),
+      ino: String(stats.ino),
+      ...(stats.birthtimeNs > 0n
+        ? {
+            stable: {
+              path: directory,
+              birthtimeNs: String(stats.birthtimeNs),
+              volume: "device:" + stats.dev,
+            },
+          }
+        : {}),
+    };
+  }
+  const identity = await identityOf(path),
+    payloadIdentity = await identityOf(payload);
   const file = join(path, "staging.json");
   await writeFile(
     file,
@@ -109,7 +127,7 @@ async function capsule(root: string, extra: Record<string, unknown> = {}) {
       kind: "capsule",
       ownerPid: 1234,
       rootIdentity: identity,
-      payloadIdentity: identity,
+      payloadIdentity,
       durable: true,
       repository: "/private/store",
       manifest: "b".repeat(64),
@@ -126,7 +144,7 @@ it("matches only bounded same-owner receipts and keeps payload and controller co
   const home = await fixture(),
     root = join(home, "staging"),
     healthy = await capsule(root, { leases: ["withheld-lease"] });
-  await mkdir(join(healthy.path, "source", "protected"), { recursive: true });
+  await mkdir(join(healthy.path, "payload", "source", "protected"), { recursive: true });
   const held = await capsule(root, { hold: "writers" });
   const recovering = await capsule(root);
   await writeFile(join(recovering.path, "recovery.lock"), "");
@@ -143,7 +161,7 @@ it("matches only bounded same-owner receipts and keeps payload and controller co
   const report = await inventoryStorage({ home, family: ["crabbox"], crabboxRoot: [root] }, deps);
   const staging = report.data.crabbox[0]!;
   expect(staging).toMatchObject({
-    coverage: "direct-complete",
+    coverage: "direct-partial",
     mirrorIndex: true,
     otherEntries: 1,
     reclaimableBytes: null,
@@ -176,7 +194,7 @@ it("measures only explicitly requested verified staging metadata and reports pro
   const home = await fixture(),
     root = join(home, "staging"),
     valid = await capsule(root);
-  const source = join(valid.path, "source");
+  const source = join(valid.path, "payload", "source");
   await mkdir(join(source, ".git"), { recursive: true });
   await writeFile(join(source, ".git", "private"), "private");
   await writeFile(join(source, "code.ts"), "sample");
@@ -257,4 +275,109 @@ it("uses the receipt's millisecond clock for the 48-hour review boundary and exc
   const future = await observe(lastUsed - 1);
   expect(future).toMatchObject({ classification: "reported-mirror", lastUsedMs: null });
   expect(future).not.toHaveProperty("lastUseReview");
+});
+
+it("withholds receipt age and bytes for relocated staging and replacement payloads", async () => {
+  const home = await fixture(),
+    root = join(home, "staging"),
+    item = await capsule(root),
+    moved = join(home, "moved");
+  await rename(root, moved);
+  const scan = (dir: string) =>
+    collectCrabboxStorage(dir, local, { remaining: 100 }, Date.now(), { remaining: 10 }, true);
+  const relocated = (await scan(moved)).entries[0]!;
+  expect(relocated).toMatchObject({
+    classification: "unverified-staging",
+    measurement: { extent: "unknown" },
+  });
+  expect(relocated).not.toHaveProperty("lastUseReview");
+  await rename(moved, root);
+  const payload = join(item.path, "payload");
+  await rename(payload, join(home, "previous"));
+  await mkdir(payload);
+  const replacement = (await scan(root)).entries[0]!;
+  expect(replacement).toMatchObject({
+    classification: "unverified-staging",
+    measurement: { extent: "unknown" },
+  });
+  expect(replacement.measurement).not.toHaveProperty("fileBytes");
+});
+it("discards collected bytes if the bound payload changes while measurement is running", async () => {
+  const home = await fixture(),
+    root = join(home, "staging"),
+    item = await capsule(root);
+  const measured = await collectCrabboxStorage(
+    root,
+    local,
+    { remaining: 100 },
+    Date.now(),
+    { remaining: 10 },
+    true,
+    async (...args) => {
+      const result = await measureCacheTree(...args);
+      await rename(join(item.path, "payload"), join(home, "original"));
+      await mkdir(join(item.path, "payload"));
+      return result;
+    },
+  );
+  expect(measured.entries[0]).toMatchObject({
+    classification: "unverified-staging",
+    receipt: "changed-during-measurement",
+    measurement: { extent: "unknown" },
+  });
+  expect(measured.entries[0]?.measurement).not.toHaveProperty("fileBytes");
+});
+it("reports withheld staging entries when the only child is linked or mounted", async () => {
+  const home = await fixture(),
+    root = join(home, "staging"),
+    other = join(home, "other");
+  await mkdir(root);
+  await mkdir(other);
+  const path = join(root, "openclaw-crabbox-sync-" + randomUUID());
+  await symlink(other, path);
+  const opts = { home, crabboxRoot: [root], family: ["crabbox"] };
+  const linked = await inventoryStorage(opts, deps);
+  expect(linked).toMatchObject({
+    status: "degraded",
+    data: { crabbox: [{ coverage: "direct-partial", excluded: 1, entries: [] }] },
+  });
+  expect(await executeStorageCommand(opts)).toContain("withheld entries: 1");
+  await unlink(path);
+  await mkdir(path);
+  const mounted = await inventoryStorage(opts, {
+    readMounts: async () => [...local, { ...local[0]!, path }],
+  });
+  expect(mounted).toMatchObject({
+    status: "degraded",
+    data: { crabbox: [{ coverage: "direct-partial", excluded: 1, entries: [] }] },
+  });
+});
+
+it("requires the receipt's stable volume and birth time even on the same current device", async () => {
+  const home = await fixture(),
+    root = join(home, "staging"),
+    item = await capsule(root),
+    payload = join(item.path, "payload");
+  const uuid = "uuid:" + randomUUID(),
+    stats = await lstat(item.path, { bigint: true }),
+    child = await lstat(payload, { bigint: true });
+  const rootIdentity = {
+    dev: String(stats.dev),
+    ino: String(stats.ino),
+    stable: { path: item.path, birthtimeNs: String(stats.birthtimeNs), volume: uuid },
+  };
+  const payloadIdentity = {
+    dev: String(child.dev),
+    ino: String(child.ino),
+    stable: { path: payload, birthtimeNs: String(child.birthtimeNs), volume: uuid },
+  };
+  const entry = { path: item.path, name: "unused", stats },
+    owner = { rootIdentity, payloadIdentity };
+  expect(await currentStagingIdentity(entry, owner, local, 0n, async () => uuid)).toBe(true);
+  expect(await currentStagingIdentity(entry, owner, local, 0n, async () => undefined)).toBe(false);
+  expect(
+    await currentStagingIdentity(entry, owner, local, 0n, async () => "uuid:" + randomUUID()),
+  ).toBe(false);
+  rootIdentity.stable.birthtimeNs = String(stats.birthtimeNs + 1n);
+  expect(await currentStagingIdentity(entry, owner, local, 0n, async () => uuid)).toBe(false);
 });
