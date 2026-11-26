@@ -39,6 +39,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- Direct storage inventory distinguishes an uninspected cache from a verified empty directory. Partial direct file totals are labelled as lower bounds and include directory and exclusion counts.
+
 - External worktree registrations claimed by multiple Git owners report unresolved ownership and list all claimants regardless of repository argument order.
 
 - Process holders, session roots, and artifact project scopes now recognize child names such as `..cache` when checking path containment.

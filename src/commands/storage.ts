@@ -49,6 +49,7 @@ type Area = {
 type AreaReport = Area & {
   coverage: Coverage;
   filesystem: string | null;
+  directExtent?: "complete" | "lower-bound" | "unknown";
   directDirectories?: number;
   excluded?: number;
   fileBytes?: ReturnType<typeof fileTotals>;
@@ -97,9 +98,13 @@ async function observeArea(
     return { ...report, fileBytes: fileTotals([result.stats]) };
   }
   const observed = await directStorageEntries(area.path, mounts!, budget);
+  if (!observed.observed)
+    return { ...report, coverage: observed.coverage, directExtent: "unknown" };
   return {
     ...report,
     coverage: observed.coverage,
+    directExtent:
+      observed.coverage === "direct-complete" && !observed.excluded ? "complete" : "lower-bound",
     excluded: observed.excluded,
     directDirectories: observed.entries.filter((e) => e.stats.isDirectory()).length,
     fileBytes: fileTotals(observed.entries.filter((e) => e.stats.isFile()).map((e) => e.stats)),
@@ -350,6 +355,11 @@ export async function executeStorageCommand(options: StorageOptions) {
           a.coverage +
           "  " +
           a.path +
+          (a.directExtent === "unknown" ? "  direct bytes unknown" : "") +
+          (a.directDirectories === undefined
+            ? ""
+            : `  ${a.directDirectories} direct directories, ${a.excluded} excluded`) +
+          (a.directExtent === "lower-bound" ? "  lower bound" : "") +
           (a.fileBytes
             ? "  " +
               a.fileBytes.logicalBytes +

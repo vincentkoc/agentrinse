@@ -74,9 +74,10 @@ export async function directStorageEntries(
 ): Promise<{
   coverage: Coverage;
   entries: DirectEntry[];
+  observed: boolean;
   excluded: number;
 }> {
-  const empty = (coverage: Coverage) => ({ coverage, entries: [], excluded: 0 });
+  const empty = (coverage: Coverage) => ({ coverage, observed: false, entries: [], excluded: 0 });
   if (!mounts) return empty("unavailable");
   const initial = await observeStoragePath(root, mounts);
   if (!initial.stats) return empty(initial.status);
@@ -118,7 +119,7 @@ export async function directStorageEntries(
     }
     const final = await observeStoragePath(root, mounts);
     if (!final.stats || !sameObservation(initial.stats, final.stats)) return empty("changed");
-    return { coverage, entries, excluded };
+    return { coverage, observed: true, entries, excluded };
   } catch {
     return empty("unavailable");
   }

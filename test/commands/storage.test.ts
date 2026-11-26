@@ -37,6 +37,39 @@ it("accounts only direct regular files and leaves protected state opaque", async
   expect(state).not.toHaveProperty("fileBytes");
   expect(JSON.stringify(result)).not.toContain("transcript.jsonl");
 });
+it("distinguishes uninspected direct caches, an empty cache, and a partially counted cache", async () => {
+  const home = await fixture();
+  const content = join(home, ".npm/_cacache");
+  const execCache = join(home, ".npm/_npx");
+  await mkdir(content, { recursive: true });
+  await mkdir(execCache);
+  await writeFile(join(content, "one"), "a");
+  await writeFile(join(execCache, "two"), "bb");
+  const options = { home, rule: ["npm.content", "npm.exec"], maxEntries: "1" };
+  const deps = { platform: "linux" as const, readMounts: async () => local };
+  const first = await inventoryStorage(options, deps);
+  const unknown = first.data.areas.find((area) => area.rule === "npm.exec");
+  expect(unknown).toMatchObject({ coverage: "entry-limit", directExtent: "unknown" });
+  expect(unknown).not.toHaveProperty("fileBytes");
+  expect(unknown).not.toHaveProperty("directDirectories");
+  expect(await executeStorageCommand(options)).toContain("direct bytes unknown");
+  await writeFile(join(content, "three"), "c");
+  const partial = (await inventoryStorage(options, deps)).data.areas[0];
+  expect(partial).toMatchObject({
+    coverage: "entry-limit",
+    directExtent: "lower-bound",
+    fileBytes: { files: 1, logicalBytes: "1" },
+  });
+  const emptyHome = await fixture();
+  await mkdir(join(emptyHome, ".npm/_cacache"), { recursive: true });
+  const empty = (await inventoryStorage({ ...options, home: emptyHome }, deps)).data.areas[0];
+  expect(empty).toMatchObject({
+    directExtent: "complete",
+    directDirectories: 0,
+    excluded: 0,
+    fileBytes: { files: 0, logicalBytes: "0", allocatedBytes: "0" },
+  });
+});
 it("withholds network and unknown mounts before any metadata syscall", async () => {
   const home = await fixture();
   const mounts = [
