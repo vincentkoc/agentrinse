@@ -11,7 +11,7 @@ Check `agentrinse --version` and the selected command's `--help`. Ask for a repo
 
 Run `agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --redact --json`. The parent selects direct child owners, including hidden repositories and bare clones. Repeat `--repo-root` or name an individual owner with `--repo`. All native registrations of those owners matter, including missing checkouts and checkouts outside conventional worktree roots.
 
-For many unpacked objects, add `--loose-objects`. It counts regular names against Git’s object format without opening object contents.
+For many unpacked objects, add `--loose-objects`. It counts regular names against Git’s object format without opening object contents. For partial results, compare `fanoutsComplete` with `fanoutsObserved` to see how many directories stayed stable during their scan.
 
 Check the envelope status, per-owner coverage and entry budget first. A repository can retain verified counts while listing changed sections in `changedSections`. Retry those sections when the repository is quiet. Compare temporary filenames with unique inodes, mixed links and unobserved links. Allocated file blocks can share physical extents. A temporary name, lock, orphan-looking sidecar or Git-prunable registration supplies inventory evidence. Reclaimable bytes remain unknown.
 

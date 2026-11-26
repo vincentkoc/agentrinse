@@ -40,7 +40,8 @@ export async function inventoryLooseObjects(
     report: result,
     verifyFanouts: (mounts: StorageMount[]) => verifyFanouts(mounts),
   };
-  if (!start.stats?.isDirectory() || coveringMount(common, mounts) !== coveringMount(root, mounts))
+  const objectMount = coveringMount(root, mounts);
+  if (!start.stats?.isDirectory() || coveringMount(common, mounts) !== objectMount)
     return observation;
   const dirs = await directStorageEntries(root, mounts, budget, {
     expected: start.stats,
@@ -49,6 +50,7 @@ export async function inventoryLooseObjects(
   // If another direct entry (such as pack/) changes later, compare the bounded two-hex
   // directory set. Its file contents do not need a second traversal.
   const rootStats = start.stats;
+  const fanoutStamps = new Map(dirs.entries.map((entry) => [entry.name, entry.stats]));
   verifyFanouts = async (currentMounts: StorageMount[]) => {
     const current = await observeStoragePath(root, currentMounts);
     if (
@@ -58,7 +60,6 @@ export async function inventoryLooseObjects(
       dirs.excluded
     )
       return false;
-    const names = new Map(dirs.entries.map((entry) => [entry.name, entry.stats]));
     const fresh = await directStorageEntries(root, currentMounts, budget, {
       expected: current.stats,
       select: (name) => /^[a-f\d]{2}$/u.test(name),
@@ -66,9 +67,9 @@ export async function inventoryLooseObjects(
     return (
       fresh.coverage === "direct-complete" &&
       !fresh.excluded &&
-      names.size === fresh.entries.length &&
+      fanoutStamps.size === fresh.entries.length &&
       fresh.entries.every((entry) => {
-        const first = names.get(entry.name);
+        const first = fanoutStamps.get(entry.name);
         return first && sameObservation(first, entry.stats);
       })
     );
@@ -84,7 +85,13 @@ export async function inventoryLooseObjects(
     result.objectFormat = format;
     const suffix = format === "sha1" ? /^[a-f\d]{38}$/u : /^[a-f\d]{62}$/u;
     for (const dir of dirs.entries) {
-      if (!dir.stats.isDirectory()) {
+      // Discovery establishes the directory binding. Start the enumeration window at its own read.
+      if (!dir.stats.isDirectory() || coveringMount(dir.path, mounts) !== objectMount) {
+        result.withheldEntries++;
+        continue;
+      }
+      const current = await observeStoragePath(dir.path, mounts);
+      if (!current.stats || !sameDirectoryBinding(dir.stats, current.stats)) {
         result.withheldEntries++;
         continue;
       }
@@ -93,8 +100,9 @@ export async function inventoryLooseObjects(
         mounts,
         budget,
         ({ stats }) => stats.isFile(),
-        { expected: dir.stats, select: (name) => suffix.test(name) },
+        { expected: current.stats, select: (name) => suffix.test(name) },
       );
+      if (scan.observed) fanoutStamps.set(dir.name, current.stats);
       let irregular = scan.excluded;
       for (const regular of scan.entries) {
         if (regular) result.regularNames++;
