@@ -4,20 +4,11 @@ import { isAbsolute, resolve, dirname, join } from "node:path";
 import { createCommandEnvelope, jsonDocument } from "../machine-output.js";
 import { redactAuditValue } from "../core/redaction.js";
 import { readStorageMounts, coveringMount, type StorageMount } from "../core/storage-mounts.js";
-import {
-  directStorageEntries,
-  fileTotals,
-  observeStoragePath,
-  type EntryBudget,
-  type Coverage,
-} from "../core/storage-observation.js";
+import { observeArea, type AreaReport } from "../core/storage-area.js";
+import { protectedStorageName } from "../core/storage-measurement.js";
+import { storageFamily } from "../rules/storage/location.js";
 import { localStorageLocations } from "../rules/storage/catalog.js";
-
-import {
-  measureCacheTree,
-  protectedStorageName,
-  type CacheMeasurement,
-} from "../core/storage-measurement.js";
+import { formatStorageReport } from "./storage-output.js";
 import { collectPackStorage } from "../rules/git/pack-storage.js";
 import { collectCrabboxStorage } from "../rules/openclaw/crabbox-storage.js";
 import { isPathInside } from "../core/safety.js";
@@ -39,76 +30,10 @@ type Dependencies = {
   platform?: NodeJS.Platform;
   readMounts?: (platform: NodeJS.Platform) => Promise<StorageMount[] | undefined>;
 };
-type Area = {
-  rule: string;
-  owner: string;
-  path: string;
-  scope: "direct" | "retained" | "image";
-  reason: string;
-};
-type AreaReport = Area & {
-  coverage: Coverage;
-  filesystem: string | null;
-  directExtent?: "complete" | "lower-bound" | "unknown";
-  directDirectories?: number;
-  excluded?: number;
-  fileBytes?: ReturnType<typeof fileTotals>;
-  measurement?: CacheMeasurement;
-};
-
 function literal(path: string): string {
   if (!isAbsolute(path) || /\p{Cc}/u.test(path) || resolve(path) !== path)
     throw new Error("Storage paths must be absolute and normalized");
   return path;
-}
-
-async function observeArea(
-  area: Area,
-  mounts: StorageMount[] | undefined,
-  budget: EntryBudget,
-  measure = false,
-): Promise<AreaReport> {
-  const result = await observeStoragePath(area.path, mounts);
-  const report: AreaReport = {
-    ...area,
-    filesystem: mounts ? (coveringMount(area.path, mounts)?.filesystem ?? null) : null,
-    coverage: result.status,
-  };
-  if (!result.stats) return measure ? { ...report, measurement: { extent: "unknown" } } : report;
-  if (measure) {
-    if (!result.stats.isDirectory())
-      return { ...report, coverage: "unexpected-kind", measurement: { extent: "unknown" } };
-    const measurement = await measureCacheTree(area.path, result.stats, mounts!, budget);
-    return {
-      ...report,
-      coverage:
-        measurement.extent === "complete"
-          ? "tree-complete"
-          : measurement.extent === "lower-bound"
-            ? "tree-partial"
-            : measurement.reason === "entry-limit"
-              ? "entry-limit"
-              : "unavailable",
-      measurement,
-    };
-  }
-  if (area.scope === "retained") return report;
-  if (area.scope === "image") {
-    if (!result.stats.isFile()) return { ...report, coverage: "unexpected-kind" };
-    return { ...report, fileBytes: fileTotals([result.stats]) };
-  }
-  const observed = await directStorageEntries(area.path, mounts!, budget);
-  if (!observed.observed)
-    return { ...report, coverage: observed.coverage, directExtent: "unknown" };
-  return {
-    ...report,
-    coverage: observed.coverage,
-    directExtent:
-      observed.coverage === "direct-complete" && !observed.excluded ? "complete" : "lower-bound",
-    excluded: observed.excluded,
-    directDirectories: observed.entries.filter((e) => e.stats.isDirectory()).length,
-    fileBytes: fileTotals(observed.entries.filter((e) => e.stats.isFile()).map((e) => e.stats)),
-  };
 }
 
 export async function inventoryStorage(options: StorageOptions, deps: Dependencies = {}) {
@@ -204,8 +129,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   const areas: AreaReport[] = [];
   for (const { id, owner, path, scope, reason, measureTree } of catalog) {
     if (rules.size && !rules.has(id)) continue;
-    if (!selected(scope === "image" ? "vm" : scope === "retained" ? "retained" : "developer"))
-      continue;
+    if (!selected(storageFamily(scope))) continue;
     const area = { rule: id, owner, path, scope, reason };
     const measure = Boolean(options.measure && measureTree);
     if (mounts && coveringMount(home, mounts) !== coveringMount(path, mounts)) {
@@ -292,99 +216,5 @@ export async function executeStorageCommand(options: StorageOptions) {
         data: view,
       }),
     );
-  const present = view.areas.filter((a) => a.coverage !== "missing");
-  return (
-    [
-      "Storage inventory (" +
-        status +
-        "). " +
-        present.length +
-        " observed/withheld locations, " +
-        (view.areas.length - present.length) +
-        " missing. Physical reclaim is unknown.",
-      ...view.reportedMounts.map((m) => m.filesystem + "  " + m.access + "  " + m.path),
-      ...(view.omittedMounts ? ["Additional mount records omitted: " + view.omittedMounts] : []),
-      ...view.volumeEvidence.map(
-        (v) =>
-          "Volume " + v.path + "  " + (v.coveringMount?.filesystem ?? "unknown") + " (mount table)",
-      ),
-      ...view.gitPacks.repositories.map((r) => "Git pack store  " + r.coverage + "  " + r.path),
-      ...Object.entries(view.gitPacks.byKind).map(
-        ([kind, g]) =>
-          "Git " +
-          kind +
-          ": " +
-          g.files +
-          " files, " +
-          g.logicalBytes +
-          " logical / " +
-          g.allocatedBytes +
-          " allocated bytes",
-      ),
-      ...view.crabbox.flatMap((r) => [
-        "Crabbox staging  " +
-          r.coverage +
-          "  " +
-          r.root +
-          "  mirror index: " +
-          r.mirrorIndex +
-          "; receipts omitted: " +
-          r.receiptsOmitted +
-          "; withheld entries: " +
-          r.excluded,
-        ...r.entries.map(
-          (e) =>
-            "  " +
-            e.classification +
-            "  " +
-            e.path +
-            ("lastUseReview" in e && e.lastUseReview ? "  " + e.lastUseReview : "") +
-            (e.measurement
-              ? "  " +
-                e.measurement.extent +
-                ("fileBytes" in e.measurement && e.measurement.fileBytes
-                  ? "  " + e.measurement.fileBytes.allocatedBytes + " observed allocated bytes"
-                  : " bytes unknown")
-              : ""),
-        ),
-      ]),
-      ...present.map(
-        (a) =>
-          a.rule +
-          "  " +
-          a.coverage +
-          "  " +
-          a.path +
-          (a.directExtent === "unknown" ? "  direct bytes unknown" : "") +
-          (a.directDirectories === undefined
-            ? ""
-            : `  ${a.directDirectories} direct directories, ${a.excluded} excluded`) +
-          (a.directExtent === "lower-bound" ? "  lower bound" : "") +
-          (a.fileBytes
-            ? "  " +
-              a.fileBytes.logicalBytes +
-              " logical / " +
-              a.fileBytes.allocatedBytes +
-              " allocated bytes on observed files"
-            : ""),
-      ),
-      ...present
-        .filter((a) => a.measurement)
-        .map(
-          (a) =>
-            "Measured " +
-            a.rule +
-            "  " +
-            a.measurement!.extent +
-            "  " +
-            (a.measurement!.fileBytes
-              ? a.measurement!.fileBytes!.logicalBytes +
-                " logical / " +
-                a.measurement!.fileBytes!.allocatedBytes +
-                " observed allocated bytes"
-              : "bytes unknown"),
-        ),
-      "Default directory observations cover direct children. Snapshots, clones, hardlinks and guest allocation can share bytes.",
-    ].join("\n") + "\n"
-  );
+  return formatStorageReport(view, status);
 }
