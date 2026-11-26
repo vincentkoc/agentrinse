@@ -16,6 +16,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- Configured projects that declare Vite can report its default local cache without measuring or planning removal of the cache.
+
 - Projects can opt into pytest, mypy and Ruff cache removal by exact name. Each cache must contain a valid CACHEDIR.TAG declaration at audit and apply time.
 
 - `agentrinse worktrees` inventories linked checkouts, standalone repositories,

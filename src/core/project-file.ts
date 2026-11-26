@@ -7,6 +7,7 @@ import { openPinnedProviderFile } from "./pinned-file.js";
 function sameFile(left: Stats, right: Stats): boolean {
   return (
     right.isFile() &&
+    right.nlink === 1 &&
     left.dev === right.dev &&
     left.ino === right.ino &&
     left.size === right.size &&
@@ -25,6 +26,7 @@ export async function readProjectFile(
     const before = await lstat(path);
     if (
       !before.isFile() ||
+      before.nlink !== 1 ||
       before.dev !== device ||
       ("maxBytes" in limit && before.size > limit.maxBytes)
     )

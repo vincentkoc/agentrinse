@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import {
+  link,
   lstat,
   mkdir,
   mkdtemp,
@@ -72,8 +73,12 @@ describe("project cache declarations", () => {
     const { dir, tag, project, device, observe } = await fixture();
     const other = join(project, "other");
     await writeFile(other, signature);
-    for (const type of ["missing", "symlink", "fifo"]) {
-      if (type === "symlink") await symlink(other, tag);
+    for (const type of ["missing", "hardlink", "symlink", "fifo"]) {
+      if (type === "hardlink") await link(other, tag);
+      if (type === "symlink") {
+        await rm(tag);
+        await symlink(other, tag);
+      }
       if (type === "fifo") {
         await rm(tag);
         execFileSync("mkfifo", [tag]);
