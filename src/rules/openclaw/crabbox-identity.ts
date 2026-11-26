@@ -66,16 +66,18 @@ export async function currentStagingIdentity(
     return false;
   let uuid: Promise<string | undefined> | undefined;
   async function matches(path: string, stat: BigIntStats, target: Identity) {
-    if (target.dev !== String(stat.dev) || target.ino !== String(stat.ino)) return false;
+    if (target.ino !== String(stat.ino)) return false;
+    const sameDevice = target.dev === String(stat.dev);
     const stable = target.stable;
-    if (!stable) return stat.birthtimeNs <= 0n || stat.birthtimeNs <= legacyBeforeNs;
+    if (!stable)
+      return sameDevice && (stat.birthtimeNs <= 0n || stat.birthtimeNs <= legacyBeforeNs);
     if (
       stable.path !== path ||
       stable.birthtimeNs !== String(stat.birthtimeNs) ||
       (await realpath(path)) !== stable.path
     )
       return false;
-    if (stable.volume === "device:" + target.dev) return true;
+    if (stable.volume === "device:" + target.dev) return sameDevice;
     if (!stable.volume.startsWith("uuid:")) return false;
     uuid ??= readVolume(entry.path);
     return stable.volume === (await uuid);
