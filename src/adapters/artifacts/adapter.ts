@@ -1,7 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { artifactInspectionBlocker } from "../../rules/build/inspection.js";
+import { artifactDecisionBeforeHolderProbe } from "../../rules/build/inspection.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import { artifactNameSchema, type ArtifactRemoveAction } from "../../contracts/action.js";
@@ -188,14 +188,6 @@ export class ArtifactAuditAdapter implements AuditAdapter {
                   ...(context.signal === undefined ? {} : { signal: context.signal }),
                 })
               : undefined;
-          const ownership =
-            measurement !== undefined && !measurement.truncated && !measurement.protectedEntries
-              ? await this.processProbe(path)
-              : ({
-                  status: "unknown",
-                  matches: [],
-                  reason: "artifact did not pass bounded safety inspection",
-                } satisfies ProcessOwnershipResult);
           const mounts =
             isDirectory && !isSymlink
               ? await this.mountProbe(path)
@@ -210,7 +202,7 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               : { status: "unknown" as const, reason: "resource is not a real directory" };
           const canonicalKey = `artifacts:build-artifact:${path}`;
 
-          resources.push({
+          const resource: ResourceSnapshot = {
             resource: {
               id: `artifacts:build-artifact:${sha256(canonicalKey)}`,
               adapter: this.id,
@@ -244,12 +236,16 @@ export class ArtifactAuditAdapter implements AuditAdapter {
               mountBoundaries: measurement?.mountBoundaries ?? 0,
               isMountRoot: stats.dev !== projectStats.dev,
               entries: measurement?.entries,
-              processOwnership: ownership,
               mountBoundaryStatus: mounts.status,
               mountBoundaryPaths: mounts.paths,
               mountBoundaryReason: mounts.status === "unknown" ? mounts.reason : undefined,
             },
-          });
+          };
+          const decision = artifactDecisionBeforeHolderProbe(resource, this.options);
+          resource.facts.processOwnership = decision
+            ? { status: "not-probed", reason: decision.code }
+            : await this.processProbe(path);
+          resources.push(resource);
         } catch (error) {
           if (!isMissing(error)) {
             diagnostics.push({
@@ -273,61 +269,21 @@ export class ArtifactAuditAdapter implements AuditAdapter {
     let state: Finding["state"] = "eligible";
     let confidence: Finding["confidence"] = "certain";
 
-    const blocker = artifactInspectionBlocker(facts);
-    if (blocker) {
-      state = "blocked";
-      confidence = blocker.confidence;
-      warnings.push({
-        severity: "warning",
-        code: blocker.code,
-        message: blocker.message,
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
-    } else if (
-      resource.measuredBytes === undefined ||
-      resource.measuredBytes < this.options.minBytes
-    ) {
-      state = "protected";
-      roots.push(
-        rootEvidence(
-          context,
-          "artifact-below-size-threshold",
-          `Artifact is smaller than ${this.options.minBytes} bytes.`,
-        ),
-      );
-    } else if (
-      typeof facts.ageMinutes !== "number" ||
-      facts.ageMinutes < this.options.minAgeMinutes
-    ) {
-      state = "protected";
-      roots.push(
-        rootEvidence(
-          context,
-          "recent-resource",
-          `Artifact is newer than ${this.options.minAgeMinutes} minutes.`,
-        ),
-      );
-    }
-
-    const gitState = facts.gitState as
-      | Awaited<ReturnType<typeof inspectArtifactGitState>>
-      | undefined;
-    if (state === "eligible" && gitState?.status === "tracked") {
-      state = "protected";
-      roots.push(
-        rootEvidence(context, "git-tracked-artifact", "Git tracks files inside this artifact."),
-      );
-    } else if (state === "eligible" && gitState?.status !== "clear") {
-      state = "blocked";
-      confidence = "unknown";
-      warnings.push({
-        severity: "warning",
-        code: "ARTIFACT_GIT_STATUS_UNKNOWN",
-        message: `Git tracking could not be verified: ${gitState?.status === "unknown" ? gitState.reason : "missing evidence"}`,
-        adapter: this.id,
-        resourceId: resource.resource.id,
-      });
+    const decision = artifactDecisionBeforeHolderProbe(resource, this.options);
+    if (decision) {
+      state = decision.state;
+      confidence = decision.confidence;
+      if (decision.state === "protected") {
+        roots.push(rootEvidence(context, decision.code, decision.message));
+      } else {
+        warnings.push({
+          severity: "warning",
+          code: decision.code,
+          message: decision.message,
+          adapter: this.id,
+          resourceId: resource.resource.id,
+        });
+      }
     }
 
     const ownership = facts.processOwnership as ProcessOwnershipResult | undefined;
