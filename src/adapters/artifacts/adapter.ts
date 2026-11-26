@@ -1,10 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import {
-  collectViteProjectCache,
-  classifyViteProjectCache,
-} from "../../rules/vite/project-cache.js";
+import { collectProjectCaches, classifyProjectCache } from "../../rules/build/project-cache.js";
 import { hasCacheTag, requiresCacheTag } from "../../rules/build/cache-tag.js";
 import { artifactDecisionBeforeHolderProbe } from "../../rules/build/inspection.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
@@ -271,15 +268,14 @@ export class ArtifactAuditAdapter implements AuditAdapter {
         }
       }
       context.signal?.throwIfAborted();
-      const viteCache = await collectViteProjectCache(context, projectRoot, this.mountProbe);
-      if (viteCache) resources.push(viteCache);
+      resources.push(...(await collectProjectCaches(context, projectRoot, this.mountProbe)));
     }
 
     return { resources, diagnostics };
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
-    const inventory = classifyViteProjectCache(context, resource);
+    const inventory = classifyProjectCache(context, resource);
     if (inventory) return inventory;
     const facts = resource.facts;
     const roots: RootEvidence[] = [];

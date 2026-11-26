@@ -5,7 +5,7 @@ import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { describe, expect, it, vi } from "vitest";
 import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import * as projectFiles from "../../src/core/project-file.js";
-import { collectViteProjectCache } from "../../src/rules/vite/project-cache.js";
+import { collectProjectCaches } from "../../src/rules/build/project-cache.js";
 import { artifactNameSchema } from "../../src/contracts/action.js";
 import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";
 
@@ -50,13 +50,13 @@ describe("Vite project cache inventory", () => {
     }));
     const read = vi.spyOn(projectFiles, "readProjectFile");
     try {
-      expect(await collectViteProjectCache(context, project, mounts)).toBeDefined();
+      expect(await collectProjectCaches(context, project, mounts)).toHaveLength(1);
       expect(read).toHaveBeenCalledOnce();
       expect(mounts).toHaveBeenCalledOnce();
       read.mockClear();
       mounts.mockClear();
       await rm(dir, { recursive: true });
-      expect(await collectViteProjectCache(context, project, mounts)).toBeUndefined();
+      expect(await collectProjectCaches(context, project, mounts)).toEqual([]);
       expect(read).not.toHaveBeenCalled();
       expect(mounts).not.toHaveBeenCalled();
     } finally {
@@ -102,6 +102,55 @@ describe("Vite project cache inventory", () => {
     await rename(dir, dir + "-old");
     expect(await observe()).toEqual([]);
   });
+  it("shares one manifest and one mount query across independent owner rules", async () => {
+    const { home, project, modules, manifest, observe } = await fixture();
+    const bundled = join(modules, ".vite-temp");
+    const cache = join(modules, ".cache");
+    const jiti = join(cache, "jiti");
+    await mkdir(bundled);
+    await mkdir(jiti, { recursive: true });
+    await writeFile(manifest, JSON.stringify({ dependencies: { vite: "8", jiti: "2" } }));
+    const read = vi.spyOn(projectFiles, "readProjectFile");
+    try {
+      const mounts = vi.fn(async (): Promise<MountBoundaryResult> => ({
+        status: "clear",
+        paths: [],
+      }));
+      const resources = await collectProjectCaches(
+        { home, now: new Date(), auditId: "transforms" },
+        project,
+        mounts,
+      );
+      expect(resources.map((item) => item.facts.ruleId)).toEqual([
+        "vite.project-cache",
+        "vite.bundled-config",
+        "jiti.project-cache",
+      ]);
+      expect(mounts).toHaveBeenCalledOnce();
+      expect(read).toHaveBeenCalledOnce();
+      for (const finding of await observe()) {
+        expect(finding).toMatchObject({
+          state: "protected",
+          candidateActions: [],
+          estimatedReclaimBytes: 0,
+        });
+        expect(finding).not.toHaveProperty("measuredBytes");
+      }
+      expect(
+        (await observe({ status: "blocked", paths: [cache] })).map(
+          (finding) => finding.resource.path,
+        ),
+      ).toEqual([join(modules, ".vite"), bundled]);
+      await rename(cache, cache + "-other");
+      await symlink(cache + "-other", cache, "dir");
+      expect(await observe()).toHaveLength(2);
+      await writeFile(manifest, JSON.stringify({ devDependencies: { jiti: "2" } }));
+      expect(await observe()).toEqual([]);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   it("refuses linked components, linked manifests and mount ancestors", async () => {
     const { home, modules, dir, manifest, observe } = await fixture();
     expect(await observe({ status: "blocked", paths: [modules] })).toEqual([]);
