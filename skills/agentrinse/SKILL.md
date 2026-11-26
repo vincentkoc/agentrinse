@@ -19,6 +19,6 @@ When the checkout allocator supports it, stream its read-only inventory projecti
 
 ## Pick the scope
 
-- Use `worktrees --root "$CONTAINER"` for physical checkouts without a known owner registration. Use `storage-rules` and `storage` for developer caches, staging areas and volume evidence.
+- Use `worktrees --root "$CONTAINER"` for physical checkouts without a known owner registration. Read `unresolvedReason` to distinguish an observed empty group from one containing files or an incomplete inspection. Use `storage-rules` and `storage` for developer caches, staging areas and volume evidence.
 - For a bounded provider audit, use `audit --no-state --quick --providers codex,claude --phase-timeout 5s --json --redact`. Quick scans skip size measurement.
 - Keep a disk census read-only. For an explicitly requested cleanup, inspect a fresh scoped plan and its protection reasons. Use only the documented owner and recovery path for an authorized action. Native Windows supports audit only.
