@@ -1,3 +1,4 @@
+import { classifyProviderOwnership } from "./provider-ownership-classification.js";
 import { classifyCodexDatabase } from "./codex-database-classification.js";
 import { lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -25,32 +26,17 @@ import {
 } from "./codex-database.js";
 import { collectClaudeChangelogCache } from "./claude-cache.js";
 import { collectClaudeDebugLogs } from "./claude-debug.js";
+import { inspectClaudeNativeRetention, usesClaudeNativeRetention } from "./claude-retention.js";
+import { copilotNativeMaintenanceFor } from "./copilot-maintenance.js";
 import {
-  claudeNativeRetentionFactsSchema,
-  inspectClaudeNativeRetention,
-  usesClaudeNativeRetention,
-} from "./claude-retention.js";
-import {
-  copilotNativeMaintenanceFactsSchema,
-  copilotNativeMaintenanceFor,
-} from "./copilot-maintenance.js";
-import {
-  cursorNativeMaintenanceFactsSchema,
   cursorNativeMaintenanceFor,
   inspectCursorDatabaseCompanions,
   inspectCursorDatabaseParents,
 } from "./cursor-maintenance.js";
-import {
-  grokOwnerContractFactsSchema,
-  inspectGrokOwnerContract,
-  type GrokVersionRunner,
-} from "./grok-maintenance.js";
-import {
-  opencodeNativeMaintenanceFactsSchema,
-  opencodeNativeMaintenanceFor,
-} from "./opencode-maintenance.js";
+import { inspectGrokOwnerContract, type GrokVersionRunner } from "./grok-maintenance.js";
+import { opencodeNativeMaintenanceFor } from "./opencode-maintenance.js";
 import { collectProviderReachability } from "./provider-reachability.js";
-import { collectOpenClaw, openClawProtection } from "./openclaw.js";
+import { collectOpenClaw } from "./openclaw.js";
 import { OPENCLAW_OWNER_UNKNOWN } from "./openclaw-ownership.js";
 import { resolveProviderRoot } from "./provider-root.js";
 import type { ProviderSpec } from "./provider-specs.js";
@@ -504,237 +490,12 @@ export class ProviderAuditAdapter implements AuditAdapter {
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
-    const observedAt = context.now.toISOString();
-    const claudeNativeRetention = claudeNativeRetentionFactsSchema.safeParse(
-      resource.facts.nativeRetention,
-    );
-    const copilotNativeMaintenance = copilotNativeMaintenanceFactsSchema.safeParse(
-      resource.facts.nativeMaintenance,
-    );
-    const opencodeNativeMaintenance = opencodeNativeMaintenanceFactsSchema.safeParse(
-      resource.facts.nativeMaintenance,
-    );
-    const cursorNativeMaintenance = cursorNativeMaintenanceFactsSchema.safeParse(
-      resource.facts.nativeMaintenance,
-    );
-    const grokOwnerContract = grokOwnerContractFactsSchema.safeParse(resource.facts.ownerContract);
     const quarantinableFile = classifyProviderFile(this.spec.id, context, resource);
     if (quarantinableFile) return quarantinableFile;
     if (this.spec.id === "codex") {
       const database = classifyCodexDatabase(context, resource);
       if (database) return database;
     }
-    if (this.spec.id === "claude" && claudeNativeRetention.success) {
-      const uncertain = !["missing", "valid"].includes(
-        claudeNativeRetention.data.userSettingsStatus,
-      );
-      const configuredDays = claudeNativeRetention.data.userConfiguredDays;
-      return {
-        schemaVersion: 1,
-        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-        auditId: context.auditId,
-        observedAt,
-        resource: resource.resource,
-        state: "protected",
-        confidence: uncertain ? "unknown" : "high",
-        roots: [
-          {
-            code: uncertain
-              ? "claude-native-retention-uncertain"
-              : "claude-native-retention-expected",
-            source: this.id,
-            observedAt,
-            detail: uncertain
-              ? "Claude user settings could not be validated; Claude may pause native cleanup unless managed settings provide cleanupPeriodDays."
-              : configuredDays === undefined
-                ? "Claude documents a 30-day startup retention sweep; higher-precedence settings were not resolved."
-                : `Claude user settings declare a ${configuredDays}-day startup retention sweep; higher-precedence settings were not resolved.`,
-          },
-          {
-            code: "provider-owned-report-only",
-            source: this.id,
-            observedAt,
-            detail: "Claude owns this retention sweep; AgentRinse does not mutate the resource.",
-          },
-        ],
-        facts: resource.facts,
-        candidateActions: [],
-        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-        warnings: [],
-      };
-    }
-    if (this.spec.id === "copilot" && copilotNativeMaintenance.success) {
-      const detail =
-        copilotNativeMaintenance.data.kind === "session-prune"
-          ? "Current Copilot CLI documents local-only session pruning with dry-run support; AgentRinse did not probe the installed CLI version."
-          : "Copilot CLI 1.0.52 introduced startup pruning for direct process logs older than seven days or beyond the newest 50; AgentRinse did not probe the installed CLI version.";
-      return {
-        schemaVersion: 1,
-        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-        auditId: context.auditId,
-        observedAt,
-        resource: resource.resource,
-        state: "protected",
-        confidence: "unknown",
-        roots: [
-          {
-            code: "copilot-native-maintenance-version-unverified",
-            source: this.id,
-            observedAt,
-            detail,
-          },
-          {
-            code: "provider-owned-report-only",
-            source: this.id,
-            observedAt,
-            detail: "Copilot owns this maintenance path; AgentRinse does not mutate the resource.",
-          },
-        ],
-        facts: resource.facts,
-        candidateActions: [],
-        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-        warnings: [],
-      };
-    }
-    if (this.spec.id === "opencode" && opencodeNativeMaintenance.success) {
-      const detail =
-        opencodeNativeMaintenance.data.kind === "snapshot-gc"
-          ? "OpenCode 1.18.9 schedules snapshot Git garbage collection after one minute and hourly, pruning objects older than seven days; AgentRinse did not probe the installed version."
-          : "OpenCode 1.18.9 appends server logs to opencode.log without a server-log retention sweep; the desktop application's separate seven-day log cleanup does not cover this directory.";
-      return {
-        schemaVersion: 1,
-        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-        auditId: context.auditId,
-        observedAt,
-        resource: resource.resource,
-        state: "protected",
-        confidence: "unknown",
-        roots: [
-          {
-            code:
-              opencodeNativeMaintenance.data.kind === "snapshot-gc"
-                ? "opencode-native-snapshot-gc-version-unverified"
-                : "opencode-server-log-retention-version-unverified",
-            source: this.id,
-            observedAt,
-            detail,
-          },
-          {
-            code: "provider-owned-report-only",
-            source: this.id,
-            observedAt,
-            detail: "OpenCode owns this maintenance path; AgentRinse does not mutate the resource.",
-          },
-        ],
-        facts: resource.facts,
-        candidateActions: [],
-        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-        warnings: [],
-      };
-    }
-    if (this.spec.id === "cursor" && cursorNativeMaintenance.success) {
-      return {
-        schemaVersion: 1,
-        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-        auditId: context.auditId,
-        observedAt,
-        resource: resource.resource,
-        state: "protected",
-        confidence: "unknown",
-        roots: [
-          {
-            code: "cursor-native-database-maintenance-version-unverified",
-            source: this.id,
-            observedAt,
-            detail:
-              "Current Cursor guidance exposes command-palette operations for orphaned agent KV cleanup or user-selected chat deletion, both followed by VACUUM; AgentRinse did not prove the installed Cursor version.",
-          },
-          {
-            code: "provider-owned-report-only",
-            source: this.id,
-            observedAt,
-            detail:
-              "Cursor owns its database schema and maintenance commands; AgentRinse does not open or mutate the database.",
-          },
-        ],
-        facts: resource.facts,
-        candidateActions: [],
-        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-        warnings: [],
-      };
-    }
-    if (this.spec.id === "grok" && grokOwnerContract.success) {
-      const versionStatus = grokOwnerContract.data.installedVersionStatus;
-      const executableStatus = grokOwnerContract.data.ownerExecutableStatus;
-      const exact = versionStatus === "exact";
-      const detail = exact
-        ? "The installed Grok version and build revision match the inspected source snapshot. Grok runs its memory GC during session initialization, but exposes no tagged, user-invokable cleanup contract that AgentRinse can bind and revalidate."
-        : versionStatus === "version-mismatch"
-          ? `Installed Grok ${grokOwnerContract.data.installedVersion} does not match inspected source version ${grokOwnerContract.data.sourceVersion}; only the owner root was inventoried.`
-          : versionStatus === "revision-mismatch"
-            ? `Installed Grok build revision ${grokOwnerContract.data.installedRevision} does not match the inspected source revisions; only the owner root was inventoried.`
-            : versionStatus === "unparseable"
-              ? "The installed Grok version output did not match the documented format; only the owner root was inventoried."
-              : executableStatus === "unsafe"
-                ? "The canonical Grok executable escapes or does not resolve to a file inside the audited owner root; only the owner root was inventoried."
-                : executableStatus === "unexecutable"
-                  ? "The canonical Grok executable is not executable; only the owner root was inventoried."
-                  : executableStatus === "unreadable"
-                    ? "The canonical Grok executable could not be inspected; only the owner root was inventoried."
-                    : executableStatus === "missing"
-                      ? "The audited owner root has no canonical Grok executable; only the owner root was inventoried."
-                      : "The bound Grok executable version could not be inspected; only the owner root was inventoried.";
-      return {
-        schemaVersion: 1,
-        findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-        auditId: context.auditId,
-        observedAt,
-        resource: resource.resource,
-        state: "protected",
-        confidence: exact ? "high" : "unknown",
-        roots: [
-          {
-            code: "grok-cleanup-owner-contract-unavailable",
-            source: this.id,
-            observedAt,
-            detail,
-          },
-          {
-            code: "provider-owned-report-only",
-            source: this.id,
-            observedAt,
-            detail:
-              "Grok owns sessions, memory, logs, worktrees, plugins, credentials, configuration, and runtime assets; AgentRinse does not mutate them.",
-          },
-        ],
-        facts: resource.facts,
-        candidateActions: [],
-        ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-        warnings: [],
-      };
-    }
-    const protection = this.id === "openclaw" ? openClawProtection(resource) : undefined;
-    return {
-      schemaVersion: 1,
-      findingId: `${resource.resource.id}:${sha256(context.auditId)}`,
-      auditId: context.auditId,
-      observedAt,
-      resource: resource.resource,
-      state: "protected",
-      confidence: "certain",
-      roots: [
-        {
-          code: protection?.code ?? "provider-owned-report-only",
-          source: this.id,
-          observedAt,
-          detail:
-            protection?.detail ?? "This adapter inventories provider state but does not clean it.",
-        },
-      ],
-      facts: resource.facts,
-      candidateActions: [],
-      ...(resource.measuredBytes === undefined ? {} : { measuredBytes: resource.measuredBytes }),
-      warnings: [],
-    };
+    return classifyProviderOwnership(this.spec.id, context, resource);
   }
 }
