@@ -1,0 +1,28 @@
+{
+  "id": "claude.debug-log",
+  "kind": "provider-file",
+  "provider": "claude",
+  "ownerRoot": "provider-root",
+  "directory": ["debug"],
+  "match": {
+    "suffix": ".txt"
+  },
+  "resourceKind": "agent-log-store",
+  "displayName": "Claude debug log",
+  "minAgeDays": 30,
+  "quarantineDays": 7,
+  "description": "Quarantine a Claude debug log older than 30 days",
+  "subject": "Claude debug logs",
+  "rootCode": "claude-debug-log-owner-contract",
+  "rootDetail": "Claude documents direct debug logs as disposable application data with no user-facing loss.",
+  "tooRecentDetail": "The debug log is newer than the 30-day cleanup threshold.",
+  "discovery": {
+    "kind": "children",
+    "includeBasename": true,
+    "inspectionFailed": "CLAUDE_DEBUG_FILE_INSPECTION_FAILED",
+    "enumerationFailed": "CLAUDE_DEBUG_ENUMERATION_FAILED",
+    "truncated": "CLAUDE_DEBUG_ENUMERATION_TRUNCATED",
+    "limitLabel": "Claude debug cleanup",
+    "order": 10
+  }
+}

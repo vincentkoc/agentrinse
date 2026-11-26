@@ -2,7 +2,7 @@ import { basename } from "node:path";
 import type { ResourceSnapshot } from "../../contracts/resource.js";
 import type { RootEvidence } from "../../contracts/finding.js";
 import type { ReachabilityIndex } from "../../core/reachability.js";
-import { registrationProtections } from "./cheap-protection.js";
+import { registrationProtections } from "./registration.js";
 
 export function worktreeProtectionRoots(
   resource: ResourceSnapshot,

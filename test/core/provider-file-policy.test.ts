@@ -4,16 +4,11 @@ import { dirname, join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { matchProviderFilePolicy } from "../../src/core/provider-file-policy.js";
+import { matchProviderFilePolicy } from "../../src/rules/file-rule.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { ProviderFileQuarantineAction } from "../../src/contracts/action.js";
 import { inspectProviderFile } from "../../src/core/provider-file-identity.js";
-import {
-  authorizeProviderFileAction,
-  CLAUDE_CHANGELOG_CACHE_POLICY_ID,
-  CLAUDE_DEBUG_LOG_POLICY_ID,
-  ZED_ROTATED_LOG_POLICY_ID,
-} from "../../src/core/provider-file-policy.js";
+import { authorizeProviderFileAction } from "../../src/core/provider-file-policy.js";
 
 async function actionFor(
   ownerRoot: string,
@@ -30,7 +25,7 @@ async function actionFor(
     type: "provider.file-quarantine",
     adapter: "claude",
     resourceId: "claude:agent-log-store:policy-test",
-    policyId: CLAUDE_DEBUG_LOG_POLICY_ID,
+    policyId: "claude.debug-log",
     risk: "recoverable",
     description: "quarantine a synthetic Claude debug log",
     expectedReclaimBytes: 0,
@@ -49,7 +44,7 @@ async function cacheActionFor(
   return {
     ...action,
     resourceId: "claude:agent-cache:policy-test",
-    policyId: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+    policyId: "claude.changelog-cache",
     description: "quarantine a synthetic Claude changelog cache",
   };
 }
@@ -69,7 +64,7 @@ async function zedActionFor(
     type: "provider.file-quarantine",
     adapter: "zed",
     resourceId: "zed:agent-log-store:policy-test",
-    policyId: ZED_ROTATED_LOG_POLICY_ID,
+    policyId: "zed.rotated-log",
     risk: "recoverable",
     description: "quarantine a synthetic rotated Zed log",
     expectedReclaimBytes: 0,
@@ -99,6 +94,16 @@ describe("provider file policy", () => {
     ).resolves.toBeUndefined();
   });
 
+  it("refuses a saved file action after the provider is disabled", async () => {
+    const home = await mkdtemp(join(tmpdir(), "agentrinse-disabled-provider-"));
+    const action = await actionFor(join(home, ".claude"), join("debug", "old.txt"));
+    const config = {
+      ...DEFAULT_CONFIG,
+      adapters: { ...DEFAULT_CONFIG.adapters, claude: { enabled: false } },
+    };
+    await expect(authorizeProviderFileAction(action, home, config)).rejects.toThrow(/enabled/);
+  });
+
   it.each(["debug/session.jsonl", "debug/nested/session.txt", "projects/session.txt"])(
     "rejects the non-policy path %s",
     async (relativePath) => {
@@ -117,9 +122,7 @@ describe("provider file policy", () => {
           },
           new Date("2026-07-25T00:00:00.000Z"),
         ),
-      ).rejects.toThrow(
-        `provider-file target is not approved by policy claude:${CLAUDE_DEBUG_LOG_POLICY_ID}`,
-      );
+      ).rejects.toThrow(`provider-file target is not approved by policy claude:claude.debug-log`);
     },
   );
 
@@ -139,9 +142,7 @@ describe("provider file policy", () => {
         },
         new Date("2026-07-25T00:00:00.000Z"),
       ),
-    ).rejects.toThrow(
-      `provider-file target is not approved by policy claude:${CLAUDE_DEBUG_LOG_POLICY_ID}`,
-    );
+    ).rejects.toThrow(`provider-file target is not approved by policy claude:claude.debug-log`);
   });
 
   it("rejects recent logs and shortened recovery windows at authorization", async () => {
@@ -220,7 +221,7 @@ describe("provider file policy", () => {
           new Date("2026-07-27T00:00:00.000Z"),
         ),
       ).rejects.toThrow(
-        `provider-file target is not approved by policy claude:${CLAUDE_CHANGELOG_CACHE_POLICY_ID}`,
+        `provider-file target is not approved by policy claude:claude.changelog-cache`,
       );
     },
   );
@@ -242,7 +243,7 @@ describe("provider file policy", () => {
         new Date("2026-07-27T00:00:00.000Z"),
       ),
     ).rejects.toThrow(
-      `provider-file target is not approved by policy claude:${CLAUDE_CHANGELOG_CACHE_POLICY_ID}`,
+      `provider-file target is not approved by policy claude:claude.changelog-cache`,
     );
   });
 
@@ -342,9 +343,7 @@ describe("provider file policy", () => {
           {},
           new Date("2026-07-28T00:00:00.000Z"),
         ),
-      ).rejects.toThrow(
-        `provider-file target is not approved by policy zed:${ZED_ROTATED_LOG_POLICY_ID}`,
-      );
+      ).rejects.toThrow(`provider-file target is not approved by policy zed:zed.rotated-log`);
     },
   );
 

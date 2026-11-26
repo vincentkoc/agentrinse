@@ -8,19 +8,6 @@ export type ProviderRootOptions = {
   platform?: NodeJS.Platform;
 };
 
-function providerRootEnvironment(spec: ProviderSpec): string | undefined {
-  if (spec.id === "claude") {
-    return "CLAUDE_CONFIG_DIR";
-  }
-  if (spec.id === "copilot") {
-    return "COPILOT_HOME";
-  }
-  if (spec.id === "grok") {
-    return "GROK_HOME";
-  }
-  return undefined;
-}
-
 function resolveAbsoluteEnvironmentPath(
   name: string,
   value: string | undefined,
@@ -78,7 +65,7 @@ export function resolveProviderRoot(
       return join(dataHome, "zed");
     }
   }
-  const environmentVariable = providerRootEnvironment(spec);
+  const environmentVariable = spec.environmentRoot;
   if (environmentVariable !== undefined) {
     const configuredRoot = resolveAbsoluteEnvironmentPath(
       environmentVariable,

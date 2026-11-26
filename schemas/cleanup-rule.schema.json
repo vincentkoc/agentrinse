@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "provider-file"
+        },
+        "provider": {
+          "type": "string",
+          "enum": ["claude", "cursor", "copilot", "zed", "opencode", "grok", "openclaw"]
+        },
+        "ownerRoot": {
+          "type": "string",
+          "enum": ["provider-root", "zed-log-root"]
+        },
+        "directory": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!\\.{1,2}$)[a-zA-Z0-9_.-]+$"
+          }
+        },
+        "match": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^(?!\\.{1,2}$)[a-zA-Z0-9_.-]+$"
+                }
+              },
+              "required": ["name"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "suffix": {
+                  "type": "string",
+                  "pattern": "^\\.[a-zA-Z0-9]+$"
+                }
+              },
+              "required": ["suffix"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "sha256Suffix": {
+                  "type": "string",
+                  "pattern": "^\\.[a-zA-Z0-9]+$"
+                }
+              },
+              "required": ["sha256Suffix"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "discovery": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "native"
+                },
+                "collector": {
+                  "type": "string",
+                  "const": "openclaw-shell-snapshot"
+                }
+              },
+              "required": ["kind", "collector"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "exact"
+                },
+                "includeBasename": {
+                  "type": "boolean"
+                },
+                "order": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "inspectionFailed": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rootUnsafe": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rootUnsafeMessage": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rootInspectionFailed": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": ["kind", "includeBasename", "inspectionFailed"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "children"
+                },
+                "includeBasename": {
+                  "type": "boolean"
+                },
+                "order": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "inspectionFailed": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "enumerationFailed": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "truncated": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "limitLabel": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "kind",
+                "includeBasename",
+                "inspectionFailed",
+                "enumerationFailed",
+                "truncated",
+                "limitLabel"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "resourceKind": {
+          "type": "string",
+          "enum": ["agent-cache", "agent-log-store"]
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minAgeDays": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "quarantineDays": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rootCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rootDetail": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tooRecentDetail": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contentPrefix": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "provider",
+        "ownerRoot",
+        "directory",
+        "match",
+        "discovery",
+        "resourceKind",
+        "displayName",
+        "minAgeDays",
+        "quarantineDays",
+        "subject",
+        "description",
+        "rootCode",
+        "rootDetail",
+        "tooRecentDetail"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9-]*$"
+        },
+        "kind": {
+          "type": "string",
+          "const": "project-artifacts"
+        },
+        "names": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(?!\\.{1,2}$)[a-zA-Z0-9_.-]+$"
+          }
+        }
+      },
+      "required": ["id", "kind", "names"],
+      "additionalProperties": false
+    }
+  ],
+  "$id": "https://agentrinse.com/schemas/cleanup-rule.schema.json",
+  "title": "AgentRinse cleanup-rule schema"
+}

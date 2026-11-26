@@ -1,0 +1,5 @@
+{
+  "rule": "claude.debug-log",
+  "accept": ["debug/session.txt"],
+  "reject": ["projects/session.txt", "debug/nested/session.txt", "debug/session.jsonl"]
+}

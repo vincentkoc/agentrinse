@@ -5,14 +5,11 @@ import { join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { collectClaudeDebugLogs } from "../../src/adapters/claude-debug.js";
+import { collectProviderFileRule } from "../../src/adapters/provider-file-discovery.js";
 import { ProviderAuditAdapter } from "../../src/adapters/provider-adapter.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
-import {
-  CLAUDE_DEBUG_LOG_POLICY_ID,
-  isClaudeDebugLogRelativePath,
-} from "../../src/core/provider-file-policy.js";
+import { matchProviderFilePolicy } from "../../src/rules/file-rule.js";
 
 const NOW = new Date("2026-07-25T00:00:00.000Z");
 
@@ -59,7 +56,7 @@ describe("Claude debug cleanup", () => {
     const probe = await adapter.probe(context);
     const collection = await adapter.collect(context, probe);
     const exactLogs = collection.resources.filter(
-      (resource) => resource.facts.policyId === CLAUDE_DEBUG_LOG_POLICY_ID,
+      (resource) => resource.facts.policyId === "claude.debug-log",
     );
     const finding = await adapter.classify(context, exactLogs[0]!);
 
@@ -72,7 +69,7 @@ describe("Claude debug cleanup", () => {
         {
           type: "provider.file-quarantine",
           adapter: "claude",
-          policyId: CLAUDE_DEBUG_LOG_POLICY_ID,
+          policyId: "claude.debug-log",
           risk: "recoverable",
           expectedReclaimBytes: 0,
           quarantineTtlMinutes: 7 * 24 * 60,
@@ -113,20 +110,26 @@ describe("Claude debug cleanup", () => {
     let yielded = 0;
     let closed = false;
 
-    const collection = await collectClaudeDebugLogs(context, root, 3, {
-      inspect: async () => debugStats,
-      openDirectory: async () => ({
-        async close() {
-          closed = true;
-        },
-        async *[Symbol.asyncIterator]() {
-          for (let index = 0; index < 1_000_000; index += 1) {
-            yielded += 1;
-            yield { name: `debug-${String(index)}.txt` } as Dirent<string>;
-          }
-        },
-      }),
-    });
+    const collection = await collectProviderFileRule(
+      context,
+      root,
+      matchProviderFilePolicy("claude", "claude.debug-log", join("debug", "debug.txt"))!,
+      3,
+      {
+        inspect: async () => debugStats,
+        openDirectory: async () => ({
+          async close() {
+            closed = true;
+          },
+          async *[Symbol.asyncIterator]() {
+            for (let index = 0; index < 1_000_000; index += 1) {
+              yielded += 1;
+              yield { name: `debug-${String(index)}.txt` } as Dirent<string>;
+            }
+          },
+        }),
+      },
+    );
 
     expect(collection.resources).toEqual([]);
     expect(collection.diagnostics).toContainEqual(
@@ -158,12 +161,22 @@ describe("Claude debug cleanup", () => {
   });
 
   it("matches only one direct Claude debug text file", () => {
-    expect(isClaudeDebugLogRelativePath(`debug${sep}session.txt`)).toBe(true);
-    expect(isClaudeDebugLogRelativePath("debug/session.jsonl")).toBe(false);
-    expect(isClaudeDebugLogRelativePath("debug/nested/session.txt")).toBe(false);
-    expect(isClaudeDebugLogRelativePath("projects/session.txt")).toBe(false);
+    expect(!!matchProviderFilePolicy("claude", "claude.debug-log", `debug${sep}session.txt`)).toBe(
+      true,
+    );
+    expect(!!matchProviderFilePolicy("claude", "claude.debug-log", "debug/session.jsonl")).toBe(
+      false,
+    );
+    expect(
+      !!matchProviderFilePolicy("claude", "claude.debug-log", "debug/nested/session.txt"),
+    ).toBe(false);
+    expect(!!matchProviderFilePolicy("claude", "claude.debug-log", "projects/session.txt")).toBe(
+      false,
+    );
     if (sep === "/") {
-      expect(isClaudeDebugLogRelativePath("debug\\session.txt")).toBe(false);
+      expect(!!matchProviderFilePolicy("claude", "claude.debug-log", "debug\\session.txt")).toBe(
+        false,
+      );
     }
   });
 });

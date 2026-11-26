@@ -1,4 +1,7 @@
-import { buildCacheProtection, estimatedCacheReclaimBytes } from "./cache-policy.js";
+import {
+  buildCacheProtection,
+  estimatedCacheReclaimBytes,
+} from "../../rules/docker/build-cache.js";
 import { reportOnlyFinding } from "../report-only-finding.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";

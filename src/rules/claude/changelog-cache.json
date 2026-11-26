@@ -1,0 +1,24 @@
+{
+  "id": "claude.changelog-cache",
+  "kind": "provider-file",
+  "provider": "claude",
+  "ownerRoot": "provider-root",
+  "directory": ["cache"],
+  "match": {
+    "name": "changelog.md"
+  },
+  "resourceKind": "agent-cache",
+  "displayName": "Claude changelog cache",
+  "minAgeDays": 30,
+  "quarantineDays": 7,
+  "description": "Quarantine the Claude changelog cache after 30 days",
+  "subject": "Claude changelog caches",
+  "rootCode": "claude-changelog-cache-owner-contract",
+  "rootDetail": "Claude documents cache/changelog.md as a rebuildable release-notes cache refreshed in the background.",
+  "tooRecentDetail": "The changelog cache is newer than the 30-day cleanup threshold.",
+  "discovery": {
+    "kind": "exact",
+    "includeBasename": false,
+    "inspectionFailed": "CLAUDE_CHANGELOG_CACHE_INSPECTION_FAILED"
+  }
+}

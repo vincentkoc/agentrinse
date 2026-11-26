@@ -1,0 +1,27 @@
+{
+  "id": "zed.rotated-log",
+  "kind": "provider-file",
+  "provider": "zed",
+  "ownerRoot": "zed-log-root",
+  "directory": [],
+  "match": {
+    "name": "Zed.log.old"
+  },
+  "resourceKind": "agent-log-store",
+  "displayName": "Zed rotated log",
+  "minAgeDays": 30,
+  "quarantineDays": 7,
+  "description": "Quarantine Zed.log.old after 30 days",
+  "subject": "Zed rotated logs",
+  "rootCode": "zed-rotated-log-owner-contract",
+  "rootDetail": "Zed defines Zed.log.old as the single rotated application log beside the active Zed.log.",
+  "tooRecentDetail": "The rotated Zed log is newer than the 30-day cleanup threshold.",
+  "discovery": {
+    "kind": "exact",
+    "includeBasename": true,
+    "inspectionFailed": "ZED_ROTATED_LOG_INSPECTION_FAILED",
+    "rootUnsafe": "ZED_LOG_ROOT_UNSAFE",
+    "rootUnsafeMessage": "Zed log cleanup requires a direct non-symlink directory.",
+    "rootInspectionFailed": "ZED_LOG_ROOT_INSPECTION_FAILED"
+  }
+}

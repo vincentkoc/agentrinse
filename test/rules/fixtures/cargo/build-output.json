@@ -1,0 +1,5 @@
+{
+  "rule": "cargo.build-output",
+  "accept": ["target"],
+  "reject": ["Cargo.toml", "src"]
+}

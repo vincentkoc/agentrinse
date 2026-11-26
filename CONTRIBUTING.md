@@ -30,6 +30,8 @@ pnpm smoke:package
 
 See [docs/development.md](docs/development.md) for what each check covers.
 
+See [Writing cleanup rules](docs/cleanup-rules.md) for the descriptor, fixture, and verification workflow.
+
 ## Requirements
 
 - Add tests for malformed, missing, active, and changing state.

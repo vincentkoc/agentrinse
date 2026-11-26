@@ -16,9 +16,12 @@ import {
   quarantineEntrySchema,
 } from "../dist/index.js";
 
+import { cleanupRuleSchema } from "../dist/rules/schema.js";
+
 const outputDirectory = join(process.cwd(), "schemas");
 const check = process.argv.includes("--check");
 const schemas = [
+  ["cleanup-rule.schema.json", "cleanup-rule", cleanupRuleSchema],
   ["audit.schema.json", "audit", auditReportSchema],
   ["command-envelope.schema.json", "command-envelope", commandEnvelopeSchema],
   ["command-event.schema.json", "command-event", commandEventSchema],

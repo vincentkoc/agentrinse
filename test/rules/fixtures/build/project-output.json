@@ -1,0 +1,14 @@
+{
+  "rule": "build.project-output",
+  "accept": [
+    "node_modules",
+    "dist",
+    "dist-runtime",
+    "build",
+    ".next",
+    ".turbo",
+    ".cache",
+    "coverage"
+  ],
+  "reject": ["src", ".git", "build/sub"]
+}

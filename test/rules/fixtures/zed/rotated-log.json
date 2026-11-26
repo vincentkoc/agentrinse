@@ -1,0 +1,5 @@
+{
+  "rule": "zed.rotated-log",
+  "accept": ["Zed.log.old"],
+  "reject": ["Zed.log", "subdir/Zed.log.old"]
+}

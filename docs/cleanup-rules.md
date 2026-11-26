@@ -1,18 +1,42 @@
-# Cleanup rules
+# Writing cleanup rules
 
-Start with the resource owner. Its collector observes local state. Its classifier turns observations into protection evidence or an exact candidate action. Planning applies the configured risk ceiling. Apply checks the live evidence again.
+Start in `src/rules/<owner>/`. A built-in rule describes what its owner can regenerate and which evidence permits an action. The matching examples live under `test/rules/fixtures/<owner>/`.
 
-| Resource or decision                                                                   | Where to change the rule                                                                                                                                                                                                                                                                 | How to verify it                                                                                                                                   |
-| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider roots and reachability                                                        | [Provider declarations](../src/adapters/provider-specs.ts), [root resolution](../src/adapters/provider-root.ts), [provider evidence](../src/adapters/provider-reachability.ts), [path matching](../src/core/reachability.ts)                                                             | [Reachability tests](../test/core/reachability.test.ts)                                                                                            |
-| Claude debug logs and changelog cache, OpenClaw shell snapshots, Zed rotated logs      | [File policies](../src/core/provider-file-policy.ts) declare names, owner roots, paths, content markers, age, and quarantine windows. [File classification](../src/adapters/provider-file-classification.ts) binds a matching file identity to its policy.                               | [Policy tests](../test/core/provider-file-policy.test.ts), [Zed](../test/adapters/zed-logs.test.ts), [OpenClaw](../test/adapters/openclaw.test.ts) |
-| OpenClaw protection beyond shell snapshots                                             | [OpenClaw inventory and protection](../src/adapters/openclaw.ts), [workspace and storage ownership](../src/adapters/openclaw-ownership.ts), [database evidence](../src/adapters/openclaw-database.ts)                                                                                    | [OpenClaw adapter tests](../test/adapters/openclaw.test.ts)                                                                                        |
-| Codex database vacuum                                                                  | [Database classification](../src/adapters/codex-database-classification.ts) requires sufficient reclaim, a supported database contract, offline opt-in, and safe WAL, process, and open-handle evidence. [Database inspection](../src/adapters/codex-database.ts) supplies the evidence. | [Adapter tests](../test/adapters/provider-adapter.test.ts), [database revalidation](../test/core/database-revalidation.test.ts)                    |
-| Claude native retention, Copilot, OpenCode, Cursor, Grok, and other provider inventory | [Provider ownership classification](../src/adapters/provider-ownership-classification.ts) interprets each provider's typed observations and emits ordered report-only reasons.                                                                                                           | [Provider adapter tests](../test/adapters/provider-adapter.test.ts)                                                                                |
-| Git worktrees                                                                          | [Registration protections](../src/adapters/git/cheap-protection.ts) can avoid an expensive process probe. [Full protection policy](../src/adapters/git/protection-policy.ts) adds working-tree, ref, recovery, process, and reachability evidence.                                       | [Ownership deferral](../test/adapters/git-cheap-ownership.test.ts), [worktree classification](../test/adapters/git-adapter.test.ts)                |
-| Build artifacts                                                                        | [Inspection policy](../src/adapters/artifacts/inspection-policy.ts) returns the first structural blocker. [Artifact classification](../src/adapters/artifacts/adapter.ts) checks size, age, Git tracking, process ownership, and provider protections.                                   | [Artifact adapter tests](../test/adapters/artifact-adapter.test.ts)                                                                                |
-| Docker and installed runtimes                                                          | [Docker cache policy](../src/adapters/docker/cache-policy.ts) separates reported reclaim from mutation authority. [Runtime inventory](../src/adapters/runtime/adapter.ts) records installer ownership. Both emit [report-only findings](../src/adapters/report-only-finding.ts).         | [Docker](../test/adapters/docker-owner.test.ts), [runtime](../test/adapters/runtime-adapter.test.ts)                                               |
-| Risk ceilings and plan selection                                                       | [Action contracts](../src/contracts/action.ts) define the ordered risk levels. [Planning](../src/core/plan.ts) selects actions from eligible findings and binds them to the audit.                                                                                                       | [Plan tests](../test/core/plan.test.ts), [plan verification](../test/core/plan-verification.test.ts)                                               |
+| Change                                                    | Working example                                                                                                                                                             |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Quarantine one file with a known name                     | [Claude changelog cache](../src/rules/claude/changelog-cache.json) and its [fixture](../test/rules/fixtures/claude/changelog-cache.json)                                    |
+| Inspect direct children of a directory                    | [Claude debug logs](../src/rules/claude/debug-log.json) and their [fixture](../test/rules/fixtures/claude/debug-log.json)                                                   |
+| Use an app's platform-specific log directory              | [Zed rotated log](../src/rules/zed/rotated-log.json) and its [fixture](../test/rules/fixtures/zed/rotated-log.json)                                                         |
+| Recognize a rebuildable directory in a configured project | [Cargo output](../src/rules/cargo/build-output.json) and its [fixture](../test/rules/fixtures/cargo/build-output.json)                                                      |
+| Add a resource that an app owns and maintains itself      | [Cursor inventory](../src/rules/cursor/inventory.ts) and its [native maintenance classifier](../src/rules/cursor/native-maintenance.ts)                                     |
+| Interpret system evidence from a native API               | [Docker build cache](../src/rules/docker/build-cache.ts), [Git worktrees](../src/rules/git/worktree.ts), and [Codex database vacuum](../src/rules/codex/database-vacuum.ts) |
+
+## Add a rule and its fixture
+
+1. Copy the closest JSON example into the owner's directory. Set its ID to `<owner>.<filename-without-extension>`. The [descriptor schema](../schemas/cleanup-rule.schema.json) lists the supported fields.
+2. Create a fixture at the same relative path under `test/rules/fixtures/`. Include accepted targets and nearby paths the rule must refuse. Use forward slashes in fixtures on every platform.
+3. Run `pnpm rules:generate` to update the [built-in index](../src/rules/builtin.generated.ts). Commit the generated change alongside the descriptor and fixture.
+4. Run `pnpm rules:verify`. It checks coverage and exercises the classifier and planner. File cases cover the age boundary and pending quarantine bytes. Project cases cover tracked and untracked output. Run `pnpm check` and the [package checks](../CONTRIBUTING.md) before opening a PR.
+
+Cargo declares one rebuildable directory.
+
+```json
+{
+  "id": "cargo.build-output",
+  "kind": "project-artifacts",
+  "names": ["target"]
+}
+```
+
+The operator must select `target` for an explicit project. A match goes through the same project-root, Git, size, age, mount and process checks as the other [project artifacts](../src/adapters/artifacts/adapter.ts).
+
+## Choose the method
+
+**Provider file quarantine.** Set the owner root, relative directory components, filename matcher, age and recovery window. `exact` discovery inspects one literal filename. `children` enumerates one bounded directory. An incomplete enumeration yields no candidates. The [shared collector](../src/adapters/provider-file-discovery.ts) pins identity before classification. Apply selects the matching rule again, resolves the configured owner, and verifies content and live holders. The original manifest governs recovery after a rule changes.
+
+**Owner inventory.** An app's `inventory.ts` defines its default roots, observed resources and optional classifier. A classifier can return a finding or defer to the protected default. The [registry](../src/adapters/provider-specs.ts) lists installed provider rulesets in audit order. Use the [runtime list](../src/rules/runtime/tools.ts) for executable inventory.
+
+**Native decisions.** Put owner-specific judgments under that owner's directory and collect live evidence in the adapter. OpenClaw's [shell snapshot rule](../src/rules/openclaw/shell-snapshot.json) uses the native traversal to check the shared database journal before capturing an identity. Docker's build-cache rule reports estimates while the daemon and worker identity cannot be bound to deletion. Each native descriptor names its collector. Registration rejects two rules that can claim the same file. A new action type needs its own plan, apply-time revalidation, journal and recovery contract.
 
 ## Before changing an action
 

@@ -1,0 +1,10 @@
+{
+  "rule": "openclaw.shell-snapshot",
+  "accept": [
+    "cache/shell-snapshots/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.sh"
+  ],
+  "reject": [
+    "cache/shell-snapshots/script.sh",
+    "cache/shell-snapshots/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.sh"
+  ]
+}

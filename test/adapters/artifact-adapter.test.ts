@@ -6,7 +6,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { artifactInspectionBlocker } from "../../src/adapters/artifacts/inspection-policy.js";
+import { artifactInspectionBlocker } from "../../src/rules/build/inspection.js";
 import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";

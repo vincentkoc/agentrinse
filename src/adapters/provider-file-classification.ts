@@ -6,7 +6,7 @@ import {
   providerFileQuarantineActionSchema,
 } from "../contracts/action.js";
 import { sha256 } from "../core/digest.js";
-import { matchProviderFilePolicy } from "../core/provider-file-policy.js";
+import { matchProviderFilePolicy } from "../rules/file-rule.js";
 import type { ProviderAdapterId } from "./provider-specs.js";
 
 export function classifyProviderFile(

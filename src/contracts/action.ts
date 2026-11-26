@@ -1,20 +1,10 @@
+import { artifactNames } from "../rules/builtin.generated.js";
 import { z } from "zod";
 
 // Order defines the inclusive plan ceiling and the display order of risk counts.
 export const actionRiskSchema = z.enum(["safe", "recoverable", "destructive", "experimental"]);
 
-export const artifactNameSchema = z.enum([
-  "node_modules",
-  "dist",
-  "dist-runtime",
-  "build",
-  ".next",
-  ".turbo",
-  ".cache",
-  "coverage",
-  "target",
-  ".venv",
-]);
+export const artifactNameSchema = z.enum(artifactNames);
 
 export const pathIdentitySchema = z.object({
   path: z.string().min(1),

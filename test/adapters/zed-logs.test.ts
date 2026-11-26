@@ -7,10 +7,7 @@ import { describe, expect, it } from "vitest";
 import { ProviderAuditAdapter } from "../../src/adapters/provider-adapter.js";
 import { PROVIDER_SPECS } from "../../src/adapters/provider-specs.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
-import {
-  isZedRotatedLogRelativePath,
-  ZED_ROTATED_LOG_POLICY_ID,
-} from "../../src/core/provider-file-policy.js";
+import { matchProviderFilePolicy } from "../../src/rules/file-rule.js";
 
 const NOW = new Date("2026-07-28T00:00:00.000Z");
 const OLD = new Date("2026-06-01T00:00:00.000Z");
@@ -52,7 +49,7 @@ describe("Zed rotated-log cleanup", () => {
     const probe = await zed.probe(context);
     const collection = await zed.collect(context, probe);
     const exactLogs = collection.resources.filter(
-      (resource) => resource.facts.policyId === ZED_ROTATED_LOG_POLICY_ID,
+      (resource) => resource.facts.policyId === "zed.rotated-log",
     );
     const finding = await zed.classify(context, exactLogs[0]!);
 
@@ -78,7 +75,7 @@ describe("Zed rotated-log cleanup", () => {
         {
           type: "provider.file-quarantine",
           adapter: "zed",
-          policyId: ZED_ROTATED_LOG_POLICY_ID,
+          policyId: "zed.rotated-log",
           risk: "recoverable",
           expectedReclaimBytes: 0,
           quarantineTtlMinutes: 7 * 24 * 60,
@@ -99,7 +96,7 @@ describe("Zed rotated-log cleanup", () => {
 
     expect(probe.status).toBe("absent");
     expect(collection.resources).toHaveLength(1);
-    expect(collection.resources[0]?.facts.policyId).toBe(ZED_ROTATED_LOG_POLICY_ID);
+    expect(collection.resources[0]?.facts.policyId).toBe("zed.rotated-log");
   });
 
   it("uses the logs directory under an explicit Zed data root", async () => {
@@ -113,7 +110,7 @@ describe("Zed rotated-log cleanup", () => {
     const probe = await zed.probe(context);
     const collection = await zed.collect(context, probe);
     const rotatedLog = collection.resources.find(
-      (resource) => resource.facts.policyId === ZED_ROTATED_LOG_POLICY_ID,
+      (resource) => resource.facts.policyId === "zed.rotated-log",
     );
 
     expect(probe).toMatchObject({ status: "available", root });
@@ -137,9 +134,7 @@ describe("Zed rotated-log cleanup", () => {
     const collection = await zed.collect(context, probe);
 
     expect(
-      collection.resources.some(
-        (resource) => resource.facts.policyId === ZED_ROTATED_LOG_POLICY_ID,
-      ),
+      collection.resources.some((resource) => resource.facts.policyId === "zed.rotated-log"),
     ).toBe(false);
   });
 
@@ -175,16 +170,16 @@ describe("Zed rotated-log cleanup", () => {
     const fileCollection = await zed.collect(fileContext, fileProbe);
 
     expect(
-      fileCollection.resources.some(
-        (resource) => resource.facts.policyId === ZED_ROTATED_LOG_POLICY_ID,
-      ),
+      fileCollection.resources.some((resource) => resource.facts.policyId === "zed.rotated-log"),
     ).toBe(false);
   });
 
   it("matches only the exact rotated log filename", () => {
-    expect(isZedRotatedLogRelativePath("Zed.log.old")).toBe(true);
-    expect(isZedRotatedLogRelativePath("Zed.log")).toBe(false);
-    expect(isZedRotatedLogRelativePath("Zed.log.old.backup")).toBe(false);
-    expect(isZedRotatedLogRelativePath(join("nested", "Zed.log.old"))).toBe(false);
+    expect(!!matchProviderFilePolicy("zed", "zed.rotated-log", "Zed.log.old")).toBe(true);
+    expect(!!matchProviderFilePolicy("zed", "zed.rotated-log", "Zed.log")).toBe(false);
+    expect(!!matchProviderFilePolicy("zed", "zed.rotated-log", "Zed.log.old.backup")).toBe(false);
+    expect(!!matchProviderFilePolicy("zed", "zed.rotated-log", join("nested", "Zed.log.old"))).toBe(
+      false,
+    );
   });
 });
