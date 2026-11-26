@@ -4,6 +4,8 @@ import { z } from "zod";
 
 import { actionRiskSchema, artifactNameSchema, type ArtifactName } from "../contracts/action.js";
 
+import { DEFAULT_WORKTREE_RETENTION } from "./defaults.js";
+
 export const adapterIdSchema = z.enum([
   "codex",
   "claude",
@@ -135,17 +137,16 @@ export const agentRinseConfigSchema = z
           .number()
           .int()
           .nonnegative()
-          .default(14 * 24 * 60),
+          .default(DEFAULT_WORKTREE_RETENTION.minAgeMinutes),
         quarantineTtlMinutes: z
           .number()
           .int()
           .positive()
           .max(30 * 24 * 60)
-          .default(7 * 24 * 60),
+          .default(DEFAULT_WORKTREE_RETENTION.quarantineTtlMinutes),
       })
       .default(() => ({
-        minAgeMinutes: 14 * 24 * 60,
-        quarantineTtlMinutes: 7 * 24 * 60,
+        ...DEFAULT_WORKTREE_RETENTION,
       })),
     pins: z.array(pinSchema).default([]),
     plan: z

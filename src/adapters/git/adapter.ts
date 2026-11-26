@@ -1,3 +1,4 @@
+import { DEFAULT_WORKTREE_RETENTION } from "../../config/defaults.js";
 import { execFile } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
 import { basename, resolve } from "node:path";
@@ -57,8 +58,7 @@ const DEFAULT_OPTIONS: GitWorktreeOptions = {
   maxEntries: 100_000,
   measureBytes: true,
   gitTimeoutMs: 10_000,
-  minAgeMinutes: 14 * 24 * 60,
-  quarantineTtlMinutes: 7 * 24 * 60,
+  ...DEFAULT_WORKTREE_RETENTION,
   platform: process.platform,
 };
 

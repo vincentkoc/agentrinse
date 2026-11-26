@@ -1,5 +1,11 @@
 import type { AgentRinseConfig } from "./schema.js";
 
+// Shared by schema defaults, full config loading, and direct adapter construction.
+export const DEFAULT_WORKTREE_RETENTION = {
+  minAgeMinutes: 14 * 24 * 60,
+  quarantineTtlMinutes: 7 * 24 * 60,
+} as const;
+
 export const DEFAULT_CONFIG: AgentRinseConfig = {
   schemaVersion: 1,
   adapters: {
@@ -28,10 +34,7 @@ export const DEFAULT_CONFIG: AgentRinseConfig = {
     minBytes: 64 * 1024 * 1024,
     processCheck: "required",
   },
-  worktrees: {
-    minAgeMinutes: 14 * 24 * 60,
-    quarantineTtlMinutes: 7 * 24 * 60,
-  },
+  worktrees: { ...DEFAULT_WORKTREE_RETENTION },
   pins: [],
   plan: {
     ttlMinutes: 30,
