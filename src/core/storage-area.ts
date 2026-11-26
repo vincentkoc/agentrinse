@@ -29,6 +29,7 @@ export async function observeArea(
   mounts: StorageMount[] | undefined,
   budget: EntryBudget,
   measure = false,
+  selectFile?: (name: string) => boolean,
 ): Promise<AreaReport> {
   const result = await observeStoragePath(area.path, mounts);
   const report: AreaReport = {
@@ -59,9 +60,34 @@ export async function observeArea(
     if (!result.stats.isFile()) return { ...report, coverage: "unexpected-kind" };
     return { ...report, fileBytes: fileTotals([result.stats]) };
   }
-  const observed = await directStorageEntries(area.path, mounts!, budget);
+  const fileGroup = area.scope === "file-group";
+  if (fileGroup && !selectFile)
+    return { ...report, coverage: "unavailable", directExtent: "unknown" };
+  const observed = await directStorageEntries(
+    area.path,
+    mounts!,
+    budget,
+    fileGroup && selectFile
+      ? {
+          select: selectFile,
+          expected: result.stats,
+        }
+      : undefined,
+  );
   if (!observed.observed)
     return { ...report, coverage: observed.coverage, directExtent: "unknown" };
+  if (fileGroup) {
+    const files = observed.entries.filter((entry) => entry.stats.isFile());
+    const unique = new Map(files.map(({ stats }) => [stats.dev + ":" + stats.ino, stats]));
+    return {
+      ...report,
+      coverage: observed.coverage,
+      directExtent:
+        observed.coverage === "direct-complete" && !observed.excluded ? "complete" : "lower-bound",
+      excluded: observed.excluded,
+      fileBytes: fileTotals([...unique.values()]),
+    };
+  }
   return {
     ...report,
     coverage: observed.coverage,

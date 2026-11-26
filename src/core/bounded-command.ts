@@ -14,6 +14,7 @@ export type BoundedCommandOptions = {
   timeoutMs: number;
   maxOutputBytes: number;
   spawnCommand?: SpawnCommand;
+  input?: string;
 };
 
 export type BoundedCommandResult = {
@@ -49,13 +50,15 @@ export function runBoundedCommand(
   options: BoundedCommandOptions,
 ): Promise<BoundedCommandResult> {
   return new Promise((resolve, reject) => {
+    if (options.input !== undefined && Buffer.byteLength(options.input) > options.maxOutputBytes) {
+      reject(new Error("Command input exceeds its byte limit"));
+      return;
+    }
     const child = (options.spawnCommand ?? spawn)(command, args, { stdio: "pipe" });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let outputBytes = 0;
     let settled = false;
-
-    child.stdin.end();
 
     const output = () => ({
       stdout: Buffer.concat(stdout).toString("utf8"),
@@ -141,5 +144,10 @@ export function runBoundedCommand(
     const timer = setTimeout(() => {
       stop("ETIMEDOUT", `${command} timed out after ${options.timeoutMs}ms`);
     }, options.timeoutMs);
+    if (options.input === undefined) child.stdin.end();
+    else {
+      child.stdin.once("error", () => stop("EPIPE", "Could not deliver command input"));
+      child.stdin.end(options.input);
+    }
   });
 }

@@ -23,6 +23,20 @@ function controlledChild() {
 }
 
 describe("runBoundedCommand", () => {
+  it("bounds input before spawning and reports a failed pipe", async () => {
+    const fixture = controlledChild();
+    const spawnCommand = vi.fn(() => fixture.child);
+    const options = { timeoutMs: 1000, maxOutputBytes: 3, spawnCommand };
+    await expect(runBoundedCommand("fixture", [], { ...options, input: "four" })).rejects.toThrow(
+      "input exceeds",
+    );
+    expect(spawnCommand).not.toHaveBeenCalled();
+    const result = runBoundedCommand("fixture", [], { ...options, input: "abc" });
+    fixture.child.stdin.emit("error", new Error("broken pipe"));
+    await expect(result).rejects.toMatchObject({ code: "EPIPE" });
+    expect(fixture.kill).toHaveBeenCalledOnce();
+  });
+
   it("settles at the deadline even when the exact child never exits after SIGKILL", async () => {
     const fixture = controlledChild();
     const startedAt = Date.now();

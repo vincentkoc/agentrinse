@@ -22,6 +22,7 @@ import {
   executeShowResourceCommand,
   executeShowRunCommand,
 } from "./commands/show.js";
+import { executeStorageRulesCommand } from "./commands/storage-rules.js";
 import { executeStorageCommand } from "./commands/storage.js";
 import { executeWorktreesCommand } from "./commands/worktrees.js";
 import { executeUndoCommand } from "./commands/undo.js";
@@ -95,6 +96,14 @@ export function buildProgram(): Command {
     );
 
   program
+    .command("storage-rules")
+    .description("List storage locations, metadata scopes, and evidence supplied by native owners.")
+    .option("--json", "emit versioned machine output", false)
+    .action((options) => {
+      process.stdout.write(executeStorageRulesCommand(options.json));
+    });
+
+  program
     .command("storage")
     .description(
       "Inventory explicit hidden storage and native mount metadata without creating a plan.",
@@ -133,6 +142,25 @@ export function buildProgram(): Command {
       "--measure",
       "measure eligible catalog cache trees or explicitly selected Crabbox staging",
       false,
+    )
+    .option(
+      "--project <path>",
+      "inspect retained project locations such as vendor without enumerating content; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--native-volume <mountpoint>",
+      "inspect snapshots or allocator usage on an already mounted APFS or Btrfs volume",
+      collectOption,
+      [],
+    )
+    .option("--system", "include known system-owned storage locations on this platform", false)
+    .option(
+      "--at <rule=path>",
+      "inspect a supplied rule at an absolute protected location; repeatable",
+      collectOption,
+      [],
     )
     .option("--rule <id>", "select a catalog location by rule ID; repeatable", collectOption, [])
     .option("--max-entries <count>", "maximum enumerated entries across storage roots", "20000")

@@ -45,6 +45,16 @@ const network = new Set([
   "glusterfs",
 ]);
 
+// Compare kernel records without exposing their device names or mount sources in reports.
+const nativeRecords = new WeakMap<StorageMount, string>();
+
+export function sameStorageMount(first: StorageMount, second: StorageMount): boolean {
+  return (
+    first === second ||
+    (nativeRecords.has(first) && nativeRecords.get(first) === nativeRecords.get(second))
+  );
+}
+
 export function parseStorageMounts(platform: NodeJS.Platform, input: string): StorageMount[] {
   if (!["darwin", "linux"].includes(platform) || Buffer.byteLength(input) > mountLimit)
     throw new Error("Unsupported mount table");
@@ -86,7 +96,7 @@ export function parseStorageMounts(platform: NodeJS.Platform, input: string): St
     );
     if (/\p{Cc}/u.test(path) || posix.normalize(path) !== path)
       throw new Error("Invalid mount path");
-    result.push({
+    const mounted: StorageMount = {
       path,
       filesystem: fs,
       access:
@@ -102,7 +112,9 @@ export function parseStorageMounts(platform: NodeJS.Platform, input: string): St
         ? "possible"
         : "unknown",
       sharedPropagation: shared,
-    });
+    };
+    nativeRecords.set(mounted, line);
+    result.push(mounted);
   }
   if (!result.some((m) => m.path === "/")) throw new Error("Missing root mount");
   return result;
