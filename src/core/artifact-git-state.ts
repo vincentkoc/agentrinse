@@ -30,13 +30,18 @@ export async function findArtifactGitRepository(projectRoot: string): Promise<st
 }
 
 export async function runArtifactGit(projectRoot: string, args: string[]): Promise<string> {
-  const env: NodeJS.ProcessEnv = { ...process.env, GIT_OPTIONAL_LOCKS: "0" };
+  const env: NodeJS.ProcessEnv = { ...process.env };
   for (const key of Object.keys(env)) {
-    if (key.startsWith("GIT_") && key !== "GIT_OPTIONAL_LOCKS") {
+    if (key.startsWith("GIT_")) {
       delete env[key];
     }
   }
 
+  // Commit ancestry in a promisor clone is evidence only when it is already local.
+  env.GIT_OPTIONAL_LOCKS = "0";
+  env.GIT_NO_LAZY_FETCH = "1";
+  env.GIT_ALLOW_PROTOCOL = "";
+  env.GIT_TERMINAL_PROMPT = "0";
   const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
     encoding: "utf8",
     env,

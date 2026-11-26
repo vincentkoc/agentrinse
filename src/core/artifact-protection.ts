@@ -23,7 +23,7 @@ async function bindArtifactGitRefPins(
     const run = (args: string[]) => runArtifactGit(root, args);
     const head = (await run(["rev-parse", "--verify", "HEAD"])).trim();
     const branch = (await run(["rev-parse", "--symbolic-full-name", "HEAD"])).trim();
-    const refs = await matchingGitRefPins(run, head, pins);
+    const refs = await matchingGitRefPins(run, head, pins, { requireCompleteHistory: true });
     if (branch.startsWith("refs/heads/")) {
       refs.push(branch, (await run(["for-each-ref", "--format=%(upstream)", "--", branch])).trim());
     }

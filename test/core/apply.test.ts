@@ -474,6 +474,12 @@ describe("applyCleanupPlan", () => {
     expect(
       await currentArtifactProtectionRoots(value.action, value.plan.home, value.config, CLOCK()),
     ).toEqual([expect.objectContaining({ code: "user-pin" })]);
+    const tip = (await git("rev-parse", "main")).stdout.trim();
+    await git("checkout", "-q", "--detach", "HEAD~1");
+    await writeFile(join(value.project, ".git", "shallow"), tip + "\n");
+    await expect(
+      currentArtifactProtectionRoots(value.action, value.plan.home, value.config, CLOCK()),
+    ).rejects.toThrow("shallow Git history");
   });
 
   it("skips artifact removal when the current config adds a pin", async () => {

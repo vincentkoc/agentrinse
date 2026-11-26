@@ -4,10 +4,18 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { inspectArtifactGitState } from "../../src/core/artifact-git-state.js";
+import { inspectArtifactGitState, runArtifactGit } from "../../src/core/artifact-git-state.js";
 import { runFixtureGit } from "../helpers/git.js";
 
 describe("inspectArtifactGitState", () => {
+  it("denies even local-file transport during artifact Git inspection", async () => {
+    const project = await mkdtemp(join(tmpdir(), "agentrinse-offline-git-"));
+    await runFixtureGit(["init"], { cwd: project });
+    await expect(runArtifactGit(project, ["ls-remote", project])).rejects.toThrow(
+      "transport 'file' not allowed",
+    );
+  });
+
   it("protects an artifact when Git indexed its name with different casing", async () => {
     const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-git-case-")));
     const indexed = join(root, "Node_Modules");

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
-import { renameNoReplace } from "./no-clobber-rename.js";
+import { prepareRenameNoReplace } from "./no-clobber-rename.js";
 import { measurePath, type Measurement } from "./measure.js";
 import { findMountBoundaries, type MountBoundaryResult } from "./mount-boundaries.js";
 import { findProcessesUsingPath, type ProcessOwnershipResult } from "./process-ownership.js";
@@ -98,7 +98,7 @@ export async function executeArtifactRemove(
   dependencies: ArtifactExecutorDependencies = {},
 ): Promise<ArtifactExecutionResult> {
   const inspect = dependencies.inspect ?? lstat;
-  const move = dependencies.move ?? renameNoReplace;
+  const move = dependencies.move ?? (await prepareRenameNoReplace());
   const measure = dependencies.measure ?? measurePath;
   const processProbe = dependencies.processProbe ?? findProcessesUsingPath;
   const mountProbe = dependencies.mountProbe ?? findMountBoundaries;
