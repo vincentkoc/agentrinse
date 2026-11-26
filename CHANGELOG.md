@@ -8,6 +8,11 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- `agentrinse worktrees` inventories linked checkouts, standalone repositories,
+  missing registrations, logical worktree sizes and direct Git administrative
+  file bytes. Optional GWT completion records separate native-closeout review
+  from active, pinned, unresolved and already removed checkouts.
+
 - Opt-in OpenClaw inventory classifies sessions, memory, credentials, worktrees,
   logs and caches. Configured owner paths and registered checkouts protect Git
   and artifact targets. Verified generated shell snapshots older than 30 days
@@ -37,6 +42,10 @@ The project follows semantic versioning after its first supported release.
 - Git worktree inspection no longer fails a whole repository with `stdout maxBuffer length
   exceeded` on large indexes. `git ls-files -z --stage` printed over 4 MiB at about 40k tracked
   files, so no worktree of such a repository was inventoried. Git output is now capped at 64 MiB.
+
+- Recognize Codex local project roots and validate local thread assignments.
+  Unsupported assignments or incomplete workspace metadata keep the existing
+  protection for unknown provider state.
 
 - An artifact project root equal to the audited home is now refused, at
   discovery (`ARTIFACT_PROJECT_IS_HOME`) and again at apply-time revalidation.

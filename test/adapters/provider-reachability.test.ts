@@ -61,6 +61,52 @@ describe("provider reachability metadata", () => {
     expect(JSON.stringify(roots)).not.toContain("never emit this transcript");
   });
 
+  it.each(["valid", "dangling", "unknown-kind", "relative", "mismatched-id", "mixed"])(
+    "validates local project roots and assignment references (%s)",
+    async (shape) => {
+      const context = await fixtureContext();
+      const root = join(context.home, ".codex");
+      const saved = join(context.home, "project");
+      await mkdir(root);
+      await writeFile(
+        join(root, ".codex-global-state.json"),
+        JSON.stringify({
+          "local-projects": {
+            project: {
+              id: shape === "mismatched-id" ? "foreign" : "project",
+              rootPaths: [shape === "relative" ? "relative" : saved],
+            },
+          },
+          "thread-project-assignments": {
+            thread: {
+              projectKind: shape === "unknown-kind" ? "new-kind" : "local",
+              projectId: shape === "dangling" ? "missing" : "project",
+            },
+          },
+          ...(shape === "mixed" ? { "active-workspace-roots": 42 } : {}),
+        }),
+      );
+      const reachability = new ReachabilityIndex();
+      const adapter = new ProviderAuditAdapter(PROVIDER_SPECS.codex, {
+        root,
+        measureBytes: false,
+        maxEntries: 100,
+        reachability,
+      });
+      const result = await adapter.collect(context, await adapter.probe(context));
+      const codes = reachability.rootsFor(saved, context.now.toISOString()).map((e) => e.code);
+      if (shape === "valid") {
+        expect(result.diagnostics).toEqual([]);
+        expect(codes).toEqual(["recent-session"]);
+      } else {
+        expect(codes).toContain("unknown-provider-state");
+        expect(result.diagnostics.map((e) => e.code)).toContain(
+          "CODEX_WORKSPACE_METADATA_UNSUPPORTED",
+        );
+      }
+    },
+  );
+
   it("links Claude project keys without reading session bodies", async () => {
     const context = await fixtureContext();
     const root = join(context.home, ".claude");

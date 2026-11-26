@@ -129,6 +129,34 @@ agentrinse adapters
 
 ## quick rinse
 
+inventory this machine's managed worktree containers before selecting repositories:
+
+```bash
+agentrinse worktrees
+agentrinse worktrees --root /work/current --root /work/legacy --repo /src/project --measure --json
+gwt finish-status --all --read-only | agentrinse worktrees --root "$(gwt root)" --gwt-status-stdin --measure --json
+```
+
+the default checks `~/.codex/worktrees`, `$CODEX_HOME/worktrees` and
+`$DOTFILES_WORKTREES_ROOT` where configured. Repeat `--root` to replace the
+defaults. Supply `--repo` for owners with no surviving checkout in those roots.
+Registrations outside those containers appear separately with presence and owner.
+The scan covers direct checkouts and one grouping directory, with a 50,000-entry
+discovery limit. Discovery and optional measurement have separate three-minute
+budgets. `--max-entries` defaults to 10,000 per checkout. Size is the logical
+file total excluding Git metadata, symlinks and nested mounts. Partial readings
+are lower bounds. Administrative bytes count only direct regular files in Git
+slots for missing checkouts, correlated by Git's backlink. Neither figure
+predicts reclaimed disk space.
+
+GWT input is optional. The command correlates native path records, Git registrations
+and GWT creation locks. Finished checkouts with all owners released, and cancelled checkouts with matching cancellation HEADs,
+are labelled for **native closeout review**. GWT status supplies provisional path evidence.
+Its public summary omits the recorded creation token and finished HEAD. The allocator must revalidate HEAD,
+owners, pins, holders, recovery state and shared dependencies. A directory's age
+records its mtime, which cannot prove inactivity. This command writes no state
+and has no apply mode.
+
 from a Git worktree, inspect repository-scoped agent residue:
 
 ```bash
