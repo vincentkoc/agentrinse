@@ -1,0 +1,23 @@
+{
+  "id": "openclaw.shell-snapshot",
+  "kind": "provider-file",
+  "provider": "openclaw",
+  "ownerRoot": "provider-root",
+  "directory": ["cache", "shell-snapshots"],
+  "match": {
+    "sha256Suffix": ".sh"
+  },
+  "resourceKind": "agent-cache",
+  "displayName": "OpenClaw generated shell snapshot",
+  "minAgeDays": 30,
+  "quarantineDays": 7,
+  "description": "Quarantine a generated OpenClaw shell snapshot after 30 days",
+  "subject": "OpenClaw shell snapshots",
+  "rootCode": "openclaw-shell-snapshot-retention",
+  "rootDetail": "OpenClaw regenerates exec shell snapshots and sweeps stale captures after three days.",
+  "tooRecentDetail": "The shell snapshot is inside the 30-day quarantine threshold.",
+  "discovery": {
+    "kind": "native"
+  },
+  "contentPrefix": "# OpenClaw exec shell snapshot. Generated; do not edit.\n"
+}

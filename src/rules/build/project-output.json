@@ -1,0 +1,14 @@
+{
+  "id": "build.project-output",
+  "kind": "project-artifacts",
+  "names": [
+    "node_modules",
+    "dist",
+    "dist-runtime",
+    "build",
+    ".next",
+    ".turbo",
+    ".cache",
+    "coverage"
+  ]
+}
