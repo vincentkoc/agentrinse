@@ -129,7 +129,13 @@ export function buildProgram(): Command {
       collectOption,
       [],
     )
-    .option("--max-entries <count>", "maximum direct entries across storage roots", "20000")
+    .option(
+      "--measure",
+      "measure eligible catalog cache trees or explicitly selected Crabbox staging",
+      false,
+    )
+    .option("--rule <id>", "select a catalog location by rule ID; repeatable", collectOption, [])
+    .option("--max-entries <count>", "maximum enumerated entries across storage roots", "20000")
     .option("--redact", "redact paths in output", false)
     .option("--json", "emit versioned machine output", false)
     .action(async (options) => {

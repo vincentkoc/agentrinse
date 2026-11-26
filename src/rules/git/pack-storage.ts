@@ -4,7 +4,7 @@ import {
   directStorageEntries,
   fileTotals,
   observeStoragePath,
-  sameObservation,
+  sameFileObservation,
   type Coverage,
   type EntryBudget,
 } from "../../core/storage-observation.js";
@@ -25,9 +25,10 @@ export async function collectPackStorage(
   repos: string[],
   mounts: StorageMount[] | undefined,
   budget: EntryBudget,
+  list = directStorageEntries,
 ) {
   const stores = new Map<string, string>();
-  const files = new Map<string, { kind: Kind; stats: BigIntStats }>();
+  const files = new Map<string, { kind: Kind; stats: BigIntStats; changed?: boolean }>();
   const groups = new Map<Kind, BigIntStats[]>();
   const repositories: {
     path: string;
@@ -82,7 +83,7 @@ export async function collectPackStorage(
     }
     stores.set(key, common);
     const path = join(common, "objects", "pack");
-    const scanned = await directStorageEntries(path, mounts!, budget);
+    const scanned = await list(path, mounts!, budget);
     const localGroups = new Map<Kind, BigIntStats[]>();
     let dirs = 0;
     for (const entry of scanned.entries) {
@@ -98,9 +99,10 @@ export async function collectPackStorage(
       const previous = files.get(identity);
       if (previous) {
         repeatedFiles++;
+        if (!sameFileObservation(previous.stats, entry.stats)) previous.changed = true;
         if (
           previous.kind !== "ambiguous-identity" &&
-          (previous.kind !== kind || !sameObservation(previous.stats, entry.stats))
+          (previous.kind !== kind || previous.changed)
         ) {
           previous.kind = "ambiguous-identity";
           ambiguousFiles++;
@@ -120,7 +122,8 @@ export async function collectPackStorage(
       ),
     });
   }
-  for (const { kind, stats } of files.values()) {
+  const stableFiles = [...files.values()].filter((f) => !f.changed);
+  for (const { kind, stats } of stableFiles) {
     const list = groups.get(kind) ?? [];
     list.push(stats);
     groups.set(kind, list);
@@ -131,7 +134,8 @@ export async function collectPackStorage(
     repeatedFiles,
     ambiguousFiles,
     byKind: Object.fromEntries([...groups].map(([kind, stats]) => [kind, fileTotals(stats)])),
-    uniqueDirectFiles: fileTotals([...files.values()].map((f) => f.stats)),
+    uniqueDirectFiles: fileTotals(stableFiles.map((f) => f.stats)),
+    changedFilesOmitted: files.size - stableFiles.length,
     reclaimableBytes: null,
   };
 }

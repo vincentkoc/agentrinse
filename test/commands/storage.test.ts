@@ -86,3 +86,46 @@ it("labels incomplete budgets, linked roots and redacts paths in both formats", 
       }),
     ).not.toContain(home);
 });
+
+it("measures only selected cache leaves and reports excluded history, aliases, mounts and limits", async () => {
+  const home = await fixture(),
+    cache = join(home, ".npm/_cacache"),
+    nested = join(cache, "content", "ab");
+  await mkdir(nested, { recursive: true });
+  await writeFile(join(nested, "data"), "12345");
+  const opts = { home, family: ["developer"], rule: ["npm.content"], measure: true };
+  const deps = { platform: "linux" as const, readMounts: async () => local };
+  expect((await inventoryStorage(opts, deps)).data.areas[0]).toMatchObject({
+    coverage: "tree-complete",
+    measurement: { extent: "complete", fileBytes: { files: 1, logicalBytes: "5" } },
+  });
+  await mkdir(join(nested, ".openclaw-dev"));
+  await writeFile(join(nested, ".openclaw-dev", "history"), "secret");
+  await mkdir(join(nested, "shared"));
+  await writeFile(join(nested, "shared", "outside"), "outside");
+  await symlink(nested, join(cache, "alias"));
+  const mounts = [...local, { ...local[0]!, path: join(nested, "shared") }];
+  const result = await inventoryStorage(opts, { readMounts: async () => mounts });
+  expect(result.status).toBe("degraded");
+  expect(result.data.areas[0]).toMatchObject({
+    measurement: { extent: "lower-bound", excluded: 3, fileBytes: { files: 1, logicalBytes: "5" } },
+  });
+  const limited = await inventoryStorage({ ...opts, maxEntries: "1" }, deps);
+  expect(limited.data.entriesInspected).toBe(1);
+  expect(limited.data.areas[0]?.measurement?.extent).toBe("lower-bound");
+  const outside = await inventoryStorage(opts, {
+    readMounts: async () => [...local, { ...local[0]!, path: cache, access: "network" }],
+  });
+  expect(outside.data.areas[0]).toMatchObject({
+    coverage: "mount-boundary",
+    measurement: { extent: "unknown" },
+  });
+  const retained = join(home, ".codex", "artifacts");
+  await mkdir(retained, { recursive: true });
+  const state = await inventoryStorage({ home, rule: ["codex.artifacts"], measure: true }, deps);
+  expect(state.data.areas[0]).toMatchObject({ coverage: "stat-only" });
+  expect(state.data.areas[0]).not.toHaveProperty("measurement");
+  await expect(inventoryStorage({ home, rule: ["../other"], measure: true }, deps)).rejects.toThrow(
+    "Unknown storage rule",
+  );
+});

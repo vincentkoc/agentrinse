@@ -13,6 +13,11 @@ import {
 } from "../core/storage-observation.js";
 import { localStorageLocations } from "../rules/storage/catalog.js";
 
+import {
+  measureCacheTree,
+  protectedStorageName,
+  type CacheMeasurement,
+} from "../core/storage-measurement.js";
 import { collectPackStorage } from "../rules/git/pack-storage.js";
 import { collectCrabboxStorage } from "../rules/openclaw/crabbox-storage.js";
 import { isPathInside } from "../core/safety.js";
@@ -25,6 +30,8 @@ export type StorageOptions = {
   crabboxRoot?: string[];
   volume?: string[];
   maxEntries?: string;
+  measure?: boolean;
+  rule?: string[];
   json?: boolean;
   redact?: boolean;
 };
@@ -45,10 +52,11 @@ type AreaReport = Area & {
   directDirectories?: number;
   excluded?: number;
   fileBytes?: ReturnType<typeof fileTotals>;
+  measurement?: CacheMeasurement;
 };
 
 function literal(path: string): string {
-  if (!isAbsolute(path) || /[\x00-\x1f\x7f]/u.test(path) || resolve(path) !== path)
+  if (!isAbsolute(path) || /\p{Cc}/u.test(path) || resolve(path) !== path)
     throw new Error("Storage paths must be absolute and normalized");
   return path;
 }
@@ -57,6 +65,7 @@ async function observeArea(
   area: Area,
   mounts: StorageMount[] | undefined,
   budget: EntryBudget,
+  measure = false,
 ): Promise<AreaReport> {
   const result = await observeStoragePath(area.path, mounts);
   const report: AreaReport = {
@@ -64,7 +73,24 @@ async function observeArea(
     filesystem: mounts ? (coveringMount(area.path, mounts)?.filesystem ?? null) : null,
     coverage: result.status,
   };
-  if (!result.stats) return report;
+  if (!result.stats) return measure ? { ...report, measurement: { extent: "unknown" } } : report;
+  if (measure) {
+    if (!result.stats.isDirectory())
+      return { ...report, coverage: "unexpected-kind", measurement: { extent: "unknown" } };
+    const measurement = await measureCacheTree(area.path, result.stats, mounts!, budget);
+    return {
+      ...report,
+      coverage:
+        measurement.extent === "complete"
+          ? "tree-complete"
+          : measurement.extent === "lower-bound"
+            ? "tree-partial"
+            : measurement.reason === "entry-limit"
+              ? "entry-limit"
+              : "unavailable",
+      measurement,
+    };
+  }
   if (area.scope === "retained") return report;
   if (area.scope === "image") {
     if (!result.stats.isFile()) return { ...report, coverage: "unexpected-kind" };
@@ -92,6 +118,10 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
     throw new Error("--max-entries must be between 1 and 100000");
   const budget = { remaining: Number(limit) };
   const platform = deps.platform ?? process.platform;
+  const catalog = localStorageLocations(home, platform);
+  const rules = new Set(options.rule);
+  if ([...rules].some((id) => !catalog.some((entry) => entry.id === id)))
+    throw new Error("Unknown storage rule on this platform");
   const mounts = await (deps.readMounts ?? readStorageMounts)(platform);
   const retained = [...new Set((options.retainedRoot ?? []).map(literal))];
   const volumes = [...new Set((options.volume ?? []).map(literal))];
@@ -136,7 +166,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   }
   for (const path of staging) {
     if (
-      path.split("/").includes(".git") ||
+      path.split("/").some(protectedStorageName) ||
       [
         join(home, ".cache"),
         join(home, ".cache/openclaw"),
@@ -152,27 +182,37 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   const receiptBudget = { remaining: 256 };
   for (const root of staging.length
     ? staging
-    : selected("crabbox")
+    : families.includes("crabbox") || (!rules.size && selected("crabbox"))
       ? [join(home, ".cache/openclaw/crabbox-sync")]
       : []) {
-    crabbox.push(await collectCrabboxStorage(root, mounts, budget, Date.now(), receiptBudget));
+    crabbox.push(
+      await collectCrabboxStorage(
+        root,
+        mounts,
+        budget,
+        Date.now(),
+        receiptBudget,
+        Boolean(options.measure && (staging.length || families.includes("crabbox"))),
+      ),
+    );
   }
   const areas: AreaReport[] = [];
-  for (const { id, owner, path, scope, reason } of localStorageLocations(home, platform)) {
-    if (selected(scope === "image" ? "vm" : scope === "retained" ? "retained" : "developer"))
-      if (mounts && coveringMount(home, mounts) !== coveringMount(path, mounts)) {
-        areas.push({
-          rule: id,
-          owner,
-          path,
-          scope,
-          reason,
-          filesystem: coveringMount(path, mounts)?.filesystem ?? null,
-          coverage: "mount-boundary",
-        });
-      } else {
-        areas.push(await observeArea({ rule: id, owner, path, scope, reason }, mounts, budget));
-      }
+  for (const { id, owner, path, scope, reason, measureTree } of catalog) {
+    if (rules.size && !rules.has(id)) continue;
+    if (!selected(scope === "image" ? "vm" : scope === "retained" ? "retained" : "developer"))
+      continue;
+    const area = { rule: id, owner, path, scope, reason };
+    const measure = Boolean(options.measure && measureTree);
+    if (mounts && coveringMount(home, mounts) !== coveringMount(path, mounts)) {
+      areas.push({
+        ...area,
+        filesystem: coveringMount(path, mounts)?.filesystem ?? null,
+        coverage: "mount-boundary",
+        ...(measure ? { measurement: { extent: "unknown" } } : {}),
+      });
+    } else {
+      areas.push(await observeArea(area, mounts, budget, measure));
+    }
   }
   for (const path of retained) {
     if (path === dirname(path) || path === home)
@@ -200,6 +240,9 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       (m) => m.extentSharing === "possible" || m.access === "network" || m.access === "automount",
     ) ?? [];
   const partial =
+    areas.some(
+      (a) => a.coverage !== "missing" && a.measurement && a.measurement.extent !== "complete",
+    ) ||
     areas.some((a) => ["entry-limit", "unavailable", "changed"].includes(a.coverage)) ||
     gitPacks.repositories.some(
       (r) => r.coverage !== "duplicate-store" && r.coverage !== "direct-complete",
@@ -208,7 +251,9 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
     crabbox.some(
       (r) =>
         (r.coverage !== "direct-complete" && !(r.coverage === "missing" && !staging.length)) ||
-        r.receiptsOmitted > 0,
+        r.receiptsOmitted > 0 ||
+        r.unverifiedEntries > 0 ||
+        r.entries.some((e) => e.measurement && e.measurement.extent !== "complete"),
     );
   return {
     status: !mounts || partial ? ("degraded" as const) : ("ok" as const),
@@ -279,7 +324,21 @@ export async function executeStorageCommand(options: StorageOptions) {
           r.mirrorIndex +
           "; receipts omitted: " +
           r.receiptsOmitted,
-        ...r.entries.map((e) => "  " + e.classification + "  " + e.path),
+        ...r.entries.map(
+          (e) =>
+            "  " +
+            e.classification +
+            "  " +
+            e.path +
+            ("lastUseReview" in e && e.lastUseReview ? "  " + e.lastUseReview : "") +
+            (e.measurement
+              ? "  " +
+                e.measurement.extent +
+                ("fileBytes" in e.measurement && e.measurement.fileBytes
+                  ? "  " + e.measurement.fileBytes.allocatedBytes + " observed allocated bytes"
+                  : " bytes unknown")
+              : ""),
+        ),
       ]),
       ...present.map(
         (a) =>
@@ -296,7 +355,23 @@ export async function executeStorageCommand(options: StorageOptions) {
               " allocated bytes on observed files"
             : ""),
       ),
-      "Directory observations cover direct children only. Snapshots, clones, hardlinks and guest allocation can share bytes.",
+      ...present
+        .filter((a) => a.measurement)
+        .map(
+          (a) =>
+            "Measured " +
+            a.rule +
+            "  " +
+            a.measurement!.extent +
+            "  " +
+            (a.measurement!.fileBytes
+              ? a.measurement!.fileBytes!.logicalBytes +
+                " logical / " +
+                a.measurement!.fileBytes!.allocatedBytes +
+                " observed allocated bytes"
+              : "bytes unknown"),
+        ),
+      "Default directory observations cover direct children. Snapshots, clones, hardlinks and guest allocation can share bytes.",
     ].join("\n") + "\n"
   );
 }

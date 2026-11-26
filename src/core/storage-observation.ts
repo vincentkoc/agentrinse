@@ -1,10 +1,12 @@
 import { lstat, opendir } from "node:fs/promises";
 import type { BigIntStats } from "node:fs";
 import { dirname, join, parse, resolve } from "node:path";
-import { coveringMount, type StorageMount } from "./storage-mounts.js";
+import { coveringMount, mountIndex, type StorageMount } from "./storage-mounts.js";
 
 export type Coverage =
   | "direct-complete"
+  | "tree-complete"
+  | "tree-partial"
   | "stat-only"
   | "missing"
   | "linked"
@@ -59,22 +61,29 @@ export function sameObservation(a: BigIntStats, b: BigIntStats): boolean {
   );
 }
 
+export function sameFileObservation(a: BigIntStats, b: BigIntStats): boolean {
+  return sameObservation(a, b) && a.size === b.size && a.blocks === b.blocks;
+}
+
 export type DirectEntry = { name: string; path: string; stats: BigIntStats };
 export async function directStorageEntries(
   root: string,
-  mounts: StorageMount[],
+  mounts: StorageMount[] | undefined,
   budget: EntryBudget,
+  filter?: { protect: (name: string) => boolean; expected: BigIntStats },
 ): Promise<{
   coverage: Coverage;
   entries: DirectEntry[];
   excluded: number;
 }> {
   const empty = (coverage: Coverage) => ({ coverage, entries: [], excluded: 0 });
+  if (!mounts) return empty("unavailable");
   const initial = await observeStoragePath(root, mounts);
   if (!initial.stats) return empty(initial.status);
+  if (filter && !sameObservation(filter.expected, initial.stats)) return empty("changed");
   if (!initial.stats.isDirectory()) return empty("unexpected-kind");
   if (!budget.remaining) return empty("entry-limit");
-  const mountPaths = new Set(mounts.map((m) => m.path));
+  const mountPaths = mountIndex(mounts);
   const entries: DirectEntry[] = [];
   let excluded = 0,
     coverage: Coverage = "direct-complete";
@@ -89,7 +98,7 @@ export async function directStorageEntries(
         }
         budget.remaining--;
         const path = join(root, entry.name);
-        if (mountPaths.has(path) || entry.isSymbolicLink()) {
+        if (filter?.protect(entry.name) || mountPaths.has(path) || entry.isSymbolicLink()) {
           excluded++;
           continue;
         }

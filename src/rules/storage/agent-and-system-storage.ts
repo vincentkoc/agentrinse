@@ -1,0 +1,72 @@
+import type { Location } from "./location.js";
+
+export const agentAndSystemStorage: readonly Location[] = [
+  {
+    id: "codebase-memory.graphs",
+    owner: "codebase-memory-mcp",
+    relative: ".cache/codebase-memory-mcp",
+    scope: "direct",
+    reason: "Graph and runtime files, database contents remain opaque",
+  },
+  {
+    id: "orbstack.disk",
+    owner: "OrbStack",
+    relative: "Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/data.img.raw",
+    platform: "darwin",
+    scope: "image",
+    reason: "Host sparse VM image; guest filesystem and deletion effects require the guest owner",
+  },
+  {
+    id: "orbstack.swap",
+    owner: "OrbStack",
+    relative: "Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/swap.img",
+    platform: "darwin",
+    scope: "image",
+    reason: "Guest swap image on the host filesystem",
+  },
+  {
+    id: "crabbox.controller",
+    owner: "Crabbox",
+    relative: "Library/Application Support/crabbox",
+    platform: "darwin",
+    scope: "retained",
+    reason: "Controller state, separate from source staging",
+  },
+  {
+    id: "codex.artifacts",
+    owner: "Codex",
+    relative: ".codex/artifacts",
+    scope: "retained",
+    reason: "Mixed deliverables and recovery state",
+  },
+  {
+    id: "codex.review-artifacts",
+    owner: "Codex",
+    relative: ".codex/review-artifacts",
+    scope: "retained",
+    reason: "Mixed review and recovery material",
+  },
+  {
+    id: "codex.tmp",
+    owner: "Codex",
+    relative: ".codex/tmp",
+    scope: "retained",
+    reason: "Temporary and live runtime state",
+  },
+  {
+    id: "trash.macos",
+    owner: "Trash",
+    relative: ".Trash",
+    platform: "darwin",
+    scope: "retained",
+    reason: "User recovery and restoration metadata",
+  },
+  {
+    id: "trash.linux",
+    owner: "Trash",
+    relative: ".local/share/Trash",
+    platform: "linux",
+    scope: "retained",
+    reason: "User recovery and restoration metadata",
+  },
+];

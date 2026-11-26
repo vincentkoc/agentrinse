@@ -1,6 +1,7 @@
 import { join, parse } from "node:path";
 import { lstat } from "node:fs/promises";
 import { z } from "zod";
+import { measureCacheTree } from "../../core/storage-measurement.js";
 import { openPinnedProviderFile } from "../../core/pinned-file.js";
 import {
   directStorageEntries,
@@ -13,6 +14,7 @@ import { coveringMount, type StorageMount } from "../../core/storage-mounts.js";
 
 const prefix = "openclaw-crabbox-sync-";
 const limit = 32 * 1024;
+const mirrorReviewAgeMs = 48 * 60 * 60 * 1000;
 const identity = z.object({ dev: z.string(), ino: z.string() });
 const receipt = z.object({
   version: z.literal(2),
@@ -85,9 +87,17 @@ async function inspectReceipt(entry: DirectEntry, mounts: StorageMount[], now: n
         JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer)),
       );
       if (
-        entry.name !== prefix + data.id ||
         data.rootIdentity.dev !== entry.stats.dev.toString() ||
-        data.rootIdentity.ino !== entry.stats.ino.toString() ||
+        data.rootIdentity.ino !== entry.stats.ino.toString()
+      ) {
+        return {
+          classification: "unverified-staging",
+          receipt: "current-identity-mismatch",
+          identityReview: "producer-stable-identity-required",
+        };
+      }
+      if (
+        entry.name !== prefix + data.id ||
         !sameObservation(before, await lstat(path, { bigint: true })) ||
         !sameObservation(entry.stats, await lstat(entry.path, { bigint: true }))
       )
@@ -104,8 +114,7 @@ async function inspectReceipt(entry: DirectEntry, mounts: StorageMount[], now: n
         ((data.state === "preserved" && data.users === "settled") ||
           (data.state === "prepared" && data.users === "none")) &&
         !data.hold &&
-        !mirror.disposing &&
-        !data.leases?.length;
+        !mirror.disposing;
       return {
         classification: reuse
           ? "reported-reusable-mirror"
@@ -115,6 +124,16 @@ async function inspectReceipt(entry: DirectEntry, mounts: StorageMount[], now: n
         receipt: "v2-observation",
         state: data.state,
         users: data.users,
+        recordedLeaseCount: data.leases?.length ?? 0,
+        liveHolders: "unverified",
+        ...(reuse
+          ? {
+              lastUseReview:
+                now - mirror!.lastUsed >= mirrorReviewAgeMs
+                  ? "at-least-48-hours"
+                  : "under-48-hours",
+            }
+          : {}),
         ...(mirror ? { idle: mirror.idle, lastUsedMs: validLastUse ? mirror.lastUsed : null } : {}),
       };
     } finally {
@@ -131,12 +150,14 @@ export async function collectCrabboxStorage(
   budget: EntryBudget,
   now: number,
   receiptBudget: EntryBudget,
+  measure = false,
 ) {
-  const scan = await directStorageEntries(root, mounts ?? [], budget);
+  const scan = await directStorageEntries(root, mounts, budget);
   const entries = [];
   let otherEntries = 0,
     mirrorIndex = false,
-    receiptsOmitted = 0;
+    receiptsOmitted = 0,
+    unverifiedEntries = 0;
   for (const entry of scan.entries) {
     if (entry.name === "mirrors" && entry.stats.isDirectory()) {
       mirrorIndex = true;
@@ -153,11 +174,21 @@ export async function collectCrabboxStorage(
       continue;
     }
     if (validId) receiptBudget.remaining--;
+    const evidence = validId
+      ? await inspectReceipt(entry, mounts!, now)
+      : { classification: "legacy-or-unidentified", receipt: "uninspected" };
+    const verified = evidence.receipt === "v2-observation";
+    if (!verified) unverifiedEntries++;
+    const measurement =
+      measure && verified
+        ? await measureCacheTree(entry.path, entry.stats, mounts!, budget)
+        : undefined;
     entries.push({
       path: entry.path,
-      ...(validId
-        ? await inspectReceipt(entry, mounts!, now)
-        : { classification: "legacy-or-unidentified", receipt: "uninspected" }),
+      ...evidence,
+      ...(measure
+        ? { measurement: measurement ?? { extent: "unknown", reason: "unverified-receipt" } }
+        : {}),
     });
   }
   return {
@@ -167,6 +198,7 @@ export async function collectCrabboxStorage(
     mirrorIndex,
     otherEntries,
     receiptsOmitted,
+    unverifiedEntries,
     excluded: scan.excluded,
     reclaimableBytes: null,
   };

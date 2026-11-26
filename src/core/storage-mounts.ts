@@ -1,7 +1,6 @@
 import { open } from "node:fs/promises";
 import { posix } from "node:path";
 import { runBoundedCommand } from "./bounded-command.js";
-import { isPathInside } from "./safety.js";
 
 export type StorageMount = {
   path: string;
@@ -143,14 +142,31 @@ export async function readStorageMounts(
   return undefined;
 }
 
-// Use only the kernel table here: resolving or statting a path can wake an automounter.
+// A native table is a single snapshot for the run. Index it once for bounded tree measurement.
+const indexes = new WeakMap<StorageMount[], ReadonlyMap<string, StorageMount>>();
+export function mountIndex(mounts: StorageMount[]): ReadonlyMap<string, StorageMount> {
+  const existing = indexes.get(mounts);
+  if (existing) return existing;
+  const result = new Map<string, StorageMount>();
+  for (const entry of mounts) {
+    const previous = result.get(entry.path);
+    if (!previous) result.set(entry.path, entry);
+    else if (previous.access === "local")
+      result.set(entry.path, entry.access !== "local" ? entry : { ...entry, access: "unknown" });
+  }
+  indexes.set(mounts, result);
+  return result;
+}
+// Resolving or statting a path can wake an automounter. A remote ancestor always withholds inspection.
 export function coveringMount(path: string, mounts: StorageMount[]): StorageMount | undefined {
-  const ancestors = mounts.filter((m) => isPathInside(m.path, path));
-  // Unknown/remote ancestry stays opaque even if a nested entry looks local.
-  return (
-    ancestors
-      .filter((m) => m.access !== "local")
-      .sort((a, b) => b.path.length - a.path.length)[0] ??
-    ancestors.sort((a, b) => b.path.length - a.path.length)[0]
-  );
+  const index = mountIndex(mounts);
+  let closest: StorageMount | undefined;
+  for (let cursor = path; ; cursor = posix.dirname(cursor)) {
+    const entry = index.get(cursor);
+    if (entry) {
+      if (entry.access !== "local") return entry;
+      closest ??= entry;
+    }
+    if (cursor === posix.dirname(cursor)) return closest;
+  }
 }

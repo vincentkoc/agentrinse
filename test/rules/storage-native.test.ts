@@ -3,6 +3,10 @@ import { link, lstat, mkdir, realpath, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
+import { directStorageEntries } from "../../src/core/storage-observation.js";
+import { measureCacheTree } from "../../src/core/storage-measurement.js";
+import { collectPackStorage } from "../../src/rules/git/pack-storage.js";
+import { collectCrabboxStorage } from "../../src/rules/openclaw/crabbox-storage.js";
 import { inventoryStorage, executeStorageCommand } from "../../src/commands/storage.js";
 import { parseStorageMounts } from "../../src/core/storage-mounts.js";
 import { createFixtureDirectory } from "../helpers/fixture-directory.js";
@@ -121,7 +125,7 @@ async function capsule(root: string, extra: Record<string, unknown> = {}) {
 it("matches only bounded same-owner receipts and keeps payload and controller contents opaque", async () => {
   const home = await fixture(),
     root = join(home, "staging"),
-    healthy = await capsule(root);
+    healthy = await capsule(root, { leases: ["withheld-lease"] });
   await mkdir(join(healthy.path, "source", "protected"), { recursive: true });
   const held = await capsule(root, { hold: "writers" });
   const recovering = await capsule(root);
@@ -146,6 +150,13 @@ it("matches only bounded same-owner receipts and keeps payload and controller co
   });
   const state = (path: string) => staging.entries.find((e) => e.path === path)?.classification;
   expect(state(healthy.path)).toBe("reported-reusable-mirror");
+  expect(staging.entries.find((e) => e.path === healthy.path)).toMatchObject({
+    recordedLeaseCount: 1,
+    liveHolders: "unverified",
+    lastUseReview: "at-least-48-hours",
+  });
+  expect(JSON.stringify(report)).not.toContain("withheld-lease");
+  expect(report.status).toBe("degraded");
   expect(state(held.path)).toBe("reported-mirror");
   for (const entry of [recovering, noManifest]) expect(state(entry.path)).toBe("reported-mirror");
   for (const entry of [mismatch, linked, oversized])
@@ -159,4 +170,91 @@ it("matches only bounded same-owner receipts and keeps payload and controller co
   await expect(
     inventoryStorage({ home, crabboxRoot: [join(home, ".codex", "sessions")] }, deps),
   ).rejects.toThrow("Protected");
+});
+
+it("measures only explicitly requested verified staging metadata and reports protected contents as excluded", async () => {
+  const home = await fixture(),
+    root = join(home, "staging"),
+    valid = await capsule(root);
+  const source = join(valid.path, "source");
+  await mkdir(join(source, ".git"), { recursive: true });
+  await writeFile(join(source, ".git", "private"), "private");
+  await writeFile(join(source, "code.ts"), "sample");
+  const options = { home, crabboxRoot: [root], family: ["crabbox"] };
+  const shallow = await inventoryStorage(options, deps);
+  expect(shallow.data.crabbox[0]?.entries[0]).not.toHaveProperty("measurement");
+  const measured = await inventoryStorage({ ...options, measure: true }, deps);
+  const receiptBytes = (await lstat(valid.file)).size;
+  expect(measured.data.crabbox[0]?.entries[0]).toMatchObject({
+    measurement: {
+      extent: "lower-bound",
+      excluded: 1,
+      fileBytes: { files: 2, logicalBytes: String(receiptBytes + 6) },
+    },
+  });
+  expect(measured.data.crabbox[0]?.reclaimableBytes).toBeNull();
+});
+
+it("omits all observations of a hardlink that shrinks during a scan", async () => {
+  const home = await fixture(),
+    cache = join(home, "cache"),
+    sub = join(cache, "nested");
+  await mkdir(sub, { recursive: true });
+  const blob = join(cache, "first");
+  await writeFile(blob, "several bytes");
+  await link(blob, join(sub, "second"));
+  await link(blob, join(sub, "third"));
+  const measure = await measureCacheTree(
+    cache,
+    await lstat(cache, { bigint: true }),
+    local,
+    { remaining: 20 },
+    async (path, ...args) => {
+      if (path === sub) await writeFile(blob, "x");
+      return directStorageEntries(path, ...args);
+    },
+  );
+  expect(measure).toMatchObject({
+    extent: "lower-bound",
+    reason: "changed",
+    fileBytes: { files: 0, logicalBytes: "0", allocatedBytes: "0" },
+  });
+  const first = join(home, "repo-a"),
+    second = join(home, "repo-b"),
+    packA = await gitOwner(first),
+    packB = await gitOwner(second);
+  const file = join(packA, "tmp_pack_ab");
+  await writeFile(file, "several bytes");
+  await link(file, join(packB, "tmp_pack_ba"));
+  const report = await collectPackStorage(
+    [first, second],
+    local,
+    { remaining: 20 },
+    async (path, ...args) => {
+      if (path === packB) await writeFile(file, "");
+      return directStorageEntries(path, ...args);
+    },
+  );
+  expect(report).toMatchObject({
+    changedFilesOmitted: 1,
+    repeatedFiles: 1,
+    ambiguousFiles: 1,
+    uniqueDirectFiles: { files: 0, logicalBytes: "0", allocatedBytes: "0" },
+  });
+});
+it("uses the receipt's millisecond clock for the 48-hour review boundary and excludes future timestamps", async () => {
+  const home = await fixture(),
+    root = join(home, "staging"),
+    item = await capsule(root),
+    lastUsed = 1000;
+  const window = 48 * 60 * 60 * 1000;
+  const observe = async (now: number) =>
+    (
+      await collectCrabboxStorage(root, local, { remaining: 20 }, now, { remaining: 10 })
+    ).entries.find((e) => e.path === item.path);
+  expect(await observe(lastUsed + window - 1)).toMatchObject({ lastUseReview: "under-48-hours" });
+  expect(await observe(lastUsed + window)).toMatchObject({ lastUseReview: "at-least-48-hours" });
+  const future = await observe(lastUsed - 1);
+  expect(future).toMatchObject({ classification: "reported-mirror", lastUsedMs: null });
+  expect(future).not.toHaveProperty("lastUseReview");
 });

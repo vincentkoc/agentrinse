@@ -3952,3 +3952,7 @@ valuable unfinished agent work and trust two things:
 2. it will refuse to clean anything whose ownership or recovery is uncertain
 
 That refusal is not a limitation. It is the product.
+
+## Read-only storage inventory
+
+The [storage inventory](storage.md) observes native mount metadata, explicit Git pack stores and bounded owner-defined local locations. Optional tree measurement applies only to designated developer cache leaves and explicitly selected receipt-verified OpenClaw staging. It omits protected state, symlinks and nested mounts, labels incomplete measurements and never creates cleanup actions or estimates uniquely reclaimable space.

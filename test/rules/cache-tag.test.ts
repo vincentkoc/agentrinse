@@ -1,14 +1,5 @@
 import { execFileSync } from "node:child_process";
-import {
-  link,
-  lstat,
-  mkdir,
-  readFile,
-  realpath,
-  rm,
-  symlink,
-  writeFile,
-} from "node:fs/promises";
+import { link, lstat, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createFixtureDirectory } from "../helpers/fixture-directory.js";
