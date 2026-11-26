@@ -1,3 +1,4 @@
+import { artifactInspectionBlocker } from "../../src/adapters/artifacts/inspection-policy.js";
 import { once } from "node:events";
 import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -53,6 +54,31 @@ async function fixture(
 }
 
 describe("ArtifactAuditAdapter", () => {
+  it("preserves structural blocker priority when observations overlap", () => {
+    const facts = {
+      isSymlink: true,
+      isDirectory: false,
+      measurementTruncated: true,
+      specialEntries: 1,
+      vcsMetadataEntries: 1,
+      isMountRoot: true,
+      mountBoundaryStatus: "unknown",
+    };
+    for (const [field, value, code, confidence] of [
+      ["isSymlink", false, "ARTIFACT_SYMLINK_BLOCKED", "certain"],
+      ["isDirectory", true, "ARTIFACT_NOT_DIRECTORY", "certain"],
+      ["measurementTruncated", false, "ARTIFACT_MEASUREMENT_TRUNCATED", "unknown"],
+      ["specialEntries", 0, "ARTIFACT_SPECIAL_ENTRY", "certain"],
+      ["vcsMetadataEntries", 0, "ARTIFACT_NESTED_VCS", "certain"],
+      ["isMountRoot", false, "ARTIFACT_MOUNT_BOUNDARY", "certain"],
+      ["mountBoundaryStatus", "clear", "ARTIFACT_MOUNT_INSPECTION_UNKNOWN", "unknown"],
+    ] as const) {
+      expect(artifactInspectionBlocker(facts)).toMatchObject({ code, confidence });
+      Object.assign(facts, { [field]: value });
+    }
+    expect(artifactInspectionBlocker(facts)).toBeUndefined();
+  });
+
   it("protects tracked files inside a configured artifact", async () => {
     const { context, adapter, projectRoot, artifact, artifactFile } = await fixture();
     await runFixtureGit(["-C", projectRoot, "init", "--quiet"], { home: projectRoot });
