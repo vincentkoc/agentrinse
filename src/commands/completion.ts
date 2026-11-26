@@ -17,6 +17,7 @@ const COMMANDS = [
   "purge",
   "show",
   "undo",
+  "worktrees",
 ] as const;
 
 const SUBCOMMANDS = {

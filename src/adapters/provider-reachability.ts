@@ -166,6 +166,47 @@ function parsePathRecord(
   return "valid";
 }
 
+function parseLocalProjects(
+  metadata: JsonObject,
+  add: (path: string) => void,
+): "absent" | "valid" | "invalid" {
+  const projects = metadata["local-projects"];
+  const assignments = metadata["thread-project-assignments"];
+  if (projects === undefined && assignments === undefined) {
+    return "absent";
+  }
+  if (!isObject(projects)) {
+    return "invalid";
+  }
+  let valid = true;
+  for (const [id, project] of Object.entries(projects)) {
+    if (
+      !id ||
+      !isObject(project) ||
+      project.id !== id ||
+      !Array.isArray(project.rootPaths) ||
+      project.rootPaths.length === 0 ||
+      parsePathArray(project.rootPaths, add) !== "valid"
+    ) {
+      valid = false;
+    }
+  }
+  if (
+    assignments !== undefined &&
+    (!isObject(assignments) ||
+      Object.values(assignments).some(
+        (assignment) =>
+          !isObject(assignment) ||
+          assignment.projectKind !== "local" ||
+          typeof assignment.projectId !== "string" ||
+          !Object.hasOwn(projects, assignment.projectId),
+      ))
+  ) {
+    valid = false;
+  }
+  return valid ? "valid" : "invalid";
+}
+
 async function collectCodexReachability(
   root: string,
   index: ReachabilityIndex,
@@ -199,6 +240,11 @@ async function collectCodexReachability(
     }
   };
   const fieldStates = [
+    parseLocalProjects(
+      metadata.value,
+      add("recent-session", "Codex retains this local project workspace.", "local-projects"),
+    ),
+
     parsePathArray(
       metadata.value["active-workspace-roots"],
       add("active-session", "Codex marks this workspace as active.", "active-workspace-roots"),

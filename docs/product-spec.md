@@ -1615,6 +1615,21 @@ code `1`.
 
 ## Git Worktree Adapter
 
+### Host worktree inventory
+
+The report-only `worktrees` command inventories managed containers one or two
+levels deep. Git registers linked checkouts and their common owner. Standalone
+repositories, unresolved paths, missing registrations and removed historical
+records have separate dispositions. A bounded filesystem measurement reports
+logical checkout bytes and the size of direct administrative files for missing
+registrations separately.
+
+When supplied on stdin, native GWT completion status can identify a registered,
+GWT-locked checkout with a finished or cancelled record to review with its
+allocator. Pins, ambiguous records, active ownership and unresolved paths retain
+the checkout. The report cannot create an apply action or sign off an owner.
+Prior completion, directory age and logical size do not authorize retirement.
+
 ### Discovery
 
 Discover worktrees through repositories found from:

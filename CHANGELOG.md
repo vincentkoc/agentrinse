@@ -8,12 +8,21 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- `agentrinse worktrees` inventories linked checkouts, standalone repositories,
+  missing registrations, logical worktree sizes and direct Git administrative
+  file bytes. Optional GWT completion records separate native-closeout review
+  from active, pinned, unresolved and already removed checkouts.
+
 - Opt-in OpenClaw inventory classifies sessions, memory, credentials, worktrees,
   logs and caches. Configured owner paths and registered checkouts protect Git
   and artifact targets. Verified generated shell snapshots older than 30 days
   can enter recoverable quarantine.
 
 ### Fixed
+
+- Recognize Codex local project roots and validate local thread assignments.
+  Unsupported assignments or incomplete workspace metadata keep the existing
+  protection for unknown provider state.
 
 - Tests no longer inherit the host Git signing, LFS, or credential config, which made
   worktree and Git fixtures slow enough to hit the 10-second timeout under a full

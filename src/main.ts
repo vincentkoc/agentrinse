@@ -22,6 +22,7 @@ import {
   executeShowResourceCommand,
   executeShowRunCommand,
 } from "./commands/show.js";
+import { executeWorktreesCommand } from "./commands/worktrees.js";
 import { executeUndoCommand } from "./commands/undo.js";
 import { CommandInterruptedError } from "./core/interruption.js";
 import { VERSION } from "./version.js";
@@ -91,6 +92,41 @@ export function buildProgram(): Command {
         }
       },
     );
+
+  program
+    .command("worktrees")
+    .description("Inventory worktree containers and native owner evidence without saving a plan.")
+    .option(
+      "--root <path>",
+      "absolute worktree container; repeat to select multiple roots",
+      collectOption,
+      [],
+    )
+    .option(
+      "--repo <path>",
+      "include registrations from this repository; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--gwt-status-stdin",
+      "read JSON from gwt finish-status --all --read-only on stdin",
+      false,
+    )
+    .option("--measure", "measure bounded logical checkout bytes", false)
+    .option("--max-entries <count>", "measurement entry limit per checkout", "10000")
+    .option("--redact", "redact paths in output", false)
+    .option("--json", "emit versioned machine output", false)
+    .action(async (options) => {
+      process.stdout.write(
+        await executeWorktreesCommand({
+          ...options,
+          home: homedir(),
+          root: options.root,
+          repo: options.repo,
+        }),
+      );
+    });
 
   program
     .command("plan")
