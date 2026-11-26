@@ -8,7 +8,7 @@ import { claudeNativeRetentionFactsSchema } from "./claude-retention.js";
 import { copilotNativeMaintenanceFactsSchema } from "./copilot-maintenance.js";
 import { opencodeNativeMaintenanceFactsSchema } from "./opencode-maintenance.js";
 import { cursorNativeMaintenanceFactsSchema } from "./cursor-maintenance.js";
-import { grokOwnerContractFactsSchema } from "./grok-maintenance.js";
+import { describeGrokOwnerContract, grokOwnerContractFactsSchema } from "./grok-maintenance.js";
 
 export function classifyProviderOwnership(
   provider: ProviderAdapterId,
@@ -30,7 +30,6 @@ export function classifyProviderOwnership(
           code: uncertain
             ? "claude-native-retention-uncertain"
             : "claude-native-retention-expected",
-
           detail: uncertain
             ? "Claude user settings could not be validated; Claude may pause native cleanup unless managed settings provide cleanupPeriodDays."
             : configuredDays === undefined
@@ -39,7 +38,6 @@ export function classifyProviderOwnership(
         },
         {
           code: "provider-owned-report-only",
-
           detail: "Claude owns this retention sweep; AgentRinse does not mutate the resource.",
         },
       ]);
@@ -56,12 +54,10 @@ export function classifyProviderOwnership(
       return reportOnlyFinding(context, resource, provider, "unknown", [
         {
           code: "copilot-native-maintenance-version-unverified",
-
           detail,
         },
         {
           code: "provider-owned-report-only",
-
           detail: "Copilot owns this maintenance path; AgentRinse does not mutate the resource.",
         },
       ]);
@@ -81,12 +77,10 @@ export function classifyProviderOwnership(
             opencodeNativeMaintenance.data.kind === "snapshot-gc"
               ? "opencode-native-snapshot-gc-version-unverified"
               : "opencode-server-log-retention-version-unverified",
-
           detail,
         },
         {
           code: "provider-owned-report-only",
-
           detail: "OpenCode owns this maintenance path; AgentRinse does not mutate the resource.",
         },
       ]);
@@ -99,13 +93,11 @@ export function classifyProviderOwnership(
       return reportOnlyFinding(context, resource, provider, "unknown", [
         {
           code: "cursor-native-database-maintenance-version-unverified",
-
           detail:
             "Current Cursor guidance exposes command-palette operations for orphaned agent KV cleanup or user-selected chat deletion, both followed by VACUUM; AgentRinse did not prove the installed Cursor version.",
         },
         {
           code: "provider-owned-report-only",
-
           detail:
             "Cursor owns its database schema and maintenance commands; AgentRinse does not open or mutate the database.",
         },
@@ -116,35 +108,16 @@ export function classifyProviderOwnership(
         resource.facts.ownerContract,
       );
       if (!grokOwnerContract.success) break;
-      const versionStatus = grokOwnerContract.data.installedVersionStatus;
-      const executableStatus = grokOwnerContract.data.ownerExecutableStatus;
-      const exact = versionStatus === "exact";
-      const detail = exact
-        ? "The installed Grok version and build revision match the inspected source snapshot. Grok runs its memory GC during session initialization, but exposes no tagged, user-invokable cleanup contract that AgentRinse can bind and revalidate."
-        : versionStatus === "version-mismatch"
-          ? `Installed Grok ${grokOwnerContract.data.installedVersion} does not match inspected source version ${grokOwnerContract.data.sourceVersion}; only the owner root was inventoried.`
-          : versionStatus === "revision-mismatch"
-            ? `Installed Grok build revision ${grokOwnerContract.data.installedRevision} does not match the inspected source revisions; only the owner root was inventoried.`
-            : versionStatus === "unparseable"
-              ? "The installed Grok version output did not match the documented format; only the owner root was inventoried."
-              : executableStatus === "unsafe"
-                ? "The canonical Grok executable escapes or does not resolve to a file inside the audited owner root; only the owner root was inventoried."
-                : executableStatus === "unexecutable"
-                  ? "The canonical Grok executable is not executable; only the owner root was inventoried."
-                  : executableStatus === "unreadable"
-                    ? "The canonical Grok executable could not be inspected; only the owner root was inventoried."
-                    : executableStatus === "missing"
-                      ? "The audited owner root has no canonical Grok executable; only the owner root was inventoried."
-                      : "The bound Grok executable version could not be inspected; only the owner root was inventoried.";
+      const facts = grokOwnerContract.data;
+      const detail = describeGrokOwnerContract(facts);
+      const exact = facts.installedVersionStatus === "exact";
       return reportOnlyFinding(context, resource, provider, exact ? "high" : "unknown", [
         {
           code: "grok-cleanup-owner-contract-unavailable",
-
           detail,
         },
         {
           code: "provider-owned-report-only",
-
           detail:
             "Grok owns sessions, memory, logs, worktrees, plugins, credentials, configuration, and runtime assets; AgentRinse does not mutate them.",
         },
@@ -155,7 +128,6 @@ export function classifyProviderOwnership(
   return reportOnlyFinding(context, resource, provider, "certain", [
     {
       code: protection?.code ?? "provider-owned-report-only",
-
       detail:
         protection?.detail ?? "This adapter inventories provider state but does not clean it.",
     },
