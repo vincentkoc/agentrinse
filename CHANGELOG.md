@@ -20,10 +20,6 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
-- Recognize Codex local project roots and validate local thread assignments.
-  Unsupported assignments or incomplete workspace metadata keep the existing
-  protection for unknown provider state.
-
 - Tests no longer inherit the host Git signing, LFS, or credential config, which made
   worktree and Git fixtures slow enough to hit the 10-second timeout under a full
   suite on a many-core Mac. Those integration tests now allow 30 seconds, worktree
@@ -40,6 +36,10 @@ The project follows semantic versioning after its first supported release.
 - Git worktree inspection no longer fails a whole repository with `stdout maxBuffer length
   exceeded` on large indexes. `git ls-files -z --stage` printed over 4 MiB at about 40k tracked
   files, so no worktree of such a repository was inventoried. Git output is now capped at 64 MiB.
+
+- Recognize Codex local project roots and validate local thread assignments.
+  Unsupported assignments or incomplete workspace metadata keep the existing
+  protection for unknown provider state.
 
 - An artifact project root equal to the audited home is now refused, at
   discovery (`ARTIFACT_PROJECT_IS_HOME`) and again at apply-time revalidation.
