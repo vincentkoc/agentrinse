@@ -244,6 +244,21 @@ apply reports zero reclaimed bytes while the original remains retained. run
 journals record `retainedBackupBytes`; purge reports bytes only when that
 rollback set is actually deleted.
 
+## Git storage and linked registrations
+
+```sh
+agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --repo "$BARE_OWNER"
+agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --json --redact
+```
+
+Each repository parent selects direct child owners, including hidden names. Repeat either option for additional locations. The read-only census covers direct pack files and sidecars, temporary-name aliases, direct `objects/bitmap-ref-tips_*` files, maintenance lock presence and native linked registrations. Missing checkouts can retain allocated blocks for Git administration. Compare their lock and prune flags separately. Use `--loose-objects` to also count regular loose-object names in the owner’s two-hex fanouts, using Git’s reported object format and the same entry budget. Checkout contents, object payloads, alternates and uniquely reclaimable filesystem extents are outside this measurement.
+
+The shared direct-file budget defaults to 1,000,000 entries. Use `--max-entries` up to 5,000,000 when coverage is partial. Byte counts in JSON are decimal strings. Name totals count directory entries. Global unique totals count device and inode pairs once. A changing identity is withheld. Temporary-only identities can still share extents or belong to an active writer.
+
+All registrations of selected owners are inspected regardless of location. `--worktree-root "$CONTAINER"` labels an additional managed scope. To discover unregistered directories, use `agentrinse worktrees --root "$CONTAINER"`. Where the allocator supports it, pipe `gwt finish-status --all --read-only --inventory-json` into `git-inventory --gwt-status-stdin` with the same owner options. A legacy status array supplies signoff only. Native closeout review requires matching live bindings and recorded enrollment. Holders, protected history, merge status and recovery remain the allocator's responsibility.
+
+Agent clients can load the operator instructions shipped at [skills/agentrinse/SKILL.md](skills/agentrinse/SKILL.md).
+
 ## commands
 
 | Command                                   | Purpose                                                   | Mutation              |

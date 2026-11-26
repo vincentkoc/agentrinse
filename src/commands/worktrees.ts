@@ -1,8 +1,7 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { lstat, opendir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { promisify } from "node:util";
+import { inventoryGit as git } from "../adapters/git/inventory-command.js";
 
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "../adapters/git/porcelain.js";
 import { missingAdminSizes, registeredCheckoutPath } from "../adapters/git/worktree-admin-size.js";
@@ -19,7 +18,6 @@ import {
   type Lifecycle,
 } from "./worktree-lifecycle.js";
 
-const exec = promisify(execFile);
 const DISCOVERY_LIMIT = 50_000;
 const TIME_BUDGET_MS = 180_000;
 
@@ -59,40 +57,6 @@ type Dependencies = {
 
 function missing(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
-}
-
-async function git(path: string, args: string[], signal: AbortSignal): Promise<string> {
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
-  );
-  const { stdout } = await exec(
-    "git",
-    [
-      "-c",
-      "core.fsmonitor=false",
-      "-c",
-      "core.hooksPath=",
-      "-c",
-      "protocol.allow=never",
-      "-C",
-      path,
-      ...args,
-    ],
-    {
-      env: {
-        ...env,
-        GIT_OPTIONAL_LOCKS: "0",
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_NO_LAZY_FETCH: "1",
-        GIT_ALLOW_PROTOCOL: "",
-      },
-      encoding: "utf8",
-      signal,
-      timeout: 5_000,
-      maxBuffer: 8 * 1024 * 1024,
-    },
-  );
-  return stdout;
 }
 
 function absolute(path: string): string {
@@ -467,6 +431,7 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
         items.filter((i) => i.kind !== "missing" && i.lifecycle === lifecycle).length,
       ]),
     ),
+    nativeCloseoutReviewBasis: "provisional-path-signoff-only",
     nativeCloseoutReview: items.filter((i) => i.disposition === "review-native-closeout").length,
     logicalBytesMeasured: options.measure
       ? items.reduce((n, i) => n + (i.size?.logicalBytes ?? 0), 0)
@@ -510,7 +475,7 @@ export async function executeWorktreesCommand(options: Options): Promise<string>
   return (
     [
       `Worktree inventory (${status}): ${summary.registeredLinked} registered linked, ${summary.standalone} standalone, ${summary.unresolved} unresolved, ${summary.missing} missing (${summary.historicalMissing} historical).`,
-      `Native closeout review: ${summary.nativeCloseoutReview}. The path-matched result is provisional. Confirm checkout identity, HEAD, owners, holders, pins and history with the allocator.`,
+      `Provisional signoff review: ${summary.nativeCloseoutReview} path matches. Use git-inventory with the native inventory projection to verify recorded identity. Confirm checkout identity, HEAD, owners, holders, pins and history with the allocator.`,
       ...(options.measure
         ? [
             `Checkout logical bytes observed: ${summary.logicalBytesMeasured} (${summary.partialMeasurements} partial or unavailable). Direct Git admin file bytes for missing registrations: ${summary.missingAdminDirectFileBytes} (${summary.missingAdminMeasurementsUnavailable} unavailable).`,

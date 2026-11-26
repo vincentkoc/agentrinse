@@ -1,5 +1,5 @@
 import { lstat, opendir } from "node:fs/promises";
-import type { BigIntStats } from "node:fs";
+import type { BigIntStats, Dirent } from "node:fs";
 import { dirname, join, parse, resolve } from "node:path";
 import { coveringMount, mountIndex, type StorageMount } from "./storage-mounts.js";
 
@@ -66,21 +66,29 @@ export function sameFileObservation(a: BigIntStats, b: BigIntStats): boolean {
 }
 
 export type DirectEntry = { name: string; path: string; stats: BigIntStats };
-export async function directStorageEntries(
+type DirectFilter = {
+  protect?: (name: string) => boolean;
+  select?: (name: string) => boolean;
+  expected: BigIntStats;
+};
+
+export function directStorageEntries(
   root: string,
   mounts: StorageMount[] | undefined,
   budget: EntryBudget,
-  filter?: {
-    protect?: (name: string) => boolean;
-    select?: (name: string) => boolean;
-    expected: BigIntStats;
-  },
-): Promise<{
-  coverage: Coverage;
-  entries: DirectEntry[];
-  observed: boolean;
-  excluded: number;
-}> {
+  filter?: DirectFilter,
+) {
+  return mapDirectStorageEntries(root, mounts, budget, (entry) => entry, filter);
+}
+
+// Project large Git directories into compact observations before retaining a whole store.
+export async function mapDirectStorageEntries<T>(
+  root: string,
+  mounts: StorageMount[] | undefined,
+  budget: EntryBudget,
+  project: (entry: DirectEntry) => T,
+  filter?: DirectFilter,
+): Promise<{ coverage: Coverage; entries: T[]; observed: boolean; excluded: number }> {
   const empty = (coverage: Coverage) => ({ coverage, observed: false, entries: [], excluded: 0 });
   if (!mounts) return empty("unavailable");
   const initial = await observeStoragePath(root, mounts);
@@ -89,13 +97,30 @@ export async function directStorageEntries(
   if (!initial.stats.isDirectory()) return empty("unexpected-kind");
   if (!budget.remaining) return empty("entry-limit");
   const mountPaths = mountIndex(mounts);
-  const entries: DirectEntry[] = [];
+  const entries: T[] = [];
   let excluded = 0,
     coverage: Coverage = "direct-complete";
   try {
-    const dir = await opendir(root, { bufferSize: 1 });
+    const dir = await opendir(root, { bufferSize: 128 });
+    const collect = async (batch: Dirent[]) => {
+      const projected = await Promise.all(
+        batch.map(async (entry) => {
+          const path = join(root, entry.name);
+          if (filter?.protect?.(entry.name) || mountPaths.has(path) || entry.isSymbolicLink())
+            return;
+          const stats = await inspect(path);
+          if (stats.dev !== initial.stats!.dev || (!stats.isFile() && !stats.isDirectory())) return;
+          return { value: project({ name: entry.name, path, stats }) };
+        }),
+      );
+      for (const result of projected) {
+        if (result) entries.push(result.value);
+        else excluded++;
+      }
+    };
     try {
       if (!sameObservation(initial.stats, await inspect(root))) return empty("changed");
+      let batch: Dirent[] = [];
       for (let entry = await dir.read(); entry !== null; entry = await dir.read()) {
         if (!budget.remaining) {
           coverage = "entry-limit";
@@ -103,22 +128,13 @@ export async function directStorageEntries(
         }
         budget.remaining--;
         if (filter?.select && !filter.select(entry.name)) continue;
-        const path = join(root, entry.name);
-        if (filter?.protect?.(entry.name) || mountPaths.has(path) || entry.isSymbolicLink()) {
-          excluded++;
-          continue;
+        batch.push(entry);
+        if (batch.length === 32) {
+          await collect(batch);
+          batch = [];
         }
-        const stats = await inspect(path);
-        if (
-          stats.dev !== initial.stats.dev ||
-          stats.isSymbolicLink() ||
-          (!stats.isFile() && !stats.isDirectory())
-        ) {
-          excluded++;
-          continue;
-        }
-        entries.push({ name: entry.name, path, stats });
       }
+      if (batch.length) await collect(batch);
     } finally {
       await dir.close();
     }
