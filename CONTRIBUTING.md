@@ -7,7 +7,8 @@ safety boundary, not only their happy path.
 
 Prerequisites:
 
-- Node.js 22 or newer (`engines.node`); CI runs Node 22 and 24.
+- Use Node.js 22.13.0 or later on the 22.x line, or Node.js 24.x, for development.
+  The pinned pnpm requires at least 22.13.0. The published CLI requires Node.js 22.12.0 or newer.
 - pnpm at the version pinned in `package.json` (`packageManager`), for example
   through `corepack enable`.
 - Git.

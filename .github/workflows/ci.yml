@@ -46,9 +46,8 @@ jobs:
       - name: Smoke installed package
         run: pnpm smoke:package
 
-  # engines.node is >=22, so also run the source checks on the oldest
-  # supported line. Kept as a separate job so the required `test` check name
-  # is unchanged.
+  # Also run source checks on the oldest supported Node.js major. A separate
+  # job preserves the required `test` check name.
   test-node22:
     runs-on: ubuntu-latest
     timeout-minutes: 15

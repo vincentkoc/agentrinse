@@ -103,7 +103,7 @@ To include it in regular audits, set `adapters.openclaw.enabled` to `true` in th
 
 ## install
 
-Node.js 22 or newer is required.
+Node.js 22.12.0 or newer is required.
 
 ```bash
 npm install -g agentrinse
