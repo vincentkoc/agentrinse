@@ -6,10 +6,14 @@ import { inspectNativeVolume } from "../../src/rules/storage/native-volume.js";
 import { parseStorageMounts } from "../../src/core/storage-mounts.js";
 import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 
-it("reads native counters only for explicitly mounted local APFS or Btrfs filesystems", async () => {
+async function volumeFixture() {
   const path = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-volume-")));
   const base = parseStorageMounts("linux", "1 0 8:1 / / rw - ext4 /dev/example rw");
   const mount = { ...base[0]!, path, filesystem: "apfs" };
+  return { path, base, mount };
+}
+it("counts APFS snapshots with known and unknown purgeability", async () => {
+  const { path, base, mount } = await volumeFixture();
   const run = vi.fn(async (command: string) => ({
     stdout: command.endsWith("diskutil")
       ? "fixture-plist"
@@ -38,7 +42,11 @@ it("reads native counters only for explicitly mounted local APFS or Btrfs filesy
     expect.any(Array),
     expect.objectContaining({ input: "fixture-plist" }),
   );
-  run.mockClear();
+});
+
+it("withholds unmounted and network volumes before invoking a native tool", async () => {
+  const { path, base, mount } = await volumeFixture();
+  const run = vi.fn();
   await mkdir(join(path, "sub"));
   for (const [target, table] of [
     [join(path, "sub"), [...base, mount]],
@@ -55,6 +63,10 @@ it("reads native counters only for explicitly mounted local APFS or Btrfs filesy
     ).toMatchObject({ status: "unavailable" });
   }
   expect(run).not.toHaveBeenCalled();
+});
+
+it("reports Btrfs allocation only when all device counters are present", async () => {
+  const { path, base, mount } = await volumeFixture();
   const btrfs = [...base, { ...mount, filesystem: "btrfs" }];
   const usage = vi.fn(async () => ({
     stdout: "Device size: 100\nDevice allocated: 60\nDevice unallocated: 40\n",
@@ -68,6 +80,14 @@ it("reads native counters only for explicitly mounted local APFS or Btrfs filesy
   expect(await inspectNativeVolume(path, "linux", async () => btrfs, usage)).toMatchObject({
     status: "unavailable",
   });
+});
+
+it("discards counters if a mount identity changes during the probe", async () => {
+  const { path } = await volumeFixture();
+  const usage = vi.fn(async () => ({
+    stdout: "Device size: 100\nDevice allocated: 60\nDevice unallocated: 40\n",
+    stderr: "",
+  }));
   const mountLine = "1 0 8:1 / / rw - ext4 /dev/example rw\n";
   const table = (id: number) =>
     parseStorageMounts("linux", mountLine + `${id} 1 0:42 / ${path} rw - btrfs /dev/example rw`);
@@ -75,6 +95,10 @@ it("reads native counters only for explicitly mounted local APFS or Btrfs filesy
   expect(await inspectNativeVolume(path, "linux", changing, usage)).toMatchObject({
     status: "unavailable",
   });
+});
+
+it("retains APFS snapshot counts when capacity information is unavailable", async () => {
+  const { path, base, mount } = await volumeFixture();
   const unreadableInfo = vi.fn(async (_command: string, args: string[]) => {
     if (args[0] === "info") throw new Error("capacity unavailable");
     return { stdout: args[0] === "apfs" ? "fixture" : '{"Snapshots":[]}', stderr: "" };
