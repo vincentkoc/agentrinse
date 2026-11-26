@@ -297,6 +297,7 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
       if (!(error instanceof AuditPhaseDeadlineError)) {
         throw error;
       }
+      adapter.markDiscoveryIncomplete?.();
       const diagnostic = phaseDeadlineDiagnostic(error);
       probe = {
         adapter: adapter.id,
@@ -363,6 +364,7 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
       if (!(error instanceof AuditPhaseDeadlineError)) {
         throw error;
       }
+      adapter.markDiscoveryIncomplete?.();
       const diagnostic = phaseDeadlineDiagnostic(error);
       const deadlineDiagnostics = [...partialDiagnostics, diagnostic];
       diagnostics.push(...deadlineDiagnostics);

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { createAuditAdapters } from "../../src/adapters/registry.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { AuditAdapter } from "../../src/contracts/adapter.js";
+import { ReachabilityIndex } from "../../src/core/reachability.js";
 import { runAudit } from "../../src/core/audit.js";
 
 describe("runAudit", () => {
@@ -333,6 +334,30 @@ describe("runAudit", () => {
       ]),
     );
   });
+
+  it.each(["probe", "collect"] as const)(
+    "retains dependent workspace paths when ownership %s times out",
+    async (phase) => {
+      const home = await mkdtemp(join(tmpdir(), "agentrinse-ownership-deadline-"));
+      await mkdir(join(home, ".codex"));
+      const reachability = new ReachabilityIndex();
+      const adapters = createAuditAdapters(DEFAULT_CONFIG, process.platform, {
+        providers: ["codex"],
+        reachability,
+      });
+      const owner = adapters[0]!;
+      owner[phase] = async () => new Promise<never>(() => {});
+      const report = await runAudit({ home, config: DEFAULT_CONFIG, adapters, phaseTimeoutMs: 10 });
+      expect(report.diagnostics).toContainEqual(
+        expect.objectContaining({ adapter: "codex", code: "AUDIT_PHASE_DEADLINE_EXCEEDED" }),
+      );
+      expect(
+        reachability.rootsFor(join(home, "unrelated-project"), report.completedAt),
+      ).toContainEqual(
+        expect.objectContaining({ code: "unknown-provider-state", source: "codex" }),
+      );
+    },
+  );
 
   it("returns a degraded probe when probing exceeds its deadline", async () => {
     const home = await mkdtemp(join(tmpdir(), "agentrinse-audit-deadline-"));

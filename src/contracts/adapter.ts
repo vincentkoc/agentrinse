@@ -22,6 +22,7 @@ export type CollectionObserver = {
 
 export interface AuditAdapter {
   readonly id: string;
+  markDiscoveryIncomplete?(): void;
   probe(context: AuditContext): Promise<AdapterProbe>;
   collect(
     context: AuditContext,
