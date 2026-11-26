@@ -12,7 +12,7 @@ import {
   recheckOwner,
 } from "../rules/git/inventory-owner.js";
 import { protectedStorageName } from "../core/storage-measurement.js";
-import { inventoryLooseObjects } from "../rules/git/inventory-loose.js";
+import { gitObjectFormat, inventoryLooseObjects } from "../rules/git/inventory-loose.js";
 import { inventoryPath } from "../rules/git/inventory-path.js";
 import { GitIdentityLedger } from "../rules/git/inventory-bytes.js";
 import { inventoryPackStore } from "../rules/git/inventory-packs.js";
@@ -215,7 +215,12 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
     const changed = await compareInventorySections(owner.common, sections, mounts, bound.mounts);
     const keepPacks = !changed.objects && !changed.pack;
     const keepRegistrations = !changed.worktrees;
-    const keepLoose = !changed.objects || (loose && (await loose.verifyFanouts(bound.mounts)));
+    const sameFormat =
+      !changed.config ||
+      !looseObjects?.objectFormat ||
+      (await gitObjectFormat(owner.common)) === looseObjects.objectFormat;
+    const keepLoose =
+      sameFormat && (!changed.objects || (loose && (await loose.verifyFanouts(bound.mounts))));
     const changedSections = [
       ...(keepPacks ? [] : ["packs"]),
       ...(keepRegistrations ? [] : ["worktrees"]),
@@ -371,7 +376,16 @@ export async function executeGitInventory(
     ...view.repositories.map((r) => {
       if (!r.uniqueWithinOwner) return `${r.coverage}  ${r.path}`;
       const files = r.uniqueWithinOwner.temporaryNames;
-      return `${r.coverage}  ${r.path}  ${files.observedNames} temporary names, ${files.uniqueIdentities.allocatedBytes} temporary-name allocated bytes, ${r.worktrees?.entries.length ?? 0} registration entries`;
+      const pack = r.packs
+        ? `${files.observedNames} temporary names, ${files.uniqueIdentities.allocatedBytes} temporary-name allocated bytes`
+        : "pack count withheld";
+      const registrations = r.worktrees
+        ? `${r.worktrees.entries.length} registration entries`
+        : "registration count withheld";
+      const changed = r.changedSections?.length
+        ? `  changed sections: ${r.changedSections.join(", ")}`
+        : "";
+      return `${r.coverage}  ${r.path}  ${pack}, ${registrations}${changed}`;
     }),
   ];
   return lines.join("\n") + "\n";

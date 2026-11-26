@@ -83,17 +83,23 @@ export async function recheckOwner(
   return { owner: checked.owner, mounts, commonMetadataChanged };
 }
 
-const sectionPaths = { objects: "objects", pack: "objects/pack", worktrees: "worktrees" } as const;
+const sectionPaths = {
+  objects: "objects",
+  pack: "objects/pack",
+  worktrees: "worktrees",
+  config: "config",
+} as const;
 
 export async function observeInventorySections(common: string, mounts: StorageMount[]) {
   const observe = (key: keyof typeof sectionPaths) =>
     observeStoragePath(join(common, sectionPaths[key]), mounts);
-  const [objects, pack, worktrees] = await Promise.all([
+  const [objects, pack, worktrees, config] = await Promise.all([
     observe("objects"),
     observe("pack"),
     observe("worktrees"),
+    observe("config"),
   ]);
-  return { objects, pack, worktrees };
+  return { objects, pack, worktrees, config };
 }
 
 export async function compareInventorySections(
@@ -114,5 +120,10 @@ export async function compareInventorySections(
     if (first.stats && last.stats) return !sameObservation(first.stats, last.stats);
     return !!first.stats !== !!last.stats;
   };
-  return { objects: changed("objects"), pack: changed("pack"), worktrees: changed("worktrees") };
+  return {
+    objects: changed("objects"),
+    pack: changed("pack"),
+    worktrees: changed("worktrees"),
+    config: changed("config"),
+  };
 }

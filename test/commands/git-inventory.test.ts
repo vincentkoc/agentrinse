@@ -128,6 +128,27 @@ describe("git-inventory", () => {
     );
   });
 
+  it("rechecks the object format after an in-place config write independently of the common directory", async () => {
+    const { repo, options } = await setup();
+    const common = join(repo, ".git");
+    const config = join(common, "config");
+    await writeFile(join(common, "objects", "pack", "tmp_pack_stable"), "stable");
+    const inspect = () => lstat(common, { bigint: true });
+    const start = await inspect();
+    const sha256 = "[core]\nrepositoryFormatVersion = 1\n[extensions]\nobjectFormat = sha256\n";
+    afterLooseScan(() => writeFile(config, sha256));
+    const result = await inventoryGitOwners({ ...options, looseObjects: true }, { mounts });
+    expect((await inspect()).mtimeNs).toBe(start.mtimeNs);
+    expect(result.data.repositories[0]).toMatchObject({
+      coverage: "partial",
+      changedSections: ["looseObjects"],
+    });
+    expect(result.data.repositories[0]?.looseObjects).toBeUndefined();
+    expect(result.data.bytes.temporaryNames.uniqueIdentities.files).toBe(1);
+    afterLooseScan(() => writeFile(config, "[core]\nrepositoryFormatVersion = 0\n"));
+    const human = await executeGitInventory({ ...options, looseObjects: true }, { mounts });
+    expect(human).toContain("changed sections: looseObjects");
+  });
   it("finds dot-prefixed owners and reconciles temp pack aliases, external links and sidecars", async () => {
     const { repo, parent, home, options } = await setup(),
       pack = join(repo, ".git", "objects", "pack");

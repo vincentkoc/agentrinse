@@ -10,6 +10,16 @@ import {
   type EntryBudget,
 } from "../../core/storage-observation.js";
 
+export async function gitObjectFormat(common: string) {
+  return (
+    await inventoryGit(
+      common,
+      ["--git-dir", common, "rev-parse", "--show-object-format"],
+      AbortSignal.timeout(5000),
+    ).catch(() => "")
+  ).trim();
+}
+
 export async function inventoryLooseObjects(
   common: string,
   mounts: StorageMount[],
@@ -66,13 +76,7 @@ export async function inventoryLooseObjects(
   result.fanoutsObserved = dirs.entries.length;
   result.withheldEntries = dirs.excluded;
   if (dirs.entries.length) {
-    const format = (
-      await inventoryGit(
-        common,
-        ["--git-dir", common, "rev-parse", "--show-object-format"],
-        AbortSignal.timeout(5000),
-      ).catch(() => "")
-    ).trim();
+    const format = await gitObjectFormat(common);
     if (format !== "sha1" && format !== "sha256") {
       result.coverage = "unknown-object-format";
       return observation;

@@ -47,7 +47,7 @@ The project follows semantic versioning after its first supported release.
 
 - Worktree inventory explains unresolved entries, including empty groups, groups containing files and Git inspection failures.
 
-- Git inventory keeps independently verified pack, loose-object and worktree counts when an unrelated index or fetch update changes the common directory. Changed inventory sections are withheld.
+- Git inventory keeps independently verified pack, loose-object and worktree counts when an unrelated index or fetch update changes the common directory. Changed inventory sections are withheld. A change to the repository configuration triggers a fresh object-format check before loose names are counted.
 
 - The npm package now declares Node.js 22.12.0 as its minimum, matching the requirement of its Commander dependency.
 
