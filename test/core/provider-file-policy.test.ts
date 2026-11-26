@@ -1,10 +1,10 @@
-import { matchProviderFilePolicy } from "../../src/core/provider-file-policy.js";
 import { mkdir, mkdtemp, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { matchProviderFilePolicy } from "../../src/core/provider-file-policy.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import type { ProviderFileQuarantineAction } from "../../src/contracts/action.js";
 import { inspectProviderFile } from "../../src/core/provider-file-identity.js";

@@ -1,9 +1,9 @@
-import { DEFAULT_WORKTREE_RETENTION } from "../../config/defaults.js";
 import { execFile } from "node:child_process";
 import { lstat, realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { DEFAULT_WORKTREE_RETENTION } from "../../config/defaults.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type {
   AuditAdapter,

@@ -1,4 +1,3 @@
-import { artifactInspectionBlocker } from "../../src/adapters/artifacts/inspection-policy.js";
 import { once } from "node:events";
 import { mkdir, mkdtemp, realpath, symlink, utimes, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -7,6 +6,7 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { artifactInspectionBlocker } from "../../src/adapters/artifacts/inspection-policy.js";
 import { ArtifactAuditAdapter } from "../../src/adapters/artifacts/adapter.js";
 import type { AuditContext } from "../../src/contracts/adapter.js";
 import type { MountBoundaryResult } from "../../src/core/mount-boundaries.js";

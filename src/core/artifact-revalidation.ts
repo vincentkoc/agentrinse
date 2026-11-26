@@ -1,7 +1,7 @@
-import { artifactMeasurementChanged } from "./artifact-measurement.js";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { artifactMeasurementChanged } from "./artifact-measurement.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import { openClawPathProtection } from "../adapters/openclaw-ownership.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";

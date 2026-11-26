@@ -1,7 +1,7 @@
-import { artifactInspectionBlocker } from "./inspection-policy.js";
 import { lstat, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { artifactInspectionBlocker } from "./inspection-policy.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import { artifactNameSchema, type ArtifactRemoveAction } from "../../contracts/action.js";

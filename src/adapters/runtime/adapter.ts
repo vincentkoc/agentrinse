@@ -1,10 +1,10 @@
-import { reportOnlyFinding } from "../report-only-finding.js";
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
 import { access, lstat, readdir, realpath } from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
 import { promisify } from "node:util";
 
+import { reportOnlyFinding } from "../report-only-finding.js";
 import type { AuditAdapter, AuditContext, CollectionResult } from "../../contracts/adapter.js";
 import type { Diagnostic } from "../../contracts/diagnostic.js";
 import type { Finding } from "../../contracts/finding.js";

@@ -1,9 +1,9 @@
-import { artifactMeasurementChanged } from "./artifact-measurement.js";
 import { randomUUID } from "node:crypto";
 import { lstatSync, rmSync, type Stats } from "node:fs";
 import { lstat, rename } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { artifactMeasurementChanged } from "./artifact-measurement.js";
 import type { ArtifactRemoveAction } from "../contracts/action.js";
 import { inspectArtifactGitState } from "./artifact-git-state.js";
 import { measurePath, type Measurement } from "./measure.js";
