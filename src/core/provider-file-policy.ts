@@ -102,112 +102,102 @@ function validateAgeAndRecoveryWindow(
   return undefined;
 }
 
+function fileQuarantinePolicy(
+  label: string,
+  policy: Omit<ProviderFilePolicy, "validateAction">,
+): ProviderFilePolicy {
+  return {
+    ...policy,
+    validateAction(action, now) {
+      return validateAgeAndRecoveryWindow(
+        action,
+        now,
+        label,
+        policy.minAgeMinutes,
+        policy.quarantineTtlMinutes,
+      );
+    },
+  };
+}
+
+export const OPENCLAW_SHELL_SNAPSHOT_POLICY = fileQuarantinePolicy("OpenClaw shell snapshots", {
+  id: "openclaw.shell-snapshot",
+  provider: "openclaw",
+  ownerRoot: "provider-root",
+  resourceKind: "agent-cache",
+  displayName: "OpenClaw generated shell snapshot",
+  minAgeMinutes: 30 * 24 * 60,
+  quarantineTtlMinutes: 7 * 24 * 60,
+  description: "Quarantine a generated OpenClaw shell snapshot after 30 days",
+  rootCode: "openclaw-shell-snapshot-retention",
+  rootDetail:
+    "OpenClaw regenerates exec shell snapshots and sweeps stale captures after three days.",
+  tooRecentDetail: "The shell snapshot is inside the 30-day quarantine threshold.",
+  contentPrefix: "# OpenClaw exec shell snapshot. Generated; do not edit.\n",
+  matchesRelativePath(relativePath) {
+    const parts = relativePath.split(sep);
+    return (
+      parts.length === 3 &&
+      parts[0] === "cache" &&
+      parts[1] === "shell-snapshots" &&
+      /^[a-f0-9]{64}\.sh$/u.test(parts[2]!)
+    );
+  },
+});
+
+export const CLAUDE_DEBUG_LOG_POLICY = fileQuarantinePolicy("Claude debug logs", {
+  id: CLAUDE_DEBUG_LOG_POLICY_ID,
+  provider: "claude",
+  ownerRoot: "provider-root",
+  resourceKind: "agent-log-store",
+  displayName: "Claude debug log",
+  minAgeMinutes: CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
+  quarantineTtlMinutes: CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
+  description: "Quarantine a Claude debug log older than 30 days",
+  rootCode: "claude-debug-log-owner-contract",
+  rootDetail:
+    "Claude documents direct debug logs as disposable application data with no user-facing loss.",
+  tooRecentDetail: "The debug log is newer than the 30-day cleanup threshold.",
+  matchesRelativePath: isClaudeDebugLogRelativePath,
+});
+
+export const CLAUDE_CHANGELOG_CACHE_POLICY = fileQuarantinePolicy("Claude changelog caches", {
+  id: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
+  provider: "claude",
+  ownerRoot: "provider-root",
+  resourceKind: "agent-cache",
+  displayName: "Claude changelog cache",
+  minAgeMinutes: CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
+  quarantineTtlMinutes: CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES,
+  description: "Quarantine the Claude changelog cache after 30 days",
+  rootCode: "claude-changelog-cache-owner-contract",
+  rootDetail:
+    "Claude documents cache/changelog.md as a rebuildable release-notes cache refreshed in the background.",
+  tooRecentDetail: "The changelog cache is newer than the 30-day cleanup threshold.",
+  matchesRelativePath: isClaudeChangelogCacheRelativePath,
+});
+
+export const ZED_ROTATED_LOG_POLICY = fileQuarantinePolicy("Zed rotated logs", {
+  id: ZED_ROTATED_LOG_POLICY_ID,
+  provider: "zed",
+  ownerRoot: "zed-log-root",
+  resourceKind: "agent-log-store",
+  displayName: "Zed rotated log",
+  minAgeMinutes: ZED_ROTATED_LOG_MIN_AGE_MINUTES,
+  quarantineTtlMinutes: ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES,
+  description: "Quarantine Zed.log.old after 30 days",
+  rootCode: "zed-rotated-log-owner-contract",
+  rootDetail:
+    "Zed defines Zed.log.old as the single rotated application log beside the active Zed.log.",
+  tooRecentDetail: "The rotated Zed log is newer than the 30-day cleanup threshold.",
+  matchesRelativePath: isZedRotatedLogRelativePath,
+});
+
 export const PROVIDER_FILE_POLICIES: readonly ProviderFilePolicy[] = [
-  {
-    id: "openclaw.shell-snapshot",
-    provider: "openclaw",
-    ownerRoot: "provider-root",
-    resourceKind: "agent-cache",
-    displayName: "OpenClaw generated shell snapshot",
-    minAgeMinutes: 30 * 24 * 60,
-    quarantineTtlMinutes: 7 * 24 * 60,
-    description: "Quarantine a generated OpenClaw shell snapshot after 30 days",
-    rootCode: "openclaw-shell-snapshot-retention",
-    rootDetail:
-      "OpenClaw regenerates exec shell snapshots and sweeps stale captures after three days.",
-    tooRecentDetail: "The shell snapshot is inside the 30-day quarantine threshold.",
-    contentPrefix: "# OpenClaw exec shell snapshot. Generated; do not edit.\n",
-    matchesRelativePath(relativePath) {
-      const parts = relativePath.split(sep);
-      return (
-        parts.length === 3 &&
-        parts[0] === "cache" &&
-        parts[1] === "shell-snapshots" &&
-        /^[a-f0-9]{64}\.sh$/u.test(parts[2]!)
-      );
-    },
-    validateAction(action, now) {
-      return validateAgeAndRecoveryWindow(
-        action,
-        now,
-        "OpenClaw shell snapshots",
-        this.minAgeMinutes,
-        this.quarantineTtlMinutes,
-      );
-    },
-  },
-  {
-    id: CLAUDE_DEBUG_LOG_POLICY_ID,
-    provider: "claude",
-    ownerRoot: "provider-root",
-    resourceKind: "agent-log-store",
-    displayName: "Claude debug log",
-    minAgeMinutes: CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
-    quarantineTtlMinutes: CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
-    description: "Quarantine a Claude debug log older than 30 days",
-    rootCode: "claude-debug-log-owner-contract",
-    rootDetail:
-      "Claude documents direct debug logs as disposable application data with no user-facing loss.",
-    tooRecentDetail: "The debug log is newer than the 30-day cleanup threshold.",
-    matchesRelativePath: isClaudeDebugLogRelativePath,
-    validateAction(action, now) {
-      return validateAgeAndRecoveryWindow(
-        action,
-        now,
-        "Claude debug logs",
-        CLAUDE_DEBUG_LOG_MIN_AGE_MINUTES,
-        CLAUDE_DEBUG_LOG_QUARANTINE_TTL_MINUTES,
-      );
-    },
-  },
-  {
-    id: CLAUDE_CHANGELOG_CACHE_POLICY_ID,
-    provider: "claude",
-    ownerRoot: "provider-root",
-    resourceKind: "agent-cache",
-    displayName: "Claude changelog cache",
-    minAgeMinutes: CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
-    quarantineTtlMinutes: CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES,
-    description: "Quarantine the Claude changelog cache after 30 days",
-    rootCode: "claude-changelog-cache-owner-contract",
-    rootDetail:
-      "Claude documents cache/changelog.md as a rebuildable release-notes cache refreshed in the background.",
-    tooRecentDetail: "The changelog cache is newer than the 30-day cleanup threshold.",
-    matchesRelativePath: isClaudeChangelogCacheRelativePath,
-    validateAction(action, now) {
-      return validateAgeAndRecoveryWindow(
-        action,
-        now,
-        "Claude changelog caches",
-        CLAUDE_CHANGELOG_CACHE_MIN_AGE_MINUTES,
-        CLAUDE_CHANGELOG_CACHE_QUARANTINE_TTL_MINUTES,
-      );
-    },
-  },
-  {
-    id: ZED_ROTATED_LOG_POLICY_ID,
-    provider: "zed",
-    ownerRoot: "zed-log-root",
-    resourceKind: "agent-log-store",
-    displayName: "Zed rotated log",
-    minAgeMinutes: ZED_ROTATED_LOG_MIN_AGE_MINUTES,
-    quarantineTtlMinutes: ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES,
-    description: "Quarantine Zed.log.old after 30 days",
-    rootCode: "zed-rotated-log-owner-contract",
-    rootDetail:
-      "Zed defines Zed.log.old as the single rotated application log beside the active Zed.log.",
-    tooRecentDetail: "The rotated Zed log is newer than the 30-day cleanup threshold.",
-    matchesRelativePath: isZedRotatedLogRelativePath,
-    validateAction(action, now) {
-      return validateAgeAndRecoveryWindow(
-        action,
-        now,
-        "Zed rotated logs",
-        ZED_ROTATED_LOG_MIN_AGE_MINUTES,
-        ZED_ROTATED_LOG_QUARANTINE_TTL_MINUTES,
-      );
-    },
-  },
+  OPENCLAW_SHELL_SNAPSHOT_POLICY,
+  CLAUDE_DEBUG_LOG_POLICY,
+  CLAUDE_CHANGELOG_CACHE_POLICY,
+  ZED_ROTATED_LOG_POLICY,
 ];
 
 export async function authorizeProviderFileAction(

@@ -5,9 +5,8 @@ import type { AuditContext, CollectionResult } from "../contracts/adapter.js";
 import { sha256 } from "../core/digest.js";
 import { inspectProviderFile } from "../core/provider-file-identity.js";
 import {
-  PROVIDER_FILE_POLICIES,
+  ZED_ROTATED_LOG_POLICY,
   resolveProviderFileOwnerRoot,
-  type ProviderFilePolicy,
   ZED_ROTATED_LOG_MIN_AGE_MINUTES,
   ZED_ROTATED_LOG_POLICY_ID,
 } from "../core/provider-file-policy.js";
@@ -23,18 +22,6 @@ function isMissing(error: unknown): boolean {
     error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT"
   );
 }
-
-function zedRotatedLogPolicy(): ProviderFilePolicy {
-  const policy = PROVIDER_FILE_POLICIES.find(
-    (candidate) => candidate.id === ZED_ROTATED_LOG_POLICY_ID && candidate.provider === "zed",
-  );
-  if (policy === undefined) {
-    throw new Error("Zed rotated-log policy is not registered");
-  }
-  return policy;
-}
-
-const ZED_ROTATED_LOG_POLICY = zedRotatedLogPolicy();
 
 export async function collectZedRotatedLog(
   context: AuditContext,
