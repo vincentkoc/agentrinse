@@ -1,0 +1,5 @@
+{
+  "rule": "claude.changelog-cache",
+  "accept": ["cache/changelog.md"],
+  "reject": ["cache/user-notes.md", "cache/nested/changelog.md"]
+}

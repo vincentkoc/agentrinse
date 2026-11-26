@@ -48,6 +48,7 @@
     "lint": "oxlint src test",
     "pack:check": "pnpm build && pnpm schemas:check && node scripts/check-package-manifest.mjs && publint && npm pack --dry-run",
     "rules:check": "node scripts/generate-rule-index.mjs --check",
+    "rules:verify": "pnpm rules:check && vitest run test/rules",
     "rules:generate": "node scripts/generate-rule-index.mjs",
     "schemas:check": "pnpm build && node scripts/generate-schemas.mjs --check",
     "schemas:generate": "pnpm build && node scripts/generate-schemas.mjs",

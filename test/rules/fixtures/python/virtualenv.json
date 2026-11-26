@@ -1,0 +1,5 @@
+{
+  "rule": "python.virtualenv",
+  "accept": [".venv"],
+  "reject": ["venv", "pyproject.toml"]
+}
