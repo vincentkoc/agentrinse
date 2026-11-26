@@ -257,6 +257,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       let gitRefInspectionComplete = true;
       let remotes: string[] = [];
       let remoteReachable = false;
+      let remoteHistoryComplete = true;
       let repositoryCommonDir: string | undefined;
       let measurement: Measurement | undefined;
       let mountBoundaries: MountBoundaryResult = {
@@ -359,6 +360,17 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
                 detached: record.detached,
               },
             );
+            if (
+              this.dependencies.selectedPath !== undefined &&
+              remotes.length > 0 &&
+              !record.detached &&
+              !remoteReachable
+            ) {
+              remoteHistoryComplete =
+                (
+                  await this.runGit(["-C", worktreePath, "rev-parse", "--is-shallow-repository"])
+                ).trim() === "false";
+            }
           } else {
             gitRefInspectionComplete = false;
           }
@@ -447,7 +459,9 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
           branch: status?.branch ?? record.branch,
           upstream: status?.upstream,
           gitRefs,
-          ...(this.dependencies.selectedPath === undefined ? {} : { gitRefInspectionComplete }),
+          ...(this.dependencies.selectedPath === undefined
+            ? {}
+            : { gitRefInspectionComplete, remoteHistoryComplete }),
           detached: record.detached,
           bare: record.bare,
           locked: record.locked,

@@ -184,3 +184,30 @@ native(
     expect(statusCalls).toBe(0);
   },
 );
+
+native(
+  "keeps negative remote ancestry unknown when a shallow boundary hides the true parent",
+  async () => {
+    const { home, repo, options, git } = await fixture();
+    const shallow = join(home, "shallow"),
+      child = join(home, "shallow-linked");
+    const local = (args: string[]) =>
+      runFixtureGit(["-c", "protocol.file.allow=always", ...args], { home });
+    await local(["clone", "--depth=1", "file://" + repo, shallow]);
+    await local(["-C", shallow, "worktree", "add", "-b", "no-upstream", child, "HEAD"]);
+    await git(["commit", "--allow-empty", "-m", "descendant"]);
+    await local(["-C", shallow, "fetch", "--depth=1", "origin"]);
+    expect(
+      (
+        await local(["-C", child, "rev-list", "--max-count=1", "HEAD", "--not", "--remotes"])
+      ).stdout.trim(),
+    ).toMatch(/^[0-9a-f]+$/u);
+    const out = JSON.parse(
+      await executeWorktreeGrades({ ...options, repo: [shallow], worktree: [child] }),
+    );
+    expect(out.data).toMatchObject({ graded: 0, unknown: 1, rows: [{ state: "unknown" }] });
+    expect(out.data.rows[0].reasons).toContain("remote-history-incomplete");
+    expect(out.data.rows[0].reasons).not.toContain("unpushed-commit");
+  },
+  30_000,
+);

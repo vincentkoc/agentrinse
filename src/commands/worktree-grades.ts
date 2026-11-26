@@ -279,6 +279,10 @@ export async function executeWorktreeGrades(
           }
           row.resourceId = finding.resource.id;
           row.reasons = [...new Set(finding.roots.map((root) => root.code))].sort();
+          if (finding.facts.remoteHistoryComplete === false) {
+            row.reasons = row.reasons.filter((code) => code !== "unpushed-commit");
+            row.reasons.push("remote-history-incomplete");
+          }
           if (finding.facts.gitRefInspectionComplete === false)
             row.reasons.push("git-ref-inspection-incomplete");
           if (
