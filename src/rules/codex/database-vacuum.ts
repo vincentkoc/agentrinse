@@ -1,9 +1,9 @@
-import type { AuditContext } from "../contracts/adapter.js";
-import type { Finding, RootEvidence } from "../contracts/finding.js";
-import type { ResourceSnapshot } from "../contracts/resource.js";
-import { databaseIdentitySchema, type DatabaseVacuumAction } from "../contracts/action.js";
-import { sha256 } from "../core/digest.js";
-import { codexDatabaseContractMatches } from "./codex-database.js";
+import type { AuditContext } from "../../contracts/adapter.js";
+import type { Finding, RootEvidence } from "../../contracts/finding.js";
+import type { ResourceSnapshot } from "../../contracts/resource.js";
+import { databaseIdentitySchema, type DatabaseVacuumAction } from "../../contracts/action.js";
+import { sha256 } from "../../core/digest.js";
+import { codexDatabaseContractMatches } from "../../adapters/codex-database.js";
 
 const DATABASE_RECLAIM_THRESHOLD_BYTES = 512 * 1024 * 1024;
 const DATABASE_RECLAIM_RATIO = 0.25;

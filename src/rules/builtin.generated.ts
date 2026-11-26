@@ -4,7 +4,14 @@ import rule1 from "./claude/debug-log.json" with { type: "json" };
 import rule2 from "./openclaw/shell-snapshot.json" with { type: "json" };
 import rule3 from "./zed/rotated-log.json" with { type: "json" };
 
-export const fileRuleDefinitions = [rule0, rule1, rule2, rule3];
+// oxfmt-ignore
+export const fileRuleDefinitions = [
+  rule0,
+  rule1,
+  rule2,
+  rule3,
+];
+// oxfmt-ignore
 export const artifactNames = [
   "node_modules",
   "dist",

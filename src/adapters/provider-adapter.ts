@@ -2,8 +2,7 @@ import { collectProviderFiles } from "./provider-file-discovery.js";
 import { lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { classifyProviderOwnership } from "./provider-ownership-classification.js";
-import { classifyCodexDatabase } from "./codex-database-classification.js";
+import { reportOnlyFinding } from "./report-only-finding.js";
 import type {
   AuditAdapter,
   AuditContext,
@@ -469,10 +468,14 @@ export class ProviderAuditAdapter implements AuditAdapter {
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
     const quarantinableFile = classifyProviderFile(this.spec.id, context, resource);
     if (quarantinableFile) return quarantinableFile;
-    if (this.spec.id === "codex") {
-      const database = classifyCodexDatabase(context, resource);
-      if (database) return database;
-    }
-    return classifyProviderOwnership(this.spec.id, context, resource);
+    return (
+      this.spec.classify?.(context, resource) ??
+      reportOnlyFinding(context, resource, this.spec.id, "certain", [
+        {
+          code: "provider-owned-report-only",
+          detail: "This adapter inventories provider state but does not clean it.",
+        },
+      ])
+    );
   }
 }

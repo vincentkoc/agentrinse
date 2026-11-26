@@ -1,75 +1,8 @@
 import { sep } from "node:path";
-import { z } from "zod";
 
-import { providerMutationIdSchema } from "../contracts/action.js";
+import { providerFileRuleSchema, type ProviderFileRule } from "./schema.js";
+export type { ProviderFileRule } from "./schema.js";
 import { fileRuleDefinitions } from "./builtin.generated.js";
-
-const component = z
-  .string()
-  .regex(/^[a-zA-Z0-9_.-]+$/u)
-  .refine((s) => s !== "." && s !== "..");
-const extension = z.string().regex(/^\.[a-zA-Z0-9]+$/u);
-const text = z.string().min(1);
-const fileDiscovery = {
-  includeBasename: z.boolean(),
-  order: z.number().int().optional(),
-  inspectionFailed: text,
-};
-export const providerFileRuleSchema = z
-  .strictObject({
-    id: z.string().regex(/^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$/u),
-    kind: z.literal("provider-file"),
-    provider: providerMutationIdSchema,
-    ownerRoot: z.enum(["provider-root", "zed-log-root"]),
-    directory: z.array(component),
-    match: z.union([
-      z.strictObject({ name: component }),
-      z.strictObject({ suffix: extension }),
-      z.strictObject({ sha256Suffix: extension }),
-    ]),
-    discovery: z.discriminatedUnion("kind", [
-      z.strictObject({ kind: z.literal("native") }),
-      z.strictObject({
-        kind: z.literal("exact"),
-        ...fileDiscovery,
-        rootUnsafe: text.optional(),
-        rootUnsafeMessage: text.optional(),
-        rootInspectionFailed: text.optional(),
-      }),
-      z.strictObject({
-        kind: z.literal("children"),
-        ...fileDiscovery,
-        enumerationFailed: text,
-        truncated: text,
-        limitLabel: text,
-      }),
-    ]),
-    resourceKind: z.enum(["agent-cache", "agent-log-store"]),
-    displayName: text,
-    minAgeDays: z.number().int().positive(),
-    quarantineDays: z.number().int().positive(),
-    subject: text,
-    description: text,
-    rootCode: text,
-    rootDetail: text,
-    tooRecentDetail: text,
-    contentPrefix: text.optional(),
-  })
-  .superRefine((rule, ctx) => {
-    if (
-      !rule.id.startsWith(rule.provider + ".") ||
-      (rule.ownerRoot === "zed-log-root" && rule.provider !== "zed") ||
-      (rule.discovery.kind === "exact" && !("name" in rule.match)) ||
-      (rule.provider === "openclaw" && rule.discovery.kind !== "native")
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "File rule disagrees with its owner or discovery method",
-      });
-    }
-  });
-
-export type ProviderFileRule = z.infer<typeof providerFileRuleSchema>;
 
 export function matchesRulePath(rule: ProviderFileRule, relativePath: string): boolean {
   const parts = relativePath.split(sep);
@@ -88,20 +21,68 @@ export function matchesRulePath(rule: ProviderFileRule, relativePath: string): b
   return name.endsWith(suffix) && /^[a-f0-9]{64}$/u.test(name.slice(0, -suffix.length));
 }
 
-export const fileRules = fileRuleDefinitions
-  .map((definition) => {
-    const rule = providerFileRuleSchema.parse(definition);
-    return {
+type NameMatch = ProviderFileRule["match"];
+
+function overlaps(a: NameMatch, b: NameMatch): boolean {
+  if ("name" in a) {
+    const name = a.name.toLowerCase();
+    if ("name" in b) return name === b.name.toLowerCase();
+    if ("suffix" in b) return name.endsWith(b.suffix.toLowerCase());
+    const suffix = b.sha256Suffix.toLowerCase();
+    return name.endsWith(suffix) && /^[a-f0-9]{64}$/u.test(name.slice(0, -suffix.length));
+  }
+  if ("name" in b) return overlaps(b, a);
+  return (
+    ("suffix" in a ? a.suffix : a.sha256Suffix).toLowerCase() ===
+    ("suffix" in b ? b.suffix : b.sha256Suffix).toLowerCase()
+  );
+}
+
+function relativeDirectory(rule: ProviderFileRule) {
+  // On Linux and under an explicit Zed root its log directory is <provider>/logs.
+  const base = rule.ownerRoot === "zed-log-root" ? ["logs"] : [];
+  return [...base, ...rule.directory].join("/").toLowerCase();
+}
+
+export function registerFileRules(definitions: readonly unknown[]) {
+  const registered = definitions.map((definition) => providerFileRuleSchema.parse(definition));
+  for (const [index, rule] of registered.entries()) {
+    for (const other of registered.slice(0, index)) {
+      if (
+        rule.id === other.id ||
+        (rule.discovery.kind === "native" &&
+          other.discovery.kind === "native" &&
+          rule.discovery.collector === other.discovery.collector) ||
+        (rule.provider === other.provider &&
+          relativeDirectory(rule) === relativeDirectory(other) &&
+          overlaps(rule.match, other.match))
+      ) {
+        throw new Error("Conflicting file rules " + other.id + " and " + rule.id);
+      }
+    }
+  }
+  return registered
+    .map((rule) => ({
       ...rule,
       minAgeMinutes: rule.minAgeDays * 1440,
       quarantineTtlMinutes: rule.quarantineDays * 1440,
-    };
-  })
-  .sort(
-    (left, right) =>
-      (left.discovery.kind === "native" ? 100 : (left.discovery.order ?? 100)) -
-      (right.discovery.kind === "native" ? 100 : (right.discovery.order ?? 100)),
+    }))
+    .sort(
+      (a, b) =>
+        (a.discovery.kind === "native" ? 100 : (a.discovery.order ?? 100)) -
+        (b.discovery.kind === "native" ? 100 : (b.discovery.order ?? 100)),
+    );
+}
+
+export const fileRules = registerFileRules(fileRuleDefinitions);
+
+export function nativeFileRule(
+  collector: Extract<ProviderFileRule["discovery"], { kind: "native" }>["collector"],
+) {
+  return fileRules.find(
+    (rule) => rule.discovery.kind === "native" && rule.discovery.collector === collector,
   );
+}
 
 export function matchProviderFilePolicy(provider: string, id: unknown, relativePath: string) {
   return fileRules.find(

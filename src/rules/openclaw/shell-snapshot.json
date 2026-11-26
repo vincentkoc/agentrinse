@@ -17,7 +17,8 @@
   "rootDetail": "OpenClaw regenerates exec shell snapshots and sweeps stale captures after three days.",
   "tooRecentDetail": "The shell snapshot is inside the 30-day quarantine threshold.",
   "discovery": {
-    "kind": "native"
+    "kind": "native",
+    "collector": "openclaw-shell-snapshot"
   },
   "contentPrefix": "# OpenClaw exec shell snapshot. Generated; do not edit.\n"
 }
