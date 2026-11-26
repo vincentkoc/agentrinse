@@ -22,6 +22,7 @@ import {
   executeShowResourceCommand,
   executeShowRunCommand,
 } from "./commands/show.js";
+import { executeStorageCommand } from "./commands/storage.js";
 import { executeWorktreesCommand } from "./commands/worktrees.js";
 import { executeUndoCommand } from "./commands/undo.js";
 import { CommandInterruptedError } from "./core/interruption.js";
@@ -92,6 +93,54 @@ export function buildProgram(): Command {
         }
       },
     );
+
+  program
+    .command("storage")
+    .description(
+      "Inventory explicit hidden storage and native mount metadata without creating a plan.",
+    )
+    .option(
+      "--family <name>",
+      "select developer, retained, vm, mounts, crabbox or git; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--repo <path>",
+      "inspect pack metadata in a durable Git owner; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--crabbox-root <path>",
+      "use an explicit source staging container; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--retained-root <path>",
+      "observe one explicit protected location without listing it; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--volume <path>",
+      "identify the covering kernel mount without probing the path; repeatable",
+      collectOption,
+      [],
+    )
+    .option(
+      "--measure",
+      "measure eligible catalog cache trees or explicitly selected Crabbox staging",
+      false,
+    )
+    .option("--rule <id>", "select a catalog location by rule ID; repeatable", collectOption, [])
+    .option("--max-entries <count>", "maximum enumerated entries across storage roots", "20000")
+    .option("--redact", "redact paths in output", false)
+    .option("--json", "emit versioned machine output", false)
+    .action(async (options) => {
+      process.stdout.write(await executeStorageCommand({ ...options, home: homedir() }));
+    });
 
   program
     .command("worktrees")

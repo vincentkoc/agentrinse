@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,7 +13,7 @@ import { runFixtureGit, spawnFixtureGit } from "../helpers/git.js";
 describe("GitWorktreeAuditAdapter", () => {
   it("requires an explicit repository root", async () => {
     const context: AuditContext = {
-      home: await mkdtemp(join(tmpdir(), "agentrinse-git-")),
+      home: createFixtureDirectory(join(tmpdir(), "agentrinse-git-")),
       now: new Date("2026-07-23T00:00:00.000Z"),
       auditId: "audit-git",
     };
@@ -22,7 +23,7 @@ describe("GitWorktreeAuditAdapter", () => {
   });
 
   it("contains repository collection failures as diagnostics", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-"));
     const context: AuditContext = {
       home,
       now: new Date("2026-07-23T00:00:00.000Z"),
@@ -47,7 +48,7 @@ describe("GitWorktreeAuditAdapter", () => {
   });
 
   it("contains malformed fleet discovery without returning partial resources", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-"));
     const context: AuditContext = {
       home,
       now: new Date("2026-07-23T00:00:00.000Z"),
@@ -77,7 +78,7 @@ describe("GitWorktreeAuditAdapter", () => {
   });
 
   it("protects a fleet worktree when its path inspection fails", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-"));
     const context: AuditContext = {
       home,
       now: new Date("2026-07-23T00:00:00.000Z"),
@@ -121,7 +122,7 @@ describe("GitWorktreeAuditAdapter", () => {
   });
 
   it("inventories worktrees as protected using a fake Git runner", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-"));
     const main = join(home, "repo");
     const linked = join(home, "task");
     await mkdir(main);
@@ -278,7 +279,7 @@ describe("GitWorktreeAuditAdapter", () => {
   });
 
   it("keeps the primary worktree identity when auditing from a linked worktree", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-"));
     const main = join(home, "repo");
     const linked = join(home, "task");
     await mkdir(main);
@@ -348,7 +349,7 @@ describe("GitWorktreeAuditAdapter", () => {
   });
 
   it("offers quarantine only for a fully proven inactive linked worktree", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-"));
     const main = join(home, "repo");
     const linked = join(home, "task");
     await mkdir(main);
@@ -475,7 +476,7 @@ describe("GitWorktreeAuditAdapter", () => {
   });
 
   it("discovers an eligible linked worktree from real Git porcelain", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-real-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-real-"));
     const main = join(home, "repo");
     const linked = join(home, "task");
     const remote = join(home, "remote.git");
@@ -645,7 +646,7 @@ describe("GitWorktreeAuditAdapter", () => {
     });
   });
   it("inspects a repository whose index listing exceeds 4 MiB with the default Git runner", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-large-index-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-large-index-"));
     const main = join(home, "repo");
     await runFixtureGit(["init", "-b", "main", main], { home });
     await writeFile(join(main, "README.md"), "fixture\n");

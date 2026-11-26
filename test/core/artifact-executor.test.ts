@@ -1,5 +1,6 @@
 import { lstatSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -20,7 +21,7 @@ async function fixture(nested = false): Promise<{
   project: string;
   target: string;
 }> {
-  const root = await mkdtemp(join(tmpdir(), "agentrinse-execute-"));
+  const root = createFixtureDirectory(join(tmpdir(), "agentrinse-execute-"));
   await assertDestructiveFixtureRoot(root);
   const project = join(root, "project");
   const target = join(project, "node_modules");

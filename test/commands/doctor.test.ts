@@ -1,4 +1,5 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -40,7 +41,7 @@ async function setup(): Promise<{
   configPath: string;
   stateRoot: string;
 }> {
-  const home = await mkdtemp(join(tmpdir(), "agentrinse-doctor-"));
+  const home = createFixtureDirectory(join(tmpdir(), "agentrinse-doctor-"));
   const configPath = join(home, "config.json");
   const stateRoot = join(home, "state", "agentrinse");
   await writeJsonAtomic(configPath, DEFAULT_CONFIG);

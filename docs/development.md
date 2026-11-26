@@ -36,7 +36,7 @@ It never reads data from `$HOME`.
 
 ## Fixture Rules
 
-- create fixtures with `mkdtemp`
+- allocate Vitest directories with `createFixtureDirectory` and script directories with `createScriptFixture`; both retain the caller’s chosen temporary parent and dispose of their exact allocation at teardown
 - call `assertDestructiveFixtureRoot` before any fixture can remove data
 - keep destructive roots below the resolved OS temporary directory
 - never use `/`, the temporary root itself, the real home, an ancestor of the

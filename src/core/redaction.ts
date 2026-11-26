@@ -22,6 +22,7 @@ const IDENTIFIER_KEYS = new Set([
 ]);
 const PATH_KEYS = new Set([
   "home",
+  "commonDirectory",
   "isolationPath",
   "mountBoundaryPaths",
   "path",

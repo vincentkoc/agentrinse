@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { mkdir, stat, symlink, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +19,7 @@ async function fixture(): Promise<{
   project: string;
   target: string;
 }> {
-  const home = realpathSync(await mkdtemp(join(tmpdir(), "agentrinse-revalidate-")));
+  const home = realpathSync(createFixtureDirectory(join(tmpdir(), "agentrinse-revalidate-")));
   const project = join(home, "project");
   const target = join(project, "node_modules");
   await mkdir(target, { recursive: true });

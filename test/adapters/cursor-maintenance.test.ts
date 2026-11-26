@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,7 +16,7 @@ import type { AuditContext } from "../../src/contracts/adapter.js";
 
 async function fixtureContext(): Promise<AuditContext> {
   return {
-    home: await mkdtemp(join(tmpdir(), "agentrinse-cursor-maintenance-")),
+    home: createFixtureDirectory(join(tmpdir(), "agentrinse-cursor-maintenance-")),
     now: new Date("2026-07-29T00:00:00.000Z"),
     auditId: "audit-cursor-maintenance",
   };
@@ -70,7 +71,7 @@ describe("Cursor native database maintenance reporting", () => {
   });
 
   it("reports missing database companions without following paths", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-cursor-companions-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-cursor-companions-"));
     const database = join(root, "state.vscdb");
     await writeFile(database, "database");
 
@@ -82,7 +83,7 @@ describe("Cursor native database maintenance reporting", () => {
   });
 
   it("omits companion byte counts when measurement is disabled", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-cursor-companions-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-cursor-companions-"));
     const database = join(root, "state.vscdb");
     await writeFile(database, "database");
     await writeFile(`${database}.backup`, "backup-copy");
@@ -128,7 +129,7 @@ describe("Cursor native database maintenance reporting", () => {
   it("refuses a symlinked database parent without inspecting outside files", async () => {
     const context = await fixtureContext();
     const root = join(context.home, "cursor-symlinked-parent");
-    const outside = await mkdtemp(join(tmpdir(), "agentrinse-cursor-outside-"));
+    const outside = createFixtureDirectory(join(tmpdir(), "agentrinse-cursor-outside-"));
     await mkdir(join(root, "User"), { recursive: true });
     await writeFile(join(outside, "state.vscdb"), "outside-database");
     await writeFile(join(outside, "state.vscdb.backup"), "outside-backup");

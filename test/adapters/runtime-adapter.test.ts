@@ -1,4 +1,5 @@
-import { chmod, mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -9,7 +10,7 @@ import type { AuditContext } from "../../src/contracts/adapter.js";
 
 async function fixtureContext(): Promise<AuditContext> {
   return {
-    home: await mkdtemp(join(tmpdir(), "agentrinse-runtime-")),
+    home: createFixtureDirectory(join(tmpdir(), "agentrinse-runtime-")),
     now: new Date("2026-07-24T00:00:00.000Z"),
     auditId: "audit-runtime",
   };

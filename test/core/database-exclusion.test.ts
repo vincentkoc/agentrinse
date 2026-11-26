@@ -1,5 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
-import { chmod, lstat, mkdtemp } from "node:fs/promises";
+import { chmod, lstat } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -21,7 +22,7 @@ const hasSqlite = (() => {
 
 describe("database exclusion", () => {
   it.runIf(hasSqlite)("blocks SQLite readers and writers until release", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-lock-"));
     const path = join(root, "state_5.sqlite");
     await execFileAsync("sqlite3", [
       path,

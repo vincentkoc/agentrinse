@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -39,7 +40,7 @@ async function writeOwner(root: string, value: ApplyLockOwner): Promise<string> 
 
 describe("apply state lock", () => {
   it("allows one owner and refuses a concurrent owner", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     const first = await acquireApplyLock(root, request());
 
     await expect(acquireApplyLock(root, request("plan-2", "run-2"))).rejects.toBeInstanceOf(
@@ -52,7 +53,7 @@ describe("apply state lock", () => {
   });
 
   it("records the plan, run, command, and process identity", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     const lock = await acquireApplyLock(root, request());
     const stored = JSON.parse(await readFile(lock.path, "utf8")) as ApplyLockOwner;
 
@@ -70,7 +71,7 @@ describe("apply state lock", () => {
   });
 
   it("makes release idempotent", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     const lock = await acquireApplyLock(root, request());
 
     await lock.release();
@@ -78,12 +79,12 @@ describe("apply state lock", () => {
   });
 
   it("reports an absent lock", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await expect(inspectApplyLock(root)).resolves.toMatchObject({ status: "absent" });
   });
 
   it("reports an active owner when PID and process start identity match", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await writeOwner(root, owner({ createdAt: "2000-01-01T00:00:00.000Z" }));
 
     await expect(
@@ -94,7 +95,7 @@ describe("apply state lock", () => {
   });
 
   it("does not treat age as proof that a lock is stale", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await writeOwner(root, owner({ createdAt: "2000-01-01T00:00:00.000Z" }));
 
     await expect(
@@ -105,7 +106,7 @@ describe("apply state lock", () => {
   });
 
   it("reports and recovers a lock whose recorded process is dead", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     const path = await writeOwner(root, owner());
     const dependencies = {
       inspectProcess: async () => ({ status: "dead" as const }),
@@ -122,7 +123,7 @@ describe("apply state lock", () => {
   });
 
   it("reports PID reuse as stale", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await writeOwner(root, owner());
 
     await expect(
@@ -136,7 +137,7 @@ describe("apply state lock", () => {
   });
 
   it("refuses recovery when a live PID has no recorded start identity", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     const value = owner();
     delete value.processStartIdentity;
     await writeOwner(root, value);
@@ -154,7 +155,7 @@ describe("apply state lock", () => {
   });
 
   it("refuses recovery for a lock recorded on another host", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await writeOwner(root, owner({ hostname: "another-host" }));
 
     await expect(inspectApplyLock(root)).resolves.toMatchObject({ status: "remote" });
@@ -162,7 +163,7 @@ describe("apply state lock", () => {
   });
 
   it("refuses recovery for malformed lock records", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await writeFile(join(root, "apply.lock"), '{"pid":42}\n');
 
     await expect(inspectApplyLock(root)).resolves.toMatchObject({ status: "malformed" });
@@ -170,7 +171,7 @@ describe("apply state lock", () => {
   });
 
   it("does not remove a replacement lock during recovery", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     const path = await writeOwner(root, owner());
     const replacement = owner({
       token: "replacement",
@@ -193,7 +194,7 @@ describe("apply state lock", () => {
   });
 
   it("serializes stale recovery before inspecting the apply lock", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await writeOwner(root, owner());
     let continueFirst!: () => void;
     let firstEntered!: () => void;
@@ -228,7 +229,7 @@ describe("apply state lock", () => {
   });
 
   it("ignores an orphaned recovery marker when no process holds its kernel lock", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     await writeOwner(root, owner());
     await writeFile(join(root, "apply.recovery.lock"), "orphaned marker\n");
 
@@ -240,7 +241,7 @@ describe("apply state lock", () => {
   });
 
   it("does not remove a replacement lock during release", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-lock-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-lock-"));
     const lock = await acquireApplyLock(root, request());
     await writeFile(
       lock.path,

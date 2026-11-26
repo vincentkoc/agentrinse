@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
-import { access, mkdir, mkdtemp, open, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, open, readFile, rm, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +15,7 @@ import {
 const roots: string[] = [];
 
 async function tempRoot(prefix: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), prefix));
+  const root = createFixtureDirectory(join(tmpdir(), prefix));
   roots.push(root);
   return root;
 }

@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { mkdir, realpath, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -107,7 +108,7 @@ describe("revalidateWorktreeQuarantine", () => {
   });
 
   it("blocks a worktree newly referenced by provider metadata", async () => {
-    const home = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-revalidation-")));
+    const home = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-revalidation-")));
     const main = join(home, "repo");
     const linked = join(home, "task");
     const remote = join(home, "remote.git");

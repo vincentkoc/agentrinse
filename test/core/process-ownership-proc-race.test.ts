@@ -1,5 +1,6 @@
 import * as fs from "node:fs/promises";
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,7 +50,7 @@ async function fakeProcess(procRoot: string, pid: number, cwd: string): Promise<
 }
 
 async function fixture(): Promise<{ procRoot: string; target: string; elsewhere: string }> {
-  const root = await mkdtemp(join(tmpdir(), "agentrinse-proc-race-"));
+  const root = createFixtureDirectory(join(tmpdir(), "agentrinse-proc-race-"));
   const procRoot = join(root, "proc");
   const target = join(root, "project", "build");
   const elsewhere = join(root, "elsewhere");

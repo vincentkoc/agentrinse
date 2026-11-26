@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -57,7 +58,7 @@ describe("cheapWorktreeProtections", () => {
 
 describe("GitWorktreeAuditAdapter ownership deferral", () => {
   it("skips process ownership for 100+ worktrees already excluded by cheap gates", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-budget-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-budget-"));
     const main = join(home, "main");
     const context: AuditContext = {
       home,
@@ -162,7 +163,7 @@ describe("GitWorktreeAuditAdapter ownership deferral", () => {
   }, 15_000);
 
   it("still probes ownership for a worktree that survives cheap gates", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-git-candidate-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-git-candidate-"));
     const main = join(home, "main");
     const linked = join(home, "old-clean");
     await mkdir(main, { recursive: true });

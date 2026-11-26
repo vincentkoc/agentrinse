@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,7 +17,7 @@ describe("loadConfig", () => {
   });
 
   it("loads the default home config when present", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(home, ".config", "agentrinse", "config.json");
     await mkdir(join(home, ".config", "agentrinse"), { recursive: true });
     await writeFile(
@@ -34,7 +35,7 @@ describe("loadConfig", () => {
   });
 
   it("uses safe defaults when the default home config is absent", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const loaded = await loadConfigForHome(home, undefined, {});
 
     expect(loaded.exists).toBe(false);
@@ -42,7 +43,7 @@ describe("loadConfig", () => {
   });
 
   it("merges a partial config over defaults", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(root, "config.json");
     await writeFile(
       path,
@@ -106,7 +107,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects unbounded audit command budgets", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(root, "config.json");
     await writeFile(
       path,
@@ -120,7 +121,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects unbounded audit total deadlines", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-deadline-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-deadline-"));
     const path = join(root, "config.json");
     await writeFile(
       path,
@@ -134,7 +135,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects relative artifact roots", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(root, "config.json");
     await writeFile(
       path,
@@ -150,7 +151,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects duplicate artifact names", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(root, "config.json");
     await writeFile(
       path,
@@ -171,7 +172,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects duplicate and overlapping artifact scopes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(root, "config.json");
     await writeFile(
       path,
@@ -202,7 +203,7 @@ describe("loadConfig", () => {
   });
 
   it("rejects ambiguous, relative, and malformed pins", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(root, "config.json");
     await writeFile(
       path,
@@ -227,7 +228,7 @@ describe("loadConfig", () => {
     "refs/heads/foo//bar",
     "refs/heads/foo~1",
   ])("rejects invalid Git pin ref %s", async (gitRef) => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-config-"));
     const path = join(root, "config.json");
     await writeFile(
       path,

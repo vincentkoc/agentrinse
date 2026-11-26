@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { access, mkdtemp, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
+import { access, readFile, realpath, rename, symlink, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -15,7 +16,7 @@ import {
 import { runFixtureGit } from "../helpers/git.js";
 
 async function lockFixture() {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "agentrinse-worktree-lock-")));
+  const root = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-worktree-lock-")));
   const main = join(root, "repo");
   const linked = join(root, "task");
   await runFixtureGit(["init", "-b", "main", main], { home: root });

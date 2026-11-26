@@ -1,5 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
-import { chmod, lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -139,7 +140,7 @@ function dependencies() {
 
 describe("database vacuum execution and recovery", () => {
   it.runIf(hasSqlite)("compacts and restores a real synthetic SQLite state database", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-sqlite-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-sqlite-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await execFileAsync("sqlite3", [
@@ -208,7 +209,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("retains the original, installs the compacted copy, and restores through undo", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-executor-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-executor-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -240,7 +241,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("creates the vacuum output inside an owner-only temporary directory", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-private-temp-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-private-temp-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -263,7 +264,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("resumes an interrupted sidecar restore without losing either database", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-resume-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-resume-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -312,7 +313,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("rejects recovery manifests that escape their owned backup paths", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-paths-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-paths-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -341,7 +342,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("rolls back when the compacted copy cannot be installed", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-rollback-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-rollback-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -369,7 +370,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("rolls back an exchanged database when a sidecar archive fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-sidecar-rollback-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-sidecar-rollback-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -410,7 +411,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("finishes an executor-produced partial rollback through undo", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-partial-rollback-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-partial-rollback-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -456,7 +457,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("removes the compacted temporary file when pre-swap metadata becomes stale", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-stale-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-stale-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -494,7 +495,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("removes partial vacuum output when the compaction subprocess fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-vacuum-failure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-vacuum-failure-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -526,7 +527,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("removes a rejected compacted copy after contract validation fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-contract-failure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-contract-failure-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -567,7 +568,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("refuses a WAL created after exclusive access is acquired", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-late-wal-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-late-wal-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -595,7 +596,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("restores the original after a crash between exchange and archive", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-exchange-crash-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-exchange-crash-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -649,7 +650,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("restores the original after a crash in the installing state", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-installing-crash-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-installing-crash-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -680,7 +681,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("distinguishes a completed two-file rollback from a completed installation", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-two-file-rollback-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-two-file-rollback-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -713,7 +714,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("finishes an original-only rollback after an interrupted sidecar restore", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-original-only-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-original-only-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -753,7 +754,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("refuses interrupted-install recovery after the compacted database changes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-installing-drift-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-installing-drift-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -784,7 +785,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("rechecks authorization immediately before the first database rename", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-expiry-boundary-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-expiry-boundary-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -815,7 +816,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("honors cancellation immediately before the database exchange", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-cancel-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-cancel-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -854,7 +855,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("records a partial installation when exclusion release fails", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-release-failure-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-release-failure-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -893,7 +894,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("refuses undo after the installed database changes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-drift-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-drift-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -917,7 +918,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("rechecks Codex ownership immediately before the undo rename", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-undo-boundary-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-undo-boundary-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -949,7 +950,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("rechecks database content while both undo inodes are locked", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-undo-content-boundary-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-undo-content-boundary-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -998,7 +999,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("purges an expired rollback copy only while Codex is offline", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-purge-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-purge-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -1045,7 +1046,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("purges a healthy rollback copy after normal Codex database writes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-purge-used-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-purge-used-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -1072,7 +1073,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("finishes a purging manifest after the rollback file was already removed", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-purge-resume-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-purge-resume-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");
@@ -1103,7 +1104,7 @@ describe("database vacuum execution and recovery", () => {
   });
 
   it("resumes purge after only one retained sidecar was deleted", async () => {
-    const root = await mkdtemp(join(tmpdir(), "agentrinse-db-purge-sidecar-resume-"));
+    const root = createFixtureDirectory(join(tmpdir(), "agentrinse-db-purge-sidecar-resume-"));
     const originalPath = join(root, "state_5.sqlite");
     const backupDirectory = join(root, "backups");
     await writeFile(originalPath, "original");

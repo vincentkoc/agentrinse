@@ -1,14 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  access,
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  readdir,
-  utimes,
-  writeFile,
-} from "node:fs/promises";
+import { access, lstat, mkdir, readFile, readdir, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -146,7 +138,7 @@ describe("stateless provider audit", () => {
   });
 
   it("rejects a selected disabled provider with a relative configured root", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-relative-provider-root-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-relative-provider-root-"));
     const configPath = join(home, "config.json");
     await writeFile(
       configPath,
@@ -175,7 +167,7 @@ describe("stateless provider audit", () => {
   });
 
   it("emits NDJSON without resolving a state path", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-stateless-ndjson-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-stateless-ndjson-"));
     const result = await executeAuditCommand({
       home,
       noState: true,
@@ -194,7 +186,7 @@ describe("stateless provider audit", () => {
   });
 
   it("runs quick inventory without recursive measurement or candidate actions", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-quick-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-quick-home-"));
     const codexRoot = join(home, "selected-codex");
     const claudeRoot = join(home, "selected-claude");
     const sessions = join(codexRoot, "sessions");
@@ -277,7 +269,7 @@ describe("stateless provider audit", () => {
   });
 
   it("omits candidate actions from JSON, NDJSON, and extracted plans", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-stateless-actions-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-stateless-actions-"));
     const claudeRoot = join(home, "claude");
     const debugRoot = join(claudeRoot, "debug");
     const configPath = join(home, "config.json");
@@ -362,7 +354,7 @@ describe("stateless provider audit", () => {
   });
 
   it("audits only selected providers without changing the synthetic home", async () => {
-    const home = await mkdtemp(join(tmpdir(), "agentrinse-stateless-home-"));
+    const home = createFixtureDirectory(join(tmpdir(), "agentrinse-stateless-home-"));
     const cursorRoot = join(home, "selected", "cursor");
     const copilotRoot = join(home, "selected", "copilot");
     const opencodeRoot = join(home, "selected", "opencode");

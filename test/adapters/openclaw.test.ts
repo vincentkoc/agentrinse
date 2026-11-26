@@ -1,13 +1,5 @@
-import {
-  lstat,
-  mkdir,
-  mkdtemp,
-  readFile,
-  realpath,
-  symlink,
-  utimes,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, symlink, utimes, writeFile } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -28,7 +20,7 @@ import { providerFileQuarantineEntrySchema } from "../../src/contracts/provider-
 import { stateLayout } from "../../src/state/layout.js";
 
 async function tempHome() {
-  return realpath(await mkdtemp(join(tmpdir(), "agentrinse-claw-")));
+  return realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-claw-")));
 }
 
 describe("OpenClaw storage", () => {

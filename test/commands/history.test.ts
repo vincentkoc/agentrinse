@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,7 +25,7 @@ function run(runId: string, startedAt: string, status: CleanupRun["status"]): Cl
 
 describe("history command", () => {
   it("sorts runs newest first and filters by duration", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "agentrinse-history-"));
+    const stateRoot = createFixtureDirectory(join(tmpdir(), "agentrinse-history-"));
     const layout = stateLayout(stateRoot);
     await writeJsonAtomic(
       join(layout.runs, "older.json"),
@@ -49,7 +49,7 @@ describe("history command", () => {
   });
 
   it("reports an empty state directory", async () => {
-    const stateRoot = await mkdtemp(join(tmpdir(), "agentrinse-history-"));
+    const stateRoot = createFixtureDirectory(join(tmpdir(), "agentrinse-history-"));
     const result = await executeHistoryCommand({
       home: "/unused",
       stateDir: stateRoot,
