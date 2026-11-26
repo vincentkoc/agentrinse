@@ -5,6 +5,7 @@ import {
   directStorageEntries,
   mapDirectStorageEntries,
   observeStoragePath,
+  sameDirectoryBinding,
   sameObservation,
   type EntryBudget,
 } from "../../core/storage-observation.js";
@@ -24,12 +25,44 @@ export async function inventoryLooseObjects(
     fanoutsComplete: 0,
     withheldEntries: 0,
   };
+  let verifyFanouts = async (_mounts: StorageMount[]) => false;
+  const observation = {
+    report: result,
+    verifyFanouts: (mounts: StorageMount[]) => verifyFanouts(mounts),
+  };
   if (!start.stats?.isDirectory() || coveringMount(common, mounts) !== coveringMount(root, mounts))
-    return result;
+    return observation;
   const dirs = await directStorageEntries(root, mounts, budget, {
     expected: start.stats,
     select: (name) => /^[a-f\d]{2}$/u.test(name),
   });
+  // If another direct entry (such as pack/) changes later, compare the bounded two-hex
+  // directory set. Its file contents do not need a second traversal.
+  const rootStats = start.stats;
+  verifyFanouts = async (currentMounts: StorageMount[]) => {
+    const current = await observeStoragePath(root, currentMounts);
+    if (
+      !current.stats ||
+      !sameDirectoryBinding(rootStats, current.stats) ||
+      dirs.coverage !== "direct-complete" ||
+      dirs.excluded
+    )
+      return false;
+    const names = new Map(dirs.entries.map((entry) => [entry.name, entry.stats]));
+    const fresh = await directStorageEntries(root, currentMounts, budget, {
+      expected: current.stats,
+      select: (name) => /^[a-f\d]{2}$/u.test(name),
+    });
+    return (
+      fresh.coverage === "direct-complete" &&
+      !fresh.excluded &&
+      names.size === fresh.entries.length &&
+      fresh.entries.every((entry) => {
+        const first = names.get(entry.name);
+        return first && sameObservation(first, entry.stats);
+      })
+    );
+  };
   result.fanoutsObserved = dirs.entries.length;
   result.withheldEntries = dirs.excluded;
   if (dirs.entries.length) {
@@ -42,7 +75,7 @@ export async function inventoryLooseObjects(
     ).trim();
     if (format !== "sha1" && format !== "sha256") {
       result.coverage = "unknown-object-format";
-      return result;
+      return observation;
     }
     result.objectFormat = format;
     const suffix = format === "sha1" ? /^[a-f\d]{38}$/u : /^[a-f\d]{62}$/u;
@@ -71,7 +104,7 @@ export async function inventoryLooseObjects(
   if (!end.stats || !sameObservation(start.stats, end.stats)) {
     result.coverage = "changed";
     result.regularNames = 0;
-    return result;
+    return observation;
   }
   if (
     dirs.coverage === "direct-complete" &&
@@ -80,5 +113,5 @@ export async function inventoryLooseObjects(
   )
     result.coverage = "complete";
   else if (!budget.remaining) result.coverage = "entry-limit";
-  return result;
+  return observation;
 }

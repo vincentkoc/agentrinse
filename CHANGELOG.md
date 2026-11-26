@@ -45,6 +45,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- Git inventory keeps independently verified pack, loose-object and worktree counts when an unrelated index or fetch update changes the common directory. Changed inventory sections are withheld.
+
 - The npm package now declares Node.js 22.12.0 as its minimum, matching the requirement of its Commander dependency.
 
 - Crabbox mirror inventory recognizes UUID-backed receipts after macOS renumbers a mounted filesystem. Device-only receipts still require their recorded device.

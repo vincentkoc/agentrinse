@@ -51,6 +51,21 @@ export async function observeStoragePath(
   return { status: "unavailable" };
 }
 
+// A directory can keep its binding while unrelated entries are created or renamed inside it.
+export function sameDirectoryBinding(a: BigIntStats, b: BigIntStats): boolean {
+  return (
+    a.isDirectory() &&
+    b.isDirectory() &&
+    a.ino > 0n &&
+    a.dev === b.dev &&
+    a.ino === b.ino &&
+    a.birthtimeNs === b.birthtimeNs &&
+    a.mode === b.mode &&
+    a.uid === b.uid &&
+    a.gid === b.gid
+  );
+}
+
 export function sameObservation(a: BigIntStats, b: BigIntStats): boolean {
   return (
     a.dev === b.dev &&

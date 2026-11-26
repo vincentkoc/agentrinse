@@ -13,7 +13,7 @@ Run `agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --redact --json`.
 
 For many unpacked objects, add `--loose-objects`. It counts regular names against Git’s object format without opening object contents.
 
-Check the envelope status, per-owner coverage and entry budget first. Compare temporary filenames with unique inodes, mixed links and unobserved links. Allocated file blocks can share physical extents. A temporary name, lock, orphan-looking sidecar or Git-prunable registration supplies inventory evidence. Reclaimable bytes remain unknown.
+Check the envelope status, per-owner coverage and entry budget first. A repository can retain verified counts while listing changed sections in `changedSections`. Retry those sections when the repository is quiet. Compare temporary filenames with unique inodes, mixed links and unobserved links. Allocated file blocks can share physical extents. A temporary name, lock, orphan-looking sidecar or Git-prunable registration supplies inventory evidence. Reclaimable bytes remain unknown.
 
 When the checkout allocator supports it, stream its read-only inventory projection directly into the CLI using `gwt finish-status --all --read-only --inventory-json | agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --gwt-status-stdin`. Add `--worktree-root "$MANAGED_CONTAINER"` for a custom container. Legacy finish-status arrays establish reported signoff only. The native allocator must check current holders, protected history, recovery and retirement before a closeout.
 

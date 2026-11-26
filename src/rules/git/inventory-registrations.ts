@@ -9,7 +9,7 @@ import {
   sameObservation,
   type EntryBudget,
 } from "../../core/storage-observation.js";
-import { coveringMount, type StorageMount } from "../../core/storage-mounts.js";
+import { coveringMount, sameStorageMount, type StorageMount } from "../../core/storage-mounts.js";
 import { protectedStorageName } from "../../core/storage-measurement.js";
 import { readProjectFile } from "../../core/project-file.js";
 import { isPathInside } from "../../core/safety.js";
@@ -22,7 +22,9 @@ import {
 } from "./inventory-lifecycle.js";
 import { inventoryPath } from "./inventory-path.js";
 
-type Owner = { path: string; common: string; ownerStats: BigIntStats; commonStats: BigIntStats };
+import type { InventoryOwner as Owner } from "./inventory-owner.js";
+
+export type ReviewRegistrations = (owner: Owner, mounts: StorageMount[]) => Promise<void>;
 type Observed = Awaited<ReturnType<typeof observeStoragePath>>;
 type Slot = {
   admin: string;
@@ -171,6 +173,7 @@ async function review(
   inputs: GitLifecycleInput,
   record: GitWorktreeRecord,
   repo: string | undefined,
+  initialMounts: StorageMount[],
 ) {
   const current = {
     owner: owner.path,
@@ -187,6 +190,28 @@ async function review(
   const grade = nativeReview(inputs, slot.path, current);
   if (grade !== "review-native-closeout") return grade;
   // The native listing, filesystem pointers and enrollment were observed at different times.
+  const bindings = [
+    [slot.path, current.checkoutStats],
+    [slot.admin, slot.stats],
+    [owner.common, owner.commonStats],
+    [owner.path, owner.ownerStats],
+  ] as const;
+  async function bindingsMatch() {
+    for (const [path, stats] of bindings) {
+      const initial = coveringMount(path, initialMounts);
+      const final = coveringMount(path, mounts);
+      if (
+        initial?.access !== "local" ||
+        final?.access !== "local" ||
+        !sameStorageMount(initial, final)
+      )
+        return false;
+      const observed = await observeStoragePath(path, mounts);
+      if (!observed.stats || !sameObservation(stats, observed.stats)) return false;
+    }
+    return true;
+  }
+  if (!(await bindingsMatch())) return "identity-mismatch";
   const fresh = await readSlot(slot.admin, slot.stats, owner, mounts);
   const checked = await adminRecord(owner, slot, mounts);
   if (
@@ -199,15 +224,7 @@ async function review(
     checked.locked !== record.locked
   )
     return "binding-mismatch";
-  for (const [path, stats] of [
-    [slot.path, current.checkoutStats],
-    [slot.admin, slot.stats],
-    [owner.common, owner.commonStats],
-    [owner.path, owner.ownerStats],
-  ] as const) {
-    const observed = await observeStoragePath(path, mounts);
-    if (!observed.stats || !sameObservation(stats, observed.stats)) return "identity-mismatch";
-  }
+  if (!(await bindingsMatch())) return "identity-mismatch";
   return grade;
 }
 
@@ -219,6 +236,7 @@ export async function inventoryRegistrations(
   slotsBudget: EntryBudget,
   ledger: GitIdentityLedger,
   statuses: GitLifecycleInput,
+  reviews: ReviewRegistrations[],
 ) {
   const base = join(owner.common, "worktrees"),
     entries: Registration[] = [];
@@ -272,15 +290,7 @@ export async function inventoryRegistrations(
       issue("native-list-unavailable");
     }
   } else issue("native-list-withheld");
-  let origin: string | undefined;
-  if (slots.some((s) => statuses.rows.has(s.path)))
-    origin = githubOrigin(
-      await inventoryGit(
-        owner.path,
-        ["--git-dir", owner.common, "remote", "get-url", "origin"],
-        AbortSignal.timeout(5000),
-      ).catch(() => ""),
-    );
+  const candidates: { slot: Slot; record: GitWorktreeRecord; item: Registration }[] = [];
   for (const s of slots) seenPaths.set(s.path, (seenPaths.get(s.path) ?? 0) + 1);
   for (const slot of slots) {
     const { path, admin, checkout } = slot,
@@ -311,8 +321,8 @@ export async function inventoryRegistrations(
       if (checkout.status === "missing") item.presence = "missing";
       else if (checkout.stats?.isDirectory()) {
         item.presence = reciprocalPointer && r ? "reciprocal" : "present-unverified";
-        if (item.presence === "reciprocal" && r)
-          item.nativeReview = await review(slot, owner, roots, mounts, statuses, r, origin);
+        if (item.presence === "reciprocal" && r && statuses.rows.has(path))
+          candidates.push({ slot, record: r, item });
       }
     }
     if (item.presence === "missing") {
@@ -364,6 +374,30 @@ export async function inventoryRegistrations(
       nativeReview: "retain",
     });
     issue("unmatched-native-record");
+  }
+  // Read the current origin, native HEAD, lock and four directory identities after long object scans.
+  if (candidates.length) {
+    reviews.push(async (current, currentMounts) => {
+      const origin = githubOrigin(
+        await inventoryGit(
+          current.path,
+          ["--git-dir", current.common, "remote", "get-url", "origin"],
+          AbortSignal.timeout(5000),
+        ).catch(() => ""),
+      );
+      for (const { slot, record, item } of candidates) {
+        item.nativeReview = await review(
+          slot,
+          current,
+          roots,
+          currentMounts,
+          statuses,
+          record,
+          origin,
+          mounts,
+        );
+      }
+    });
   }
   return {
     coverage:
