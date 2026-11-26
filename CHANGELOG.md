@@ -6,6 +6,14 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-27
+
+AgentRinse can now inventory Git object stores, worktrees and developer caches
+without creating a cleanup plan. Its reports distinguish observed disk usage
+from reclaimable bytes and identify incomplete measurements. Cleanup still
+requires a scoped plan and fresh ownership evidence. Native Windows supports
+read-only audits. This release requires Node.js 22.12.0 or newer.
+
 ### Changed
 
 - Artifact discovery skips recursive process inspection for resources already excluded by filesystem, retention, or Git evidence. Findings identify which check ruled out that probe.
