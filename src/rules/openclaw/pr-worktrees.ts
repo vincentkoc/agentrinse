@@ -266,6 +266,9 @@ export async function reportPrWorktrees(
       checkout: item?.kind ?? "unobserved",
       native: claim?.native ?? "unreported",
       ...(claim?.native === "would-remove" ? { prState: claim.prState } : {}),
+      ...(claim?.native === "skipped" && claim.reportedHold
+        ? { reportedHold: claim.reportedHold }
+        : {}),
       grade,
       reason,
       corroborated,

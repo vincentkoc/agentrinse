@@ -80,6 +80,7 @@ export async function executePrGcDiff(
           (row.preview?.native ?? "absent-from-preview") +
           "  " +
           row.outcome +
+          (row.reportedHold ? "  " + row.reportedHold : "") +
           row.branches.map((event) => "  " + event.branch + " " + event.result).join(""),
       ),
       "Current checkout, registration and branch refs were not observed.",

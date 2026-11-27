@@ -135,3 +135,38 @@ it("keeps failed-template operations outside the MERGED/CLOSED selection and cou
   });
   expect(report.rows[1]?.outcome).toBe("reported-failed-template-removal");
 });
+
+it("distinguishes native cwd holds from partial checkout and branch cleanup", () => {
+  const skip = "skipping .worktrees/pr-11 (cleanup incomplete)";
+  const hold =
+    "Preserving " +
+    owner +
+    "/.worktrees/pr-11: unable to inspect process working directories. Retry cleanup after checking lsof and session ownership.";
+  const noRemovals = "No merged/closed PR worktrees removed.";
+  const report = reconcilePrGc(owner, preview, frame(hold, skip, noRemovals));
+  expect(report).toMatchObject({
+    applySource: "owner-framed",
+    outsideAttempts: [],
+    possibleOutsideAttempts: [],
+  });
+  expect(report.rows.find((row) => row.pr === "11")).toMatchObject({
+    outcome: "reported-preserved",
+    reportedHold: "cwd-scan-unavailable",
+  });
+  const partial = reconcilePrGc(
+    owner,
+    preview,
+    frame(hold, "Deleted branch temp/pr-11 (was 123456a).", skip, noRemovals),
+  );
+  expect(partial).toMatchObject({ applySource: "invalid", outsideAttempts: ["11"] });
+  expect(partial.rows.find((row) => row.pr === "11")).toMatchObject({
+    outcome: "partial-branch-cleanup",
+  });
+  expect(partial.rows.find((row) => row.pr === "11")).not.toHaveProperty("reportedHold");
+  const mismatch = reconcilePrGc(
+    owner,
+    preview,
+    frame(hold.replace(owner, owner + "-other"), skip, noRemovals),
+  );
+  expect(mismatch).toMatchObject({ applySource: "invalid", possibleOutsideAttempts: ["11"] });
+});
