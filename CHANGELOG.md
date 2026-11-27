@@ -8,6 +8,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- `clean --profile closeout` displays audit diagnostics in its terminal summary.
+- OpenClaw inventory recognizes configured workspaces directly under the profile directory and reports `MEMORY.md` and `memory/` separately.
 - OpenClaw inventory supports the 2026.11.10 shared and agent SQLite schemas. Verified worktrees, templates and registered project roots stay protected while unrelated targets can proceed.
 
 ## [1.2.0] - 2026-11-27

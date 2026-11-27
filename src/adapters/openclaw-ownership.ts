@@ -38,20 +38,22 @@ function usesLocalSqlite(database: unknown): boolean {
 
 async function configPaths(root: string, home: string, environment: NodeJS.ProcessEnv) {
   const paths = new Map<string, "workspace" | "worktreeStorage" | "sessions" | "provider">();
+  const workspaces = new Set<string>();
   const path = join(root, "openclaw.json");
   const configured = environment.OPENCLAW_CONFIG_PATH?.trim();
   // External config can include other files and interpolate secrets. Do not
   // evaluate it, expand variables, or scan locations named by the document.
-  if (configured && configured !== path) return { complete: false, paths };
+  if (configured && configured !== path) return { complete: false, paths, workspaces };
   try {
-    if ((await realpath(path)) !== path) return { complete: false, paths };
+    if ((await realpath(path)) !== path) return { complete: false, paths, workspaces };
     const handle = await open(
       path,
       constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
     );
     try {
       const before = await handle.stat();
-      if (!before.isFile() || before.size > 1024 * 1024) return { complete: false, paths };
+      if (!before.isFile() || before.size > 1024 * 1024)
+        return { complete: false, paths, workspaces };
       const bytes = Buffer.alloc(before.size + 1);
       const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
       const after = await lstat(path);
@@ -61,7 +63,7 @@ async function configPaths(root: string, home: string, environment: NodeJS.Proce
         before.ctimeMs !== after.ctimeMs ||
         bytesRead !== before.size
       )
-        return { complete: false, paths };
+        return { complete: false, paths, workspaces };
       const config: unknown = JSON.parse(
         bytes.toString("utf8", 0, bytesRead),
         (key, value: unknown) => {
@@ -69,7 +71,7 @@ async function configPaths(root: string, home: string, environment: NodeJS.Proce
           return value;
         },
       );
-      if (!object(config)) return { complete: false, paths };
+      if (!object(config)) return { complete: false, paths, workspaces };
       const add = (
         value: unknown,
         surface: "workspace" | "worktreeStorage" | "sessions" | "provider",
@@ -81,7 +83,9 @@ async function configPaths(root: string, home: string, environment: NodeJS.Proce
           ? join(environment.OPENCLAW_HOME || home, value.slice(2))
           : value;
         if (!isAbsolute(expanded)) throw new Error("Relative owner path");
-        paths.set(resolve(expanded), surface);
+        const resolved = resolve(expanded);
+        paths.set(resolved, surface);
+        if (surface === "workspace") workspaces.add(resolved);
       };
       add(config.worktreeRoot, "worktreeStorage");
       if (object(config.session)) add(config.session.store, "sessions");
@@ -103,12 +107,13 @@ async function configPaths(root: string, home: string, environment: NodeJS.Proce
       return {
         complete: usesLocalSqlite(config.database),
         paths,
+        workspaces,
       };
     } finally {
       await handle.close();
     }
   } catch {
-    return { complete: false, paths };
+    return { complete: false, paths, workspaces };
   }
 }
 
