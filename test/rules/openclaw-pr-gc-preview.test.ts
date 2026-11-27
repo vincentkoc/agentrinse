@@ -73,3 +73,44 @@ it("requires completion and exact frame owner, handles empty scopes, and bounds 
   await expect(parse("x".repeat(4 * 1024 * 1024 + 1))).rejects.toThrow("4 MiB");
   await expect(parse("\n".repeat(20_001))).rejects.toThrow("20000");
 });
+
+it("binds holder diagnostics to the literal owner, PR and matching native skip without retaining the PID", async () => {
+  const message =
+    "unable to inspect process working directories. Retry cleanup after checking lsof and session ownership.";
+  const live =
+    "live process 812347 has its cwd in this worktree. Defer cleanup until the owning session exits or releases its cwd.";
+  const skip = (pr: string) => "skipping .worktrees/pr-" + pr + " (cleanup incomplete)";
+  const text = (path: string, detail: string) => "Preserving " + path + ": " + detail;
+  const path = owner + "/.worktrees/pr-1";
+  const preview = await parse(
+    [text(path, message), skip("1"), text(owner + "/.worktrees/pr-2", live), skip("2"), ""].join(
+      "\n",
+    ),
+  );
+  expect(preview.source).toBe("supplied-stdout");
+  expect(preview.rows.get("1")).toMatchObject({
+    native: "skipped",
+    reportedHold: "cwd-scan-unavailable",
+  });
+  expect(preview.rows.get("2")).toMatchObject({
+    native: "skipped",
+    reportedHold: "live-process-cwd",
+  });
+  expect(JSON.stringify([...preview.rows])).not.toContain("812347");
+  for (const bad of [
+    owner + "-other/.worktrees/pr-1",
+    path + "/nested",
+    owner + "/.worktrees/pr-01",
+    owner + "/.worktrees/pr-2",
+    ".worktrees/pr-1",
+  ]) {
+    const invalid = await parse([text(bad, message), skip("1"), ""].join("\n"));
+    expect(invalid.source).toBe("invalid");
+    expect(invalid.rows.get("1")).not.toHaveProperty("reportedHold");
+  }
+  const conflicting = await parse(
+    [text(path, message), text(path, live), skip("1"), ""].join("\n"),
+  );
+  expect(conflicting.source).toBe("invalid");
+  expect(conflicting.rows.get("1")).not.toHaveProperty("reportedHold");
+});

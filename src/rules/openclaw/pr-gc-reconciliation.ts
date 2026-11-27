@@ -31,7 +31,6 @@ function applyOutput(value: string, owner: string) {
 
   const rowLines: string[] = [];
   const branches = new Map<string, BranchEvent[]>();
-  const preserved = new Set<string>();
   // The native apply and preview share row/diagnostic grammar. Translate only
   // the two apply-specific row spellings before passing them to that parser.
   for (let i = 0; i < lines.length; i++) {
@@ -50,16 +49,11 @@ function applyOutput(value: string, owner: string) {
     }
     if (
       line.startsWith("skipping ") ||
-      line.startsWith("Preserving .worktrees/") ||
+      line.startsWith("Preserving ") ||
       line.startsWith("After verifying ") ||
       line.startsWith("  scripts/pr lock-recover ")
     ) {
       rowLines.push(line);
-      const dirty =
-        /^Preserving \.worktrees\/pr-([1-9][0-9]*): worktree has local changes or is locked\. Review its contents and ownership before cleanup\.$/u.exec(
-          line,
-        );
-      if (dirty) preserved.add(dirty[1]!);
       continue;
     }
     const deleted = /^Deleted branch (\S+) \(was [a-f0-9]{4,64}\)\.$/u.exec(line);
@@ -127,22 +121,22 @@ function applyOutput(value: string, owner: string) {
       (row?.native === "skipped" && row.reason === "cleanup-incomplete");
     if (
       !terminal ||
-      preserved.has(pr) ||
+      (row?.native === "skipped" && row.reportedHold) ||
       (row?.native === "would-remove" && events.some((e) => e.result !== "reported-deleted"))
     )
       invalidLines++;
   }
   const source = invalidLines ? "invalid" : framed ? "owner-framed" : "supplied-output";
-  return { source, exitCode, invalidLines, branches, preserved, rows: parsed.rows };
+  return { source, exitCode, invalidLines, branches, rows: parsed.rows };
 }
 
-function reportedOutcome(row: PreviewRow | undefined, hasBranches: boolean, preserved: boolean) {
+function reportedOutcome(row: PreviewRow | undefined, hasBranches: boolean) {
   if (row?.native === "would-remove") return "reported-removed";
   if (row?.native === "failed-template") return "reported-failed-template-removal";
   if (row?.native === "conflict") return "conflicting";
   if (row?.native === "skipped" && row.reason === "cleanup-incomplete") {
     if (hasBranches) return "partial-branch-cleanup";
-    return preserved ? "reported-preserved" : "cleanup-incomplete";
+    return row.reportedHold ? "reported-preserved" : "cleanup-incomplete";
   }
   if (row?.native === "skipped") return "reported-skipped";
   return hasBranches ? "branch-events-only" : "unreported";
@@ -158,7 +152,7 @@ export function reconcilePrGc(owner: string, previewText: string, applyText: str
       const before = preview.rows.get(pr),
         after = apply.rows.get(pr);
       const branches = apply.branches.get(pr) ?? [];
-      const outcome = reportedOutcome(after, branches.length > 0, apply.preserved.has(pr));
+      const outcome = reportedOutcome(after, branches.length > 0);
       const inPreview = before?.native === "would-remove";
       const actionKindDrift =
         (inPreview && after?.native === "failed-template") ||
@@ -180,6 +174,9 @@ export function reconcilePrGc(owner: string, previewText: string, applyText: str
         outcome,
         ...(after?.native === "would-remove" ? { reportedPrState: after.prState } : {}),
         ...(after?.native === "skipped" ? { skipReason: after.reason } : {}),
+        ...(after?.native === "skipped" && after.reportedHold && !branches.length
+          ? { reportedHold: after.reportedHold }
+          : {}),
         branches,
         outsidePreview,
         actionKindDrift,

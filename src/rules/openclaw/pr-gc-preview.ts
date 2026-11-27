@@ -6,10 +6,12 @@ const noCandidates = "No merged/closed PR worktrees eligible for removal.";
 export const prGcMaxBytes = 4 * 1024 * 1024;
 export const prGcMaxLines = 20_000;
 
+type ReportedHold = "dirty-or-locked" | "cwd-scan-unavailable" | "live-process-cwd";
+
 export type PreviewRow =
   | { native: "would-remove"; prState: "MERGED" | "CLOSED" }
   | { native: "failed-template" }
-  | { native: "skipped"; reason: string }
+  | { native: "skipped"; reason: string; reportedHold?: ReportedHold }
   | { native: "conflict" };
 
 export type Preview = {
@@ -21,6 +23,35 @@ export type Preview = {
   preservationDiagnostics: number;
   lockRecoveryDiagnostics: number;
 };
+
+// The dirty check prints the relative gc path. The native lsof check prints
+// the literal registered path; accept only a direct checkout of this owner.
+function parsePreservation(
+  line: string,
+  owner: string,
+): { pr: string; reason: ReportedHold } | undefined {
+  const dirty =
+    /^Preserving \.worktrees\/pr-([1-9][0-9]*): worktree has local changes or is locked\. Review its contents and ownership before cleanup\.$/u.exec(
+      line,
+    );
+  if (dirty) return { pr: dirty[1]!, reason: "dirty-or-locked" };
+  const prefix = "Preserving " + owner + "/.worktrees/pr-";
+  if (!line.startsWith(prefix)) return;
+  const match = /^([1-9][0-9]*): (.+)$/u.exec(line.slice(prefix.length));
+  if (!match) return;
+  const [, pr, detail] = match;
+  if (
+    detail ===
+    "unable to inspect process working directories. Retry cleanup after checking lsof and session ownership."
+  )
+    return { pr: pr!, reason: "cwd-scan-unavailable" };
+  if (
+    /^live process [1-9][0-9]* has its cwd in this worktree\. Defer cleanup until the owning session exits or releases its cwd\.$/u.test(
+      detail!,
+    )
+  )
+    return { pr: pr!, reason: "live-process-cwd" };
+}
 
 function parseRow(line: string): [string, PreviewRow] | undefined {
   const parts = /^(would remove|skipping) \.worktrees\/pr-([1-9][0-9]*) \(([^()]+)\)$/u.exec(line);
@@ -90,7 +121,7 @@ export function parsePrGcPreview(value: string, owner: string): Preview {
   }
   if (!terminated || !lines.length) result.invalidLines++;
   let summary = false;
-  const preservation = new Set<string>(),
+  const preservation = new Map<string, ReportedHold | null>(),
     recovery = new Set<string>();
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!;
@@ -100,13 +131,12 @@ export function parsePrGcPreview(value: string, owner: string): Preview {
     }
     // Native stderr may be captured with stdout. Recognize only diagnostics
     // attributable to an actual skip row; never retain or execute recovery commands.
-    const preserved =
-      /^Preserving \.worktrees\/pr-([1-9][0-9]*): worktree has local changes or is locked\. Review its contents and ownership before cleanup\.$/u.exec(
-        line,
-      );
-    if (preserved) {
-      if (preservation.has(preserved[1]!)) result.invalidLines++;
-      preservation.add(preserved[1]!);
+    const hold = parsePreservation(line, owner);
+    if (hold) {
+      if (preservation.has(hold.pr)) {
+        result.invalidLines++;
+        preservation.set(hold.pr, null);
+      } else preservation.set(hold.pr, hold.reason);
       continue;
     }
     const help =
@@ -142,9 +172,10 @@ export function parsePrGcPreview(value: string, owner: string): Preview {
       result.duplicateRows++;
     } else result.rows.set(pr, claim);
   }
-  for (const pr of preservation) {
+  for (const [pr, reason] of preservation) {
     const claim = result.rows.get(pr);
     if (claim?.native !== "skipped" || claim.reason !== "cleanup-incomplete") result.invalidLines++;
+    else if (reason) claim.reportedHold = reason;
   }
   for (const pr of recovery) {
     const claim = result.rows.get(pr);
