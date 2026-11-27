@@ -6,13 +6,15 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
-### Added
-
-- `agentrinse storage --family openclaw` reports Crabbox sync staging and legacy and v3 PR dependency caches together. It flags directories modified more than 48 hours ago for review and preserves live lane dependencies.
-
 ### Fixed
 
 - `clean --profile closeout` displays audit diagnostics in its terminal summary.
+
+## [1.2.0] - 2026-11-27
+
+### Added
+
+- `agentrinse storage --family openclaw` reports Crabbox sync staging and legacy and v3 PR dependency caches together. It flags directories modified more than 48 hours ago for review and preserves live lane dependencies.
 
 ## [1.1.0] - 2026-11-27
 
