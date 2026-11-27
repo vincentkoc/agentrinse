@@ -332,7 +332,9 @@ export async function collectOpenClaw(
     if (name === "openclaw.json")
       return report(path, "configuration", { ownerPathsComplete: owner.config.complete });
     if (name.startsWith("openclaw.json.bak")) return report(path, "configuration");
-    return report(path, Object.hasOwn(roots, name) ? roots[name]! : "provider");
+    if (Object.hasOwn(roots, name)) return report(path, roots[name]!);
+    if (directory && owner.config.paths.get(path) === "workspace") return workspace(path);
+    return report(path, "provider");
   });
   // Registry paths can point outside this profile or at removed checkouts.
   // Publish the owner's record without walking a path supplied by the database.

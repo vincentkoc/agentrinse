@@ -6,6 +6,10 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenClaw inventory recognizes configured workspaces directly under the profile directory and reports `MEMORY.md` and `memory/` separately.
+
 ## [1.1.0] - 2026-11-27
 
 ### Added
