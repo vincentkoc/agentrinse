@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "adapters": {
+    "codex": {
+      "enabled": true
+    },
+    "claude": {
+      "enabled": true
+    },
+    "cursor": {
+      "enabled": false
+    },
+    "copilot": {
+      "enabled": false
+    },
+    "zed": {
+      "enabled": false
+    },
+    "opencode": {
+      "enabled": false
+    },
+    "grok": {
+      "enabled": false
+    },
+    "runtime": {
+      "enabled": false
+    },
+    "git": {
+      "enabled": true,
+      "root": "/fixture/repo"
+    },
+    "docker": {
+      "enabled": false
+    }
+  },
+  "audit": {
+    "maxEntries": 100000,
+    "measureBytes": true
+  },
+  "artifacts": {
+    "projects": [],
+    "minAgeMinutes": 1440,
+    "minBytes": 67108864,
+    "processCheck": "required"
+  },
+  "worktrees": {
+    "minAgeMinutes": 20160,
+    "quarantineTtlMinutes": 10080
+  },
+  "pins": [],
+  "plan": {
+    "ttlMinutes": 30,
+    "maxRisk": "safe"
+  }
+}

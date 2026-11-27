@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { executeDoctorCommand, type CommandResult } from "../../src/commands/doctor.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
-import type { AgentRinseConfig } from "../../src/config/schema.js";
+import historicalPlanConfig from "../fixtures/doctor-plan-config-0.6.0.json" with { type: "json" };
 import { sha256Json } from "../../src/core/digest.js";
 import { writeJsonAtomic } from "../../src/state/json-file.js";
 import { stateLayout } from "../../src/state/layout.js";
@@ -48,7 +48,7 @@ async function setup(): Promise<{
   return { home, configPath, stateRoot };
 }
 
-function planForConfig(config: AgentRinseConfig, planId: string) {
+function planForConfig(config: unknown, planId: string) {
   return {
     schemaVersion: 1 as const,
     planId,
@@ -423,39 +423,46 @@ describe("doctor command", () => {
     );
   });
 
-  it("accepts a valid cleanup plan and matching config sidecar without mutation", async () => {
-    const value = await setup();
-    const plans = stateLayout(value.stateRoot).plans;
-    const plan = planForConfig(DEFAULT_CONFIG, "plan-valid");
-    await mkdir(plans, { recursive: true });
-    await writeJsonAtomic(join(plans, `${plan.planId}.json`), plan);
-    await writeJsonAtomic(join(plans, `${plan.planId}.config.json`), DEFAULT_CONFIG);
+  it.each([
+    { version: "current", config: DEFAULT_CONFIG },
+    { version: "0.6.0", config: historicalPlanConfig },
+  ])(
+    "accepts a $version cleanup plan and matching config sidecar without mutation",
+    async ({ config }) => {
+      const value = await setup();
+      const plans = stateLayout(value.stateRoot).plans;
+      const plan = planForConfig(config, "plan-valid");
+      await mkdir(plans, { recursive: true });
+      await writeJsonAtomic(join(plans, `${plan.planId}.json`), plan);
+      await writeJsonAtomic(join(plans, `${plan.planId}.config.json`), config);
 
-    const result = await doctorWithUnchangedPlans(value);
+      const result = await doctorWithUnchangedPlans(value);
 
-    expect(result.report.checks).toContainEqual(
-      expect.objectContaining({
-        id: "schema:plans",
-        status: "pass",
-        summary: "1 persisted record(s) are compatible",
-      }),
-    );
-    expect(result.report.checks).toContainEqual(
-      expect.objectContaining({
-        id: "schema:plan-configs",
-        status: "pass",
-        summary: "1 persisted record(s) are compatible",
-      }),
-    );
-  });
+      expect(result.report.checks).toContainEqual(
+        expect.objectContaining({
+          id: "schema:plans",
+          status: "pass",
+          summary: "1 persisted record(s) are compatible",
+        }),
+      );
+      expect(result.report.checks).toContainEqual(
+        expect.objectContaining({
+          id: "schema:plan-configs",
+          status: "pass",
+          summary: "1 persisted record(s) are compatible",
+        }),
+      );
+    },
+  );
 
   it("rejects a malformed config sidecar without mutation", async () => {
     const value = await setup();
     const plans = stateLayout(value.stateRoot).plans;
-    const plan = planForConfig(DEFAULT_CONFIG, "plan-malformed-config");
+    const invalidConfig = { schemaVersion: 99 };
+    const plan = planForConfig(invalidConfig, "plan-malformed-config");
     await mkdir(plans, { recursive: true });
     await writeJsonAtomic(join(plans, `${plan.planId}.json`), plan);
-    await writeFile(join(plans, `${plan.planId}.config.json`), '{"schemaVersion":99}\n');
+    await writeJsonAtomic(join(plans, `${plan.planId}.config.json`), invalidConfig);
 
     const result = await doctorWithUnchangedPlans(value);
 
@@ -545,6 +552,26 @@ describe("doctor command", () => {
         summary: "1 persisted record(s) are compatible",
       }),
     );
+    expect(result.report.checks).toContainEqual(
+      expect.objectContaining({
+        id: "schema:plan-configs",
+        status: "error",
+        detail: `${plan.planId}.config.json`,
+      }),
+    );
+  });
+
+  it("rejects a sidecar that lost a recorded block even when defaults would restore it", async () => {
+    const value = await setup();
+    const plans = stateLayout(value.stateRoot).plans;
+    const plan = planForConfig(DEFAULT_CONFIG, "plan-missing-audit-config");
+    const { audit: _removed, ...incompleteConfig } = DEFAULT_CONFIG;
+    await mkdir(plans, { recursive: true });
+    await writeJsonAtomic(join(plans, `${plan.planId}.json`), plan);
+    await writeJsonAtomic(join(plans, `${plan.planId}.config.json`), incompleteConfig);
+
+    const result = await doctorWithUnchangedPlans(value);
+
     expect(result.report.checks).toContainEqual(
       expect.objectContaining({
         id: "schema:plan-configs",

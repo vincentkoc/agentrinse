@@ -10,6 +10,11 @@ The project follows semantic versioning after its first supported release.
 
 - `worktree-grades` grades up to 64 named linked checkouts for one durable Git owner. It checks full-roster membership, provider protections and configured pins, and reports any unresolved selections without saving a plan.
 
+### Fixed
+
+- `doctor` verifies saved plan configurations against the values recorded when the plan was created. Plans from older releases remain readable after new configuration defaults are added.
+- A cancelled or timed-out Git worktree audit stops the active Git command and skips remaining checkouts. Its partial report retains observations completed before the deadline.
+
 ## [1.0.0] - 2026-11-27
 
 AgentRinse can now inventory Git object stores, worktrees and developer caches
