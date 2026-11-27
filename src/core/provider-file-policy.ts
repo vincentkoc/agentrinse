@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { resolveProviderRoot } from "../adapters/provider-root.js";
 import { hasOpenClawJournal } from "../adapters/openclaw-database.js";
 import { isProviderEnabled, PROVIDER_SPECS } from "../adapters/provider-specs.js";
+import { validateRecoveryWindow } from "../config/action-policy.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import type { ProviderFileQuarantineAction } from "../contracts/action.js";
 import { matchProviderFilePolicy, type ProviderFileRule } from "../rules/file-rule.js";
@@ -79,27 +80,10 @@ export async function authorizeProviderFileAction(
   if (action.target.ownerRoot !== physicalRoot) {
     throw new Error(`provider-file target is outside the configured ${action.adapter} root`);
   }
-  const refusal = validateRecoveryWindow(action, policy, now);
+  const refusal = validateRecoveryWindow(action, policy, now, config.providerRules);
   if (refusal !== undefined) {
     throw new Error(
       `provider-file action violates policy ${action.adapter}:${action.policyId}: ${refusal}`,
     );
-  }
-}
-
-function validateRecoveryWindow(
-  action: ProviderFileQuarantineAction,
-  rule: ProviderFileRule,
-  now: Date,
-): string | undefined {
-  if (action.pendingQuarantineBytes !== action.target.measuredBytes) {
-    return "pending quarantine bytes must match the exact file identity";
-  }
-  if (action.quarantineTtlMinutes < rule.quarantineDays * 1440) {
-    const days = rule.quarantineDays === 7 ? "seven" : rule.quarantineDays;
-    return `${rule.subject} require at least ${days} days of recoverable quarantine`;
-  }
-  if (now.getTime() - action.target.mtimeMs < rule.minAgeDays * 86_400_000) {
-    return `${rule.subject} must be at least ${rule.minAgeDays} days old`;
   }
 }

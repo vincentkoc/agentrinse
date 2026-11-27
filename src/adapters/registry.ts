@@ -104,12 +104,15 @@ export function createAuditAdapters(
       new ProviderAuditAdapter(PROVIDER_SPECS[id], {
         ...(config.adapters[id]?.root === undefined ? {} : { root: config.adapters[id].root }),
         platform,
+        ...(config.providerRules === undefined ? {} : { providerRules: config.providerRules }),
         measureBytes: config.audit.measureBytes,
         maxEntries: config.audit.maxEntries,
         ...(id !== "openclaw" || needsOwnership ? { reachability } : {}),
         inventoryResources: options.providerInventory ?? true,
         quickInventory: options.providerQuickInventory ?? false,
-        allowOfflineVacuum: options.allowOfflineVacuum ?? false,
+        allowOfflineVacuum:
+          config.codexVacuum?.enabled !== false && (options.allowOfflineVacuum ?? false),
+        vacuumRuleEnabled: config.codexVacuum?.enabled !== false,
         environment: options.environment ?? process.env,
       }),
   );

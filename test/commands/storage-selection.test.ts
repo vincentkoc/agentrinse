@@ -2,7 +2,7 @@ import { link, mkdir, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { inventoryStorage } from "../../src/commands/storage.js";
+import { executeStorageCommand, inventoryStorage } from "../../src/commands/storage.js";
 import { parseStorageMounts } from "../../src/core/storage-mounts.js";
 import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 
@@ -99,4 +99,34 @@ it("counts immediate Codex database metadata once per inode and leaves sessions 
     deps,
   );
   expect(limited.data.areas[0]?.coverage).toBe("entry-limit");
+});
+
+it("applies profile rules, skips off-platform locations without broadening, and honors explicit selection", async () => {
+  const { home, deps } = await fixture();
+  const config = join(home, "profile.json");
+  await writeFile(
+    config,
+    JSON.stringify({
+      schemaVersion: 1,
+      storage: {
+        rules: ["apple.system-updates"],
+        reviewAgeMinutes: { "openclaw.pr-dependencies": 4320 },
+      },
+    }),
+  );
+  const options = { home, config, json: true };
+  const native = JSON.parse(await executeStorageCommand(options, deps)).data;
+  expect(native.areas.map((area: { rule: string }) => area.rule)).toEqual(["apple.system-updates"]);
+  const other = JSON.parse(
+    await executeStorageCommand(options, { ...deps, platform: "linux" }),
+  ).data;
+  expect(other.skippedPlatformRules).toEqual(["apple.system-updates"]);
+  expect(other.areas).toEqual([]);
+  expect(other.crabbox).toEqual([]);
+  expect(other.prDependencies).toBeUndefined();
+  const explicit = JSON.parse(
+    await executeStorageCommand({ ...options, rule: ["openclaw.pr-dependencies"] }, deps),
+  ).data;
+  expect(explicit.areas).toEqual([]);
+  expect(explicit.prDependencies.reviewAgeMinutes).toBe(4320);
 });

@@ -9,6 +9,7 @@ import {
   resolveProviderFileOwnerRoot,
   type ProviderFileOwnerRootOptions,
 } from "../core/provider-file-policy.js";
+import { providerFilePolicy, type ProviderRules } from "../config/rule-options.js";
 import { fileRules, matchesRulePath, type ProviderFileRule } from "../rules/file-rule.js";
 
 type Directory = AsyncIterable<Dirent<string>> & { close(): Promise<void> };
@@ -55,6 +56,7 @@ export async function collectProviderFileRule(
   rule: ProviderFileRule,
   maxEntries: number,
   dependencies: Dependencies = {},
+  minAgeMinutes = rule.minAgeDays * 1440,
 ): Promise<CollectionResult> {
   const result: CollectionResult = { resources: [], diagnostics: [] };
   const discovery = rule.discovery;
@@ -149,7 +151,7 @@ export async function collectProviderFileRule(
           reportOnly: false,
           maintenanceAction: "provider.file-quarantine",
           policyId: rule.id,
-          minAgeMinutes: rule.minAgeDays * 1440,
+          minAgeMinutes,
           providerFileIdentity: identity,
         },
       });
@@ -163,7 +165,7 @@ export async function collectProviderFileRule(
 export async function collectProviderFiles(
   provider: string,
   context: AuditContext,
-  options: ProviderFileOwnerRootOptions & { maxEntries: number },
+  options: ProviderFileOwnerRootOptions & { maxEntries: number; providerRules?: ProviderRules },
   providerRoot?: string,
 ): Promise<CollectionResult> {
   const result: CollectionResult = { resources: [], diagnostics: [] };
@@ -178,7 +180,15 @@ export async function collectProviderFiles(
       rule.ownerRoot === "provider-root" && providerRoot
         ? providerRoot
         : resolveProviderFileOwnerRoot(rule, context.home, options);
-    const found = await collectProviderFileRule(context, root, rule, options.maxEntries);
+    const policy = providerFilePolicy(rule, options.providerRules);
+    const found = await collectProviderFileRule(
+      context,
+      root,
+      rule,
+      options.maxEntries,
+      undefined,
+      policy.minAgeMinutes,
+    );
     result.resources.push(...found.resources);
     result.diagnostics.push(...found.diagnostics);
   }

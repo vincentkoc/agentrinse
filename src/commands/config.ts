@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import { DEFAULT_CONFIG } from "../config/defaults.js";
 import { loadConfig, loadConfigForHome } from "../config/load.js";
 import { resolveConfigPath, type ConfigEnvironment } from "../config/path.js";
+import { policyCatalog } from "../config/policy-catalog.js";
+import { renderConfig } from "../config/render.js";
 import type { AgentRinseConfig } from "../config/schema.js";
 import { writeJsonExclusive } from "../state/json-file.js";
 
@@ -70,4 +72,25 @@ export async function executeConfigValidateCommand(
     config,
     output: `valid ${path}\n`,
   };
+}
+
+export async function executeConfigRenderCommand(
+  options: ConfigCommandOptions,
+  assignments: readonly string[],
+): Promise<string> {
+  const { config } = await loadConfigForHome(
+    options.home,
+    options.config,
+    options.environment ?? process.env,
+  );
+  return JSON.stringify(renderConfig(config, assignments), null, 2) + "\n";
+}
+
+export async function executeConfigPolicyCommand(options: ConfigCommandOptions): Promise<string> {
+  const { config } = await loadConfigForHome(
+    options.home,
+    options.config,
+    options.environment ?? process.env,
+  );
+  return JSON.stringify(policyCatalog(config), null, 2) + "\n";
 }

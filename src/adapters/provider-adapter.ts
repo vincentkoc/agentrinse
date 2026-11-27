@@ -1,3 +1,4 @@
+import type { ProviderRules } from "../config/rule-options.js";
 import { collectProviderFiles } from "./provider-file-discovery.js";
 import { lstat } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -48,7 +49,9 @@ export type ProviderAdapterOptions = {
   reachability?: ReachabilityIndex;
   inventoryResources?: boolean;
   quickInventory?: boolean;
+  providerRules?: ProviderRules;
   allowOfflineVacuum?: boolean;
+  vacuumRuleEnabled?: boolean;
   databaseDependencies?: CodexDatabaseDependencies;
   inspectDatabase?: (
     path: string,
@@ -476,8 +479,25 @@ export class ProviderAuditAdapter implements AuditAdapter {
   }
 
   async classify(context: AuditContext, resource: ResourceSnapshot): Promise<Finding> {
-    const quarantinableFile = classifyProviderFile(this.spec.id, context, resource);
+    const quarantinableFile = classifyProviderFile(
+      this.spec.id,
+      context,
+      resource,
+      this.options.providerRules,
+    );
     if (quarantinableFile) return quarantinableFile;
+    if (
+      this.spec.id === "codex" &&
+      resource.resource.kind === "agent-database" &&
+      this.options.vacuumRuleEnabled === false
+    ) {
+      return reportOnlyFinding(context, resource, "config", "certain", [
+        {
+          code: "database-rule-disabled",
+          detail: "Codex offline compaction is disabled by configuration.",
+        },
+      ]);
+    }
     return (
       this.spec.classify?.(context, resource) ??
       reportOnlyFinding(context, resource, this.spec.id, "certain", [

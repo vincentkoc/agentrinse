@@ -24,7 +24,7 @@ const COMMANDS = [
 
 const SUBCOMMANDS = {
   completion: [...completionShells],
-  config: ["init", "path", "show", "validate"],
+  config: ["init", "path", "policy", "render", "show", "validate"],
   lock: ["recover", "status"],
   show: ["plan", "resource", "run"],
 } as const;

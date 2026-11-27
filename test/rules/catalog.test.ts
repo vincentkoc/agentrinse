@@ -45,7 +45,7 @@ const home = join(tmpdir(), "agentrinse-rule-observations");
 const context = { home, now, auditId: "rule-fixture" };
 const stamp = now.toISOString();
 const hash = "a".repeat(64);
-function planned(finding: Finding, enabled = true) {
+function planned(finding: Finding, enabled = true, overrides: Partial<typeof DEFAULT_CONFIG> = {}) {
   return createCleanupPlan(
     {
       schemaVersion: 1,
@@ -61,6 +61,7 @@ function planned(finding: Finding, enabled = true) {
       ...DEFAULT_CONFIG,
       adapters: { ...DEFAULT_CONFIG.adapters, [finding.resource.adapter]: { enabled } },
       plan: { ...DEFAULT_CONFIG.plan, maxRisk: "recoverable" },
+      ...overrides,
     },
     now,
   ).actions;
@@ -114,6 +115,35 @@ describe("built-in rule fixtures", () => {
             };
             const finding = classifyProviderFile(rule.provider, context, observation)!;
             expect(planned(finding, false)).toEqual([]);
+            const disabled = { [id]: { enabled: false } };
+            expect(
+              classifyProviderFile(rule.provider, context, observation, disabled)?.candidateActions,
+            ).toEqual([]);
+            expect(planned(finding, true, { providerRules: disabled })).toEqual([]);
+            const stricterAge = { [id]: { minAgeMinutes: rule.minAgeMinutes + 1 } };
+            expect(
+              classifyProviderFile(rule.provider, context, observation, stricterAge),
+            ).toMatchObject({
+              state: "protected",
+              facts: { minAgeMinutes: rule.minAgeMinutes + 1 },
+              candidateActions: [],
+            });
+            expect(planned(finding, true, { providerRules: stricterAge })).toEqual([]);
+            const longerRecovery = {
+              [id]: { quarantineTtlMinutes: rule.quarantineTtlMinutes + 1 },
+            };
+            expect(planned(finding, true, { providerRules: longerRecovery })).toEqual([]);
+            if (eligible) {
+              const refreshed = classifyProviderFile(
+                rule.provider,
+                context,
+                observation,
+                longerRecovery,
+              )!;
+              expect(planned(refreshed, true, { providerRules: longerRecovery })).toMatchObject([
+                { quarantineTtlMinutes: rule.quarantineTtlMinutes + 1 },
+              ]);
+            }
             expect(finding.state).toBe(eligible ? "eligible" : "protected");
             expect(planned(finding)).toMatchObject(
               eligible
@@ -175,7 +205,11 @@ describe("built-in rule fixtures", () => {
             },
           });
           expect(finding.state).toBe(tracked ? "protected" : "eligible");
-          expect(planned(finding)).toMatchObject(
+          expect(
+            planned(finding, true, {
+              artifacts: { ...DEFAULT_CONFIG.artifacts, projects: [project] },
+            }),
+          ).toMatchObject(
             tracked ? [] : [{ type: "artifacts.remove", expectedReclaimBytes: bytes }],
           );
         }

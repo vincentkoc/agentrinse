@@ -15,10 +15,13 @@ import { collectPackStorage } from "../rules/git/pack-storage.js";
 import { collectCrabboxStorage } from "../rules/openclaw/crabbox-storage.js";
 import { collectPrDependencies } from "../rules/openclaw/pr-dependencies.js";
 import { crabboxStagingRule, prDependenciesRule } from "../rules/openclaw/lane-caches.js";
+import { loadConfigForHome } from "../config/load.js";
+import { storageFamilies } from "../config/rule-options.js";
 import { isPathInside } from "../core/safety.js";
 
 export type StorageOptions = {
   home: string;
+  config?: string;
   family?: string[];
   retainedRoot?: string[];
   at?: string[];
@@ -39,7 +42,12 @@ type Dependencies = {
   systemRoot?: string;
   readMounts?: (platform: NodeJS.Platform) => Promise<StorageMount[] | undefined>;
 };
-export async function inventoryStorage(options: StorageOptions, deps: Dependencies = {}) {
+export async function inventoryStorage(
+  options: StorageOptions,
+  deps: Dependencies = {},
+  configuredRuleScope = false,
+  reviewAges: Record<string, number | undefined> = {},
+) {
   const home = literal(options.home);
   const nativeOnly =
     options.nativeVolume?.length &&
@@ -49,7 +57,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
     !options.project?.length &&
     !options.system;
   const families = nativeOnly ? ["mounts"] : (options.family ?? []);
-  const allowed = ["developer", "retained", "vm", "mounts", "crabbox", "openclaw", "git"];
+  const allowed: readonly string[] = storageFamilies;
   if (families.some((f) => !allowed.includes(f)))
     throw new Error("Unknown storage family; choose " + allowed.join(", "));
   const selected = (family: string) => !families.length || families.includes(family);
@@ -59,11 +67,14 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   const budget = { remaining: Number(limit) };
   const platform = deps.platform ?? process.platform;
   const catalog = localStorageLocations(home, platform, deps.systemRoot);
-  const { rules, supplied, projects, projectAreas, explicitLocations } = selectStorageLocations(
-    options,
-    home,
-    catalog,
-  );
+  const {
+    rules,
+    supplied,
+    projects,
+    projectAreas,
+    explicitLocations: selectedLocations,
+  } = selectStorageLocations(options, home, catalog);
+  const explicitLocations = configuredRuleScope || selectedLocations;
   const mounts = await (deps.readMounts ?? readStorageMounts)(platform);
   const retained = [...new Set((options.retainedRoot ?? []).map(literal))];
   const volumes = [...new Set((options.volume ?? []).map(literal))];
@@ -136,7 +147,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   const now = Date.now();
   const crabboxSelected = selected("crabbox") || selected("openclaw");
   const defaultCrabbox =
-    families.includes("crabbox") ||
+    (families.includes("crabbox") && !explicitLocations) ||
     (crabboxSelected && (!explicitLocations || rules.has(crabboxStagingRule.id)));
   const measureCrabbox = Boolean(
     options.measure && (staging.length || families.length || rules.has(crabboxStagingRule.id)),
@@ -147,7 +158,16 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       ? [join(home, ".cache/openclaw/crabbox-sync")]
       : []) {
     crabbox.push(
-      await collectCrabboxStorage(root, mounts, budget, now, receiptBudget, measureCrabbox),
+      await collectCrabboxStorage(
+        root,
+        mounts,
+        budget,
+        now,
+        receiptBudget,
+        measureCrabbox,
+        undefined,
+        reviewAges[crabboxStagingRule.id],
+      ),
     );
   }
   const openClawFamily = families.includes("openclaw");
@@ -163,6 +183,8 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
           budget,
           now,
           Boolean(options.measure && (openClawFamily || prRule)),
+          undefined,
+          reviewAges[prDependenciesRule.id],
         )
       : undefined;
   const areas: AreaReport[] = [];
@@ -275,9 +297,49 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   };
 }
 
-export async function executeStorageCommand(options: StorageOptions) {
+export async function executeStorageCommand(options: StorageOptions, deps: Dependencies = {}) {
   const startedAt = new Date().toISOString();
-  const { status, data } = await inventoryStorage(options);
+  const { config } = await loadConfigForHome(options.home, options.config);
+  const policy = config.storage;
+  const explicitScope =
+    options.system ||
+    [
+      options.rule,
+      options.family,
+      options.repo,
+      options.retainedRoot,
+      options.nativeVolume,
+      options.volume,
+      options.project,
+      options.at,
+      options.crabboxRoot,
+    ].some((values) => values && values.length > 0);
+  const useProfile = policy !== undefined && !explicitScope;
+  const availableIds = new Set(
+    [
+      ...localStorageLocations(options.home, deps.platform ?? process.platform, deps.systemRoot),
+      crabboxStagingRule,
+      prDependenciesRule,
+    ].map((rule) => rule.id),
+  );
+  const skippedRules = useProfile ? (policy.rules ?? []).filter((id) => !availableIds.has(id)) : [];
+  const appliedOptions = useProfile
+    ? {
+        ...options,
+        family: policy.families ?? [],
+        rule: policy.rules?.filter((id) => !skippedRules.includes(id)) ?? [],
+        system: policy.system ?? false,
+      }
+    : options;
+  const { status, data: observation } = await inventoryStorage(
+    appliedOptions,
+    deps,
+    Boolean(useProfile && policy.rules?.length),
+    policy?.reviewAgeMinutes,
+  );
+  const data = skippedRules.length
+    ? { ...observation, skippedPlatformRules: skippedRules }
+    : observation;
   const view = options.redact ? redactAuditValue(data, options.home, randomUUID()) : data;
   if (options.json)
     return jsonDocument(
@@ -289,5 +351,8 @@ export async function executeStorageCommand(options: StorageOptions) {
         data: view,
       }),
     );
-  return formatStorageReport(view, status);
+  return (
+    formatStorageReport(view, status) +
+    (skippedRules.length ? "Unavailable on this platform: " + skippedRules.join(", ") + "\n" : "")
+  );
 }

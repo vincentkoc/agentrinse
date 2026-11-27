@@ -119,11 +119,32 @@ describe("createCleanupPlan", () => {
       ],
     };
 
-    const plan = createCleanupPlan(audit, DEFAULT_CONFIG, new Date("2026-07-23T02:00:00.000Z"));
+    const config = {
+      ...DEFAULT_CONFIG,
+      artifacts: {
+        ...DEFAULT_CONFIG.artifacts,
+        projects: [{ root: "/tmp/project", names: ["node_modules" as const] }],
+        minBytes: 1024,
+      },
+    };
+    const plan = createCleanupPlan(audit, config, new Date("2026-07-23T02:00:00.000Z"));
 
     expect(plan.home).toBe(AUDIT.home);
     expect(plan.actions).toHaveLength(1);
     expect(plan.expectedReclaimBytes).toBe(1024);
+
+    for (const byName of [
+      { enabled: false },
+      { minBytes: 1025 },
+      { minAgeMinutes: Number.MAX_SAFE_INTEGER },
+    ]) {
+      const strict = {
+        ...config,
+        artifacts: { ...config.artifacts, byName: { node_modules: byName } },
+      };
+      expect(createCleanupPlan(audit, strict).actions).toEqual([]);
+    }
+    expect(createCleanupPlan(audit, DEFAULT_CONFIG).actions).toEqual([]);
 
     for (const adapter of ["codex", "claude", "openclaw"]) {
       const partial = {
@@ -137,14 +158,12 @@ describe("createCleanupPlan", () => {
           },
         ],
       };
-      expect(
-        createCleanupPlan(JSON.parse(JSON.stringify(partial)), DEFAULT_CONFIG).actions,
-      ).toEqual([]);
+      expect(createCleanupPlan(JSON.parse(JSON.stringify(partial)), config).actions).toEqual([]);
       const classified = {
         ...partial,
         diagnostics: partial.diagnostics.map((d) => ({ ...d, resourceId: "classified-late" })),
       };
-      expect(createCleanupPlan(classified, DEFAULT_CONFIG).actions).toHaveLength(1);
+      expect(createCleanupPlan(classified, config).actions).toHaveLength(1);
     }
   });
 
@@ -202,6 +221,7 @@ describe("createCleanupPlan", () => {
     };
     const config = {
       ...DEFAULT_CONFIG,
+      adapters: { ...DEFAULT_CONFIG.adapters, git: { enabled: true } },
       plan: { ...DEFAULT_CONFIG.plan, maxRisk: "recoverable" as const },
     };
 
@@ -210,5 +230,9 @@ describe("createCleanupPlan", () => {
     expect(plan.actions).toHaveLength(1);
     expect(plan.expectedReclaimBytes).toBe(0);
     expect(plan.pendingQuarantineBytes).toBe(2048);
+    expect(
+      createCleanupPlan(audit, { ...config, worktrees: { ...config.worktrees, enabled: false } })
+        .actions,
+    ).toEqual([]);
   });
 });

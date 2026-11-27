@@ -57,6 +57,12 @@ export async function revalidateDatabaseVacuum(
   config: AgentRinseConfig,
   dependencies: DatabaseRevalidationDependencies = {},
 ): Promise<DatabaseRevalidationResult> {
+  if (config.codexVacuum?.enabled === false || config.adapters.codex?.enabled === false)
+    return stale(
+      action,
+      "DATABASE_RULE_DISABLED",
+      "Codex offline compaction is disabled by configuration.",
+    );
   const expectedPath = configuredCodexDatabasePath(action, home, config);
   if (resolve(action.target.path) !== expectedPath) {
     return stale(

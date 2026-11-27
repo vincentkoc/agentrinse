@@ -85,6 +85,30 @@ async function fixture(): Promise<{
 }
 
 describe("provider-file quarantine execution and recovery", () => {
+  it("keeps the source and restores its mode when the policy is disabled at the final boundary", async () => {
+    const value = await fixture();
+    let checks = 0;
+    await expect(
+      executeProviderFileQuarantine(value.action, {
+        runId: "fixture",
+        entryId: "disabled-late",
+        quarantineDirectory: value.quarantineDirectory,
+        dependencies: {
+          ...idleDependencies(),
+          authorizeTarget: async () => {
+            if (++checks === 3) throw new Error("rule disabled");
+          },
+        },
+      }),
+    ).rejects.toMatchObject({
+      outcome: "skipped-stale",
+      diagnosticCode: "PROVIDER_FILE_POLICY_REFUSED",
+    });
+    expect(checks).toBe(3);
+    expect(await readFile(value.file, "utf8")).toBe("synthetic debug output\n");
+    expect((await lstat(value.file)).mode & 0o777).toBe(value.action.target.mode & 0o777);
+  });
+
   it("quarantines an exact regular file and restores it through undo", async () => {
     const selected = await fixture();
     const result = await executeProviderFileQuarantine(selected.action, {

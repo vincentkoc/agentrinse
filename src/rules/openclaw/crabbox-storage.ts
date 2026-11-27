@@ -14,7 +14,7 @@ import {
 import { coveringMount, type StorageMount } from "../../core/storage-mounts.js";
 
 import { currentStagingIdentity, directoryIdentity } from "./crabbox-identity.js";
-import { directoryMtimeReview, reviewAgeMs } from "./lane-caches.js";
+import { directoryMtimeReview, defaultReviewAgeMinutes, lastUseReview } from "./lane-caches.js";
 
 const prefix = "openclaw-crabbox-sync-";
 const limit = 32 * 1024;
@@ -60,7 +60,7 @@ type ReceiptObservation = {
   users?: string;
   recordedLeaseCount?: number;
   liveHolders?: "unverified";
-  lastUseReview?: "at-least-48-hours" | "under-48-hours";
+  lastUseReview?: ReturnType<typeof lastUseReview>;
   idle?: boolean;
   lastUsedMs?: number | null;
 };
@@ -68,6 +68,7 @@ async function inspectReceipt(
   entry: DirectEntry,
   mounts: StorageMount[],
   now: number,
+  reviewAgeMinutes: number,
 ): Promise<ReceiptObservation> {
   const path = join(entry.path, "staging.json");
   if (coveringMount(path, mounts) !== coveringMount(entry.path, mounts))
@@ -153,8 +154,7 @@ async function inspectReceipt(
         liveHolders: "unverified",
         ...(reuse
           ? {
-              lastUseReview:
-                now - mirror!.lastUsed >= reviewAgeMs ? "at-least-48-hours" : "under-48-hours",
+              lastUseReview: lastUseReview(now, mirror!.lastUsed, reviewAgeMinutes),
             }
           : {}),
         ...(mirror ? { idle: mirror.idle, lastUsedMs: validLastUse ? mirror.lastUsed : null } : {}),
@@ -175,6 +175,7 @@ export async function collectCrabboxStorage(
   receiptBudget: EntryBudget,
   measure = false,
   measureTree = measureCacheTree,
+  reviewAgeMinutes = defaultReviewAgeMinutes,
 ) {
   const scan = await directStorageEntries(root, mounts, budget);
   const entries = [];
@@ -199,12 +200,12 @@ export async function collectCrabboxStorage(
     }
     if (validId) receiptBudget.remaining--;
     let observation: ReceiptObservation = validId
-      ? await inspectReceipt(entry, mounts!, now)
+      ? await inspectReceipt(entry, mounts!, now, reviewAgeMinutes)
       : { classification: "legacy-or-unidentified", receipt: "uninspected" };
     let measurement;
     if (measure && observation.fingerprint) {
       measurement = await measureTree(entry.path, entry.stats, mounts!, budget);
-      const after = await inspectReceipt(entry, mounts!, now);
+      const after = await inspectReceipt(entry, mounts!, now, reviewAgeMinutes);
       if (after.fingerprint !== observation.fingerprint) {
         observation = {
           classification: "unverified-staging",
@@ -219,7 +220,7 @@ export async function collectCrabboxStorage(
     const { fingerprint: _, ...evidence } = observation;
     entries.push({
       path: entry.path,
-      directoryMtimeReview: directoryMtimeReview(entry.stats, now),
+      directoryMtimeReview: directoryMtimeReview(entry.stats, now, reviewAgeMinutes),
       ...evidence,
       ...(measure
         ? { measurement: measurement ?? { extent: "unknown", reason: "unverified-receipt" } }
@@ -233,6 +234,7 @@ export async function collectCrabboxStorage(
         ? "direct-partial"
         : scan.coverage,
     entries,
+    reviewAgeMinutes,
     mirrorIndex,
     otherEntries,
     receiptsOmitted,

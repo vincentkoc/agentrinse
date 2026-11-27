@@ -13,7 +13,7 @@ import {
   type DirectEntry,
   type EntryBudget,
 } from "../../core/storage-observation.js";
-import { directoryMtimeReview } from "./lane-caches.js";
+import { directoryMtimeReview, defaultReviewAgeMinutes } from "./lane-caches.js";
 
 function installationKind(name: string) {
   if (/^[a-f0-9]{64}$/u.test(name)) return "installation";
@@ -50,10 +50,17 @@ export async function collectPrDependencies(
   now: number,
   measure: boolean,
   measureTree = measureCacheTree,
+  reviewAgeMinutes = defaultReviewAgeMinutes,
 ) {
   const root = join(home, ".cache/openclaw/pr-dependencies");
   const namespaces: Namespace[] = [];
-  const report = { root, namespaces, liveHolders: "unverified" as const, reclaimableBytes: null };
+  const report = {
+    root,
+    reviewAgeMinutes,
+    namespaces,
+    liveHolders: "unverified" as const,
+    reclaimableBytes: null,
+  };
   const rootObservation =
     mounts && coveringMount(home, mounts) !== coveringMount(root, mounts)
       ? { status: "mount-boundary" as const, stats: undefined }
@@ -81,7 +88,7 @@ export async function collectPrDependencies(
         const entry: Entry = {
           path: child.path,
           kind,
-          directoryMtimeReview: directoryMtimeReview(child.stats, now),
+          directoryMtimeReview: directoryMtimeReview(child.stats, now, reviewAgeMinutes),
         };
         if (measure && kind !== "unrecognized-directory") {
           entry.measurement = await measureTree(child.path, child.stats, mounts!, budget);

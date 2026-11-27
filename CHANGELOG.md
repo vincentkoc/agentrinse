@@ -6,6 +6,10 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Added
+
+- `config policy` lists effective cleanup and inventory rules. `config render --set` builds reusable profiles for worktrees, individual provider files, Codex compaction, named build artifacts, and system or application storage. OpenClaw and Crabbox storage review clocks can be set independently.
+
 ### Fixed
 
 - `clean --profile closeout` displays audit diagnostics in its terminal summary.

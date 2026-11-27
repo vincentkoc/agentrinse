@@ -584,6 +584,14 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
       this.options.minAgeMinutes,
       this.reachability,
     );
+    if (this.options.enabled === false) {
+      roots.push({
+        code: "worktree-rule-disabled",
+        source: "config",
+        observedAt,
+        detail: "Worktree quarantine is disabled by configuration.",
+      });
+    }
     const eligible = resource.exists && roots.length === 0;
     const candidateActions: WorktreeQuarantineAction[] =
       eligible && this.dependencies.selectedPath === undefined ? [this.actionFor(resource)] : [];
