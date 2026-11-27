@@ -25,6 +25,7 @@ import {
 import { executeStorageRulesCommand } from "./commands/storage-rules.js";
 import { executeStorageCommand } from "./commands/storage.js";
 import { executeGitInventory } from "./commands/git-inventory.js";
+import { executeWorktreeGrades } from "./commands/worktree-grades.js";
 import { executeWorktreesCommand } from "./commands/worktrees.js";
 import { executeUndoCommand } from "./commands/undo.js";
 import { CommandInterruptedError } from "./core/interruption.js";
@@ -205,6 +206,33 @@ export function buildProgram(): Command {
     .option("--json", "emit versioned machine output", false)
     .action(async (options) => {
       process.stdout.write(await executeGitInventory({ ...options, home: homedir() }));
+    });
+
+  program
+    .command("worktree-grades")
+    .description(
+      "Grade selected registered linked worktrees without saving an audit or planning actions.",
+    )
+    .requiredOption("--repo <path>", "one literal absolute durable owner", collectOption, [])
+    .requiredOption(
+      "--worktree <path>",
+      "literal absolute linked checkout; repeat up to 64 times",
+      collectOption,
+      [],
+    )
+    .option("--config <path>", "explicit JSON config")
+    .option("--home <path>", "home directory for provider ownership discovery")
+    .option("--redact", "omit paths and resource identifiers", false)
+    .option("--json", "emit versioned machine output", false)
+    .action(async (options) => {
+      process.stdout.write(
+        await executeWorktreeGrades({
+          ...options,
+          repo: options.repo,
+          worktree: options.worktree,
+          home: options.home ?? homedir(),
+        }),
+      );
     });
 
   program

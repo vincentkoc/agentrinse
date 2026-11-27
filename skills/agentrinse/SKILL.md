@@ -17,6 +17,10 @@ Check the envelope status, per-owner coverage and entry budget first. A reposito
 
 When the checkout allocator supports it, stream its read-only inventory projection directly into the CLI using `gwt finish-status --all --read-only --inventory-json | agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --gwt-status-stdin`. Add `--worktree-root "$MANAGED_CONTAINER"` for a custom container. Legacy finish-status arrays establish reported signoff only. The native allocator must check current holders, protected history, recovery and retirement before a closeout.
 
+## Grade selected linked checkouts
+
+When a full Git audit times out, run `agentrinse worktree-grades --repo "$OWNER" --worktree "$CHECKOUT" --redact --json` on macOS or Linux. Use the canonical absolute owner and checkout paths. Repeat `--worktree` for up to 64 selections. Supply the same `--config` and provider home as the original audit. The report includes the full native registration count and one row per input in order. Check `graded`, `unknown` and each row's protection reasons. Retry smaller batches if the configured deadline expires. A grade is read-only evidence. It cannot authorize retirement or serve as input to a cleanup plan.
+
 ## Pick the scope
 
 - Use `worktrees --root "$CONTAINER"` for physical checkouts without a known owner registration. Read `unresolvedReason` to distinguish an observed empty group from one containing files or an incomplete inspection. Use `storage-rules` and `storage` for developer caches, staging areas and volume evidence.
