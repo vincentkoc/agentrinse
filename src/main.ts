@@ -112,7 +112,7 @@ export function buildProgram(): Command {
     )
     .option(
       "--family <name>",
-      "select developer, retained, vm, mounts, crabbox or git; repeatable",
+      "select developer, retained, vm, mounts, openclaw, crabbox or git; repeatable",
       collectOption,
       [],
     )
@@ -142,7 +142,7 @@ export function buildProgram(): Command {
     )
     .option(
       "--measure",
-      "measure eligible catalog cache trees or explicitly selected Crabbox staging",
+      "measure eligible catalog cache trees or explicitly selected OpenClaw lane caches",
       false,
     )
     .option(

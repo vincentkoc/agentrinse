@@ -25,6 +25,8 @@ When a full Git audit times out, run `agentrinse worktree-grades --repo "$OWNER"
 
 ## Pick the scope
 
+For OpenClaw lane caches, run `agentrinse storage --family openclaw --measure --json --redact`. It covers Crabbox sync staging and both generations of PR dependency storage. Review entries whose directory modification time is older than 48 hours. A live lane can hold an old donor. Use Crabbox's staging receipts and OpenClaw's native PR lifetime checks to verify current use before any separately authorized cleanup. Keep recent, held and unresolved entries.
+
 - Use `worktrees --root "$CONTAINER"` for physical checkouts without a known owner registration. Read `unresolvedReason` to distinguish an observed empty group from one containing files or an incomplete inspection. Use `storage-rules` and `storage` for developer caches, staging areas and volume evidence.
 - For a bounded provider audit, use `audit --no-state --quick --providers codex,claude --phase-timeout 5s --json --redact`. Quick scans skip size measurement.
 - Use documented read-only provider and allocator commands for ownership and activity. Keep provider SQLite databases, their schemas and WAL files, and session transcripts out of ad hoc cleanup queries. If the owner cannot establish activity, keep the candidate protected.

@@ -13,6 +13,8 @@ import { localStorageLocations } from "../rules/storage/catalog.js";
 import { formatStorageReport } from "./storage-output.js";
 import { collectPackStorage } from "../rules/git/pack-storage.js";
 import { collectCrabboxStorage } from "../rules/openclaw/crabbox-storage.js";
+import { collectPrDependencies } from "../rules/openclaw/pr-dependencies.js";
+import { crabboxStagingRule, prDependenciesRule } from "../rules/openclaw/lane-caches.js";
 import { isPathInside } from "../core/safety.js";
 
 export type StorageOptions = {
@@ -47,7 +49,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
     !options.project?.length &&
     !options.system;
   const families = nativeOnly ? ["mounts"] : (options.family ?? []);
-  const allowed = ["developer", "retained", "vm", "mounts", "crabbox", "git"];
+  const allowed = ["developer", "retained", "vm", "mounts", "crabbox", "openclaw", "git"];
   if (families.some((f) => !allowed.includes(f)))
     throw new Error("Unknown storage family; choose " + allowed.join(", "));
   const selected = (family: string) => !families.length || families.includes(family);
@@ -131,22 +133,38 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
   const gitPacks = await collectPackStorage(repos, mounts, budget);
   const crabbox = [];
   const receiptBudget = { remaining: 256 };
+  const now = Date.now();
+  const crabboxSelected = selected("crabbox") || selected("openclaw");
+  const defaultCrabbox =
+    families.includes("crabbox") ||
+    (crabboxSelected && (!explicitLocations || rules.has(crabboxStagingRule.id)));
+  const measureCrabbox = Boolean(
+    options.measure && (staging.length || families.length || rules.has(crabboxStagingRule.id)),
+  );
   for (const root of staging.length
     ? staging
-    : families.includes("crabbox") || (!explicitLocations && selected("crabbox"))
+    : defaultCrabbox
       ? [join(home, ".cache/openclaw/crabbox-sync")]
       : []) {
     crabbox.push(
-      await collectCrabboxStorage(
-        root,
-        mounts,
-        budget,
-        Date.now(),
-        receiptBudget,
-        Boolean(options.measure && (staging.length || families.includes("crabbox"))),
-      ),
+      await collectCrabboxStorage(root, mounts, budget, now, receiptBudget, measureCrabbox),
     );
   }
+  const openClawFamily = families.includes("openclaw");
+  const defaultScan = ![staging, repos, retained, volumes, nativeVolumes].some(
+    (paths) => paths.length,
+  );
+  const prRule = rules.has(prDependenciesRule.id);
+  const prDependencies =
+    selected("openclaw") && (prRule || (!explicitLocations && (openClawFamily || defaultScan)))
+      ? await collectPrDependencies(
+          home,
+          mounts,
+          budget,
+          now,
+          Boolean(options.measure && (openClawFamily || prRule)),
+        )
+      : undefined;
   const areas: AreaReport[] = [];
   for (const { id, owner, path, scope, reason, measureTree, optIn, base, selectFile } of catalog) {
     const requested = rules.has(id) || (base === "system" && options.system);
@@ -224,6 +242,12 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       (r) => r.coverage !== "duplicate-store" && r.coverage !== "direct-complete",
     ) ||
     gitPacks.ambiguousFiles > 0 ||
+    prDependencies?.namespaces.some(
+      (ns) =>
+        (ns.coverage !== "direct-complete" && ns.coverage !== "missing") ||
+        ns.excluded > 0 ||
+        ns.entries.some((entry) => entry.measurement && entry.measurement.extent !== "complete"),
+    ) ||
     crabbox.some(
       (r) =>
         (r.coverage !== "direct-complete" && !(r.coverage === "missing" && !staging.length)) ||
@@ -242,6 +266,7 @@ export async function inventoryStorage(options: StorageOptions, deps: Dependenci
       ...(nativeVolumes.length ? { nativeVolumeEvidence } : {}),
       gitPacks,
       crabbox,
+      ...(prDependencies ? { prDependencies } : {}),
       areas,
       entryBudget: Number(limit),
       entriesInspected: Number(limit) - budget.remaining,

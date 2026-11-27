@@ -64,6 +64,14 @@ Use `agentrinse storage --family developer --rule npm.content --measure --max-en
 
 For Crabbox, request `--family crabbox --measure` or supply `--crabbox-root /path/to/staging --measure`. The inventory visits ordinary files and directories by metadata inside receipt-verified capsules. It reads only the fixed receipt contents. Protected agent and VCS directories, credential roots, symlinks, special entries and nested mounts are excluded. A failed identity check leaves the capsule unmeasured. Per-root results label complete, lower-bound and unknown measurements. File hardlinks count once within each measured tree. Do not add these numbers across overlapping selections or treat allocated bytes as physical reclaim.
 
+## OpenClaw review lanes
+
+Run `agentrinse storage --family openclaw --measure --json --redact` to inspect both `~/.cache/openclaw/crabbox-sync` and `~/.cache/openclaw/pr-dependencies`. Plain `storage` discovers both. To select just one, use `--rule crabbox.staging` or `--rule openclaw.pr-dependencies`.
+
+The PR dependency report covers direct legacy entries and the installations, installation stages and retirement stages under `v3`. Unknown directories receive a shallow observation. The lifetime database, leases and metadata lock stay closed. Size measurement is optional and bounded by `--max-entries`; excluded links, protected directories, mounts and budget limits can make totals incomplete.
+
+`directoryMtimeReview: older-than-48-hours` means the directory's own modification time is over two days old. A running lane can reuse a donor through a symlink without changing that time. For Crabbox, compare the separate receipt-backed `lastUseReview` when present. Before pruning, use the producing tool to verify lane references, leases, locks and live holders. Preserve unresolved entries. The inventory creates no cleanup actions.
+
 ## Add a storage location
 
 The [package-store rules](../src/rules/storage/package-stores.ts) include `npm.content` as a worked example. Give a new literal location its own stable ID, owner, home-relative path, scope and public source. Set `measureTree` only for a known cache leaf that supports metadata-only traversal. Add a temporary-fixture test for the location, symlink and native mount boundaries. Keep receipt parsing in its producer's rule module.
