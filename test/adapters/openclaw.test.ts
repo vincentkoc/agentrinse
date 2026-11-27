@@ -24,6 +24,53 @@ async function tempHome() {
 }
 
 describe("OpenClaw storage", () => {
+  it("counts a configured direct workspace and its memory once, even when an agent shares its directory", async () => {
+    const home = await tempHome();
+    const root = join(home, ".openclaw");
+    const workspace = join(root, "custom");
+    const credentials = join(root, "credentials");
+    await mkdir(join(workspace, "memory"), { recursive: true });
+    await mkdir(credentials);
+    await writeFile(join(workspace, "notes.txt"), "123");
+    await writeFile(join(workspace, "MEMORY.md"), "12345");
+    await writeFile(join(workspace, "memory", "entry.md"), "1234567");
+    await writeFile(
+      join(root, "openclaw.json"),
+      JSON.stringify({
+        agents: {
+          defaults: { workspace },
+          entries: { other: { agentDir: workspace, workspace: credentials } },
+        },
+      }),
+    );
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.adapters.openclaw = { enabled: true, root };
+    const audit = await runAudit({
+      home,
+      config,
+      adapters: createAuditAdapters(config, process.platform, { environment: {} }).filter(
+        (adapter) => adapter.id === "openclaw",
+      ),
+    });
+    const findingsAt = (path: string) =>
+      audit.findings.filter((finding) => finding.resource.path === path);
+    for (const [path, surface, bytes] of [
+      [workspace, "workspace", 3],
+      [join(workspace, "MEMORY.md"), "memory", 5],
+      [join(workspace, "memory"), "memory", 7],
+      [credentials, "credentials", 0],
+    ] as const) {
+      expect(findingsAt(path)).toMatchObject([
+        {
+          state: "protected",
+          facts: { openClawSurface: surface },
+          measuredBytes: bytes,
+          candidateActions: [],
+        },
+      ]);
+    }
+  });
+
   it("reads bounded owner counts and withholds them for a pending WAL or unsupported schema", async () => {
     const path = join(await tempHome(), "openclaw-agent.sqlite");
     const db = new DatabaseSync(path);

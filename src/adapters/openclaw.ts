@@ -333,7 +333,7 @@ export async function collectOpenClaw(
       return report(path, "configuration", { ownerPathsComplete: owner.config.complete });
     if (name.startsWith("openclaw.json.bak")) return report(path, "configuration");
     if (Object.hasOwn(roots, name)) return report(path, roots[name]!);
-    if (directory && owner.config.paths.get(path) === "workspace") return workspace(path);
+    if (directory && owner.config.workspaces.has(path)) return workspace(path);
     return report(path, "provider");
   });
   // Registry paths can point outside this profile or at removed checkouts.

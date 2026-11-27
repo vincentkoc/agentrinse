@@ -6,13 +6,16 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `clean --profile closeout` displays audit diagnostics in its terminal summary.
+- OpenClaw inventory recognizes configured workspaces directly under the profile directory and reports `MEMORY.md` and `memory/` separately.
+
+## [1.2.0] - 2026-11-27
+
 ### Added
 
 - `agentrinse storage --family openclaw` reports Crabbox sync staging and legacy and v3 PR dependency caches together. It flags directories modified more than 48 hours ago for review and preserves live lane dependencies.
-
-### Fixed
-
-- OpenClaw inventory recognizes configured workspaces directly under the profile directory and reports `MEMORY.md` and `memory/` separately.
 
 ## [1.1.0] - 2026-11-27
 
