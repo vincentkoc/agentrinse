@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-27
+
 ### Added
 
 - `openclaw-pr-gc-diff` compares a frozen native preview and apply log, including PRs acted on outside the preview and partial branch cleanup.
