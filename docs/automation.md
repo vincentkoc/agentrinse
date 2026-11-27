@@ -25,7 +25,7 @@ schemas.
 {
   "schemaVersion": 1,
   "command": "audit",
-  "agentrinseVersion": "1.0.0",
+  "agentrinseVersion": "1.1.0",
   "startedAt": "2026-07-24T00:00:00.000Z",
   "completedAt": "2026-07-24T00:00:01.000Z",
   "status": "ok",
@@ -121,7 +121,7 @@ resource is skipped rather than substituted.
 
 ## Exit Status
 
-Current `1.0.0` behavior:
+Current `1.1.0` behavior:
 
 | Code  | Meaning                                      |
 | ----- | -------------------------------------------- |
