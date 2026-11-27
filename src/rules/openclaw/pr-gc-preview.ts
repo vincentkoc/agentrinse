@@ -3,8 +3,8 @@
 export const previewOwnerPrefix = "agentrinse-openclaw-pr-gc-v1 ";
 export const previewComplete = "agentrinse-openclaw-pr-gc-complete";
 const noCandidates = "No merged/closed PR worktrees eligible for removal.";
-const maxBytes = 4 * 1024 * 1024;
-const maxLines = 20_000;
+export const prGcMaxBytes = 4 * 1024 * 1024;
+export const prGcMaxLines = 20_000;
 
 export type PreviewRow =
   | { native: "would-remove"; prState: "MERGED" | "CLOSED" }
@@ -62,13 +62,17 @@ export async function readPrGcPreview(
   let bytes = 0;
   for await (const chunk of input) {
     bytes += chunk.byteLength;
-    if (bytes > maxBytes) throw new Error("OpenClaw PR GC preview exceeds 4 MiB");
+    if (bytes > prGcMaxBytes) throw new Error("OpenClaw PR GC preview exceeds 4 MiB");
     chunks.push(chunk);
   }
   const value = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+  return parsePrGcPreview(value, owner);
+}
+
+export function parsePrGcPreview(value: string, owner: string): Preview {
   const lines = value.split("\n");
   const terminated = lines.pop() === "";
-  if (lines.length > maxLines) throw new Error("OpenClaw PR GC preview exceeds 20000 lines");
+  if (lines.length > prGcMaxLines) throw new Error("OpenClaw PR GC preview exceeds 20000 lines");
   const result: Preview = {
     source: "supplied-stdout",
     rows: new Map(),

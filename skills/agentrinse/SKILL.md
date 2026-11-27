@@ -27,6 +27,8 @@ Use `config policy` for the installed policy catalog. For a 72-hour worktree pre
 
 For OpenClaw review backlogs, use `worktrees --repo "$OWNER" --project-roots --openclaw-pr-gc-stdin --measure --redact --json < gc-dry.txt` with native `scripts/pr gc --dry-run` output. Read the reported PR state, local review grade, and byte coverage separately. Raw output lacks owner and completion proof. An omitted PR has unknown state. Ignored patches and local proof scripts need owner review; native GC may also retire PR-only branches.
 
+A global native GC reevaluates PRs during the run. Freeze exact PR numbers and use the owner's `scripts/pr gc --pr N` route only after current holds and ignored files have been checked for that separately approved PR. Use `agentrinse openclaw-pr-gc-diff --repo "$OWNER" --preview gc-dry.txt --apply-log gc-apply.txt --json` to compare captured logs. Verify checkout absence, Git registration and branch tips separately when the log reports a refusal or an unexpected PR.
+
 ## Pick the scope
 
 For OpenClaw lane caches, run `agentrinse storage --family openclaw --measure --json --redact`. It covers Crabbox sync staging and both generations of PR dependency storage. Use the reported review age for the selected rule (48 hours by default). A live lane can hold an old donor. Use Crabbox's staging receipts and OpenClaw's native PR lifetime checks to verify current use before any separately authorized cleanup. Keep recent, held and unresolved entries.

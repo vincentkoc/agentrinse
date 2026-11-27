@@ -130,3 +130,47 @@ also remove PR-only local branches after removing a registered checkout.
 After a real GC run, verify checkout absence, registration removal and branch
 outcomes separately. Branch retirement can fail after the checkout and its
 registration are already gone. Supply only dry-run output to the importer.
+
+### Compare a frozen preview with a native run
+
+A global GC reevaluates PRs while it runs. A PR can merge after the preview and
+enter that run. For a separately authorized cleanup, freeze the specific PR
+numbers, recheck each checkout's holds and ignored material, then use the
+owner's single-PR route for that number: `scripts/pr gc --pr 123 --dry-run`
+followed by `scripts/pr gc --pr 123` only if the current evidence still permits it.
+Preserve the original preview and capture both native output streams for each run.
+
+```sh
+agentrinse openclaw-pr-gc-diff --repo "$OWNER" --preview gc-dry.txt --apply-log gc-apply.txt --json
+```
+
+The report compares logs offline, using only numeric PR IDs and the three
+native branch forms. `outsideAttempts` includes reported removals and branch
+operations for PRs outside the preview's MERGED/CLOSED selection. Failed-template
+removals are a separate native operation. Check `actionKindDrift` for changed
+cleanup kinds and `selectedUnreported` for selected PRs absent from this log. `possibleOutsideAttempts`
+includes ambiguous `cleanup incomplete` rows. A known dirty/locked refusal
+remains separate. A branch refusal can follow checkout removal and deletion
+of another branch. Check the physical checkout, native Git registration and
+original branch refs independently. Neither a listing nor an absence in a log
+grants approval or establishes current filesystem state.
+
+Plain output has unverified completeness. For a bounded, separately authorized
+single-PR run, use the owner-framed preview above and capture the native exit
+status to distinguish a completed invocation from a partial log:
+
+```sh
+(
+  cd "$OWNER" || exit 1
+  printf 'agentrinse-openclaw-pr-apply-v1 %s\n' "$(pwd -P)"
+  rc=0
+  LC_ALL=C scripts/pr gc --pr 123 2>&1 || rc=$?
+  printf 'agentrinse-openclaw-pr-apply-exit %s\n' "$rc"
+  exit "$rc"
+) > gc-apply.txt
+```
+
+The frame records the operator's capture. It cannot authenticate its producer.
+Files must be local, single-link regular files outside protected storage, with
+at most 4 MiB and 20,000 lines each. Supply physical paths on macOS or Linux.
+Malformed, mixed, duplicate and truncated logs report incomplete evidence.

@@ -13,6 +13,7 @@ const COMMANDS = [
   "doctor",
   "history",
   "lock",
+  "openclaw-pr-gc-diff",
   "plan",
   "purge",
   "show",
