@@ -191,38 +191,49 @@ describe("clean closeout profile", () => {
     ]);
   }, 30_000);
 
-  it("marks incomplete provider reachability as degraded", async () => {
-    const value = await gitFixture();
-    const codexRoot = join(value.home, ".codex");
-    await mkdir(codexRoot);
-    const config = fixtureConfig([]);
-    config.adapters.codex = { enabled: true };
-    await writeJsonAtomic(value.configPath, config);
+  it.each([true, false])(
+    "reports incomplete provider reachability in closeout (json=%s)",
+    async (json) => {
+      const value = await gitFixture();
+      const codexRoot = join(value.home, ".codex");
+      await mkdir(codexRoot);
+      const config = fixtureConfig([]);
+      config.adapters.codex = { enabled: true };
+      await writeJsonAtomic(value.configPath, config);
 
-    const result = await executeCleanCommand({
-      home: value.home,
-      config: value.configPath,
-      stateDir: value.stateDir,
-      profile: "closeout",
-      cwd: value.linked,
-      apply: false,
-      yes: false,
-      json: true,
-      dependencies: {
-        platform: "linux",
-        now: () => NOW,
-        runCommand: run,
-      },
-    });
-    const envelope = commandEnvelopeSchema.parse(JSON.parse(result.output));
+      const result = await executeCleanCommand({
+        home: value.home,
+        config: value.configPath,
+        stateDir: value.stateDir,
+        profile: "closeout",
+        cwd: value.linked,
+        apply: false,
+        yes: false,
+        json,
+        dependencies: {
+          platform: "linux",
+          now: () => NOW,
+          runCommand: run,
+        },
+      });
 
-    expect(result.status).toBe("degraded");
-    expect(cleanCommandExitCode(result)).toBe(1);
-    expect(envelope.status).toBe("degraded");
-    expect(result.audit.diagnostics.map((item) => item.code)).toContain(
-      "CODEX_WORKSPACE_METADATA_MISSING",
-    );
-  }, 30_000);
+      expect(result.status).toBe("degraded");
+      expect(cleanCommandExitCode(result)).toBe(1);
+      if (json) {
+        expect(commandEnvelopeSchema.parse(JSON.parse(result.output)).status).toBe("degraded");
+      } else {
+        const diagnostic = result.audit.diagnostics.find(
+          (item) => item.code === "CODEX_WORKSPACE_METADATA_MISSING",
+        )!;
+        expect(result.output).toContain("Diagnostics:");
+        expect(result.output).toContain(`${diagnostic.code}: ${diagnostic.message}`);
+      }
+      expect(result.audit.diagnostics.map((item) => item.code)).toContain(
+        "CODEX_WORKSPACE_METADATA_MISSING",
+      );
+    },
+    30_000,
+  );
 
   it("applies only an existing safe artifact action from a fresh closeout plan", async () => {
     const value = await gitFixture();

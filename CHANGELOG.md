@@ -6,6 +6,10 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+### Fixed
+
+- `clean --profile closeout` displays audit diagnostics in its terminal summary.
+
 ## [1.2.0] - 2026-11-27
 
 ### Added
