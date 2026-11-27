@@ -75,3 +75,58 @@ The PR dependency report covers direct legacy entries and the installations, ins
 ## Add a storage location
 
 The [package-store rules](../src/rules/storage/package-stores.ts) include `npm.content` as a worked example. Give a new literal location its own stable ID, owner, home-relative path, scope and public source. Set `measureTree` only for a known cache leaf that supports metadata-only traversal. Add a temporary-fixture test for the location, symlink and native mount boundaries. Keep receipt parsing in its producer's rule module.
+
+## OpenClaw PR review checkouts
+
+For a primary OpenClaw checkout, `worktrees --repo "$OWNER" --project-roots`
+identifies direct `.worktrees/pr-N` directories and native registrations. The
+rule recognizes the official GitHub HTTPS and SSH origin spellings used by
+OpenClaw’s own PR tool. Other repositories retain generic worktree inventory.
+
+Import an existing native preview without rerunning it:
+
+```sh
+agentrinse worktrees --repo "$OWNER" --project-roots --openclaw-pr-gc-stdin --measure --redact --json < gc-dry.txt
+```
+
+For a fresh preview, use this grouping in a trusted OpenClaw checkout. The first
+and last lines record the physical owner and success of the native command:
+
+```sh
+(
+  cd "$OWNER" &&
+  printf 'agentrinse-openclaw-pr-gc-v1 %s\n' "$(pwd -P)" &&
+  scripts/pr gc --dry-run &&
+  printf '%s\n' agentrinse-openclaw-pr-gc-complete
+) | agentrinse worktrees --repo "$OWNER" --project-roots --openclaw-pr-gc-stdin --measure --json
+```
+
+AgentRinse reads the supplied preview. It never runs the project script. The
+native preview itself can query GitHub and temporarily acquire and release PR
+operation refs. To preview a single PR, add `--pr 123` to the native command.
+Use a canonical absolute primary checkout for `OWNER`.
+
+`openClawPrWorktrees` reports the native claim and a separate local review grade
+for each PR. Plain stdout supplies reported counts and corroboration, including
+structured skip diagnostics. It has no owner or completion marker. A missing
+row supplies no PR state. Native GC can omit open or indeterminate PRs. Failed
+templates use a different owner contract and stay unknown. Input is bounded to
+4 MiB and 20,000 lines; mixed mutation output, malformed rows and conflicts
+withhold all positive review grades.
+
+A positive owner-review grade requires a completed owner-bound preview, a
+reciprocal checkout, matching native registration and current lock evidence.
+For up to 512 corroborated unlocked candidates, a bounded Git names-only check
+includes both ignored and ordinary untracked material. An ignored patch or
+local proof script can survive a clean Git status while being lost on removal.
+Any observed material, timeout, output limit or changed evidence withholds the
+grade. Per-row sizes count observed logical file bytes under `--measure`;
+partial and unavailable rows remain explicit. Reclaimable bytes stay unknown.
+
+The preview and grade are evidence for an owner’s review. Recheck current
+tracked changes, holders, recovery, branch ancestry and source preservation
+with the native owner before any separately authorized cleanup. Real PR GC can
+also remove PR-only local branches after removing a registered checkout.
+After a real GC run, verify checkout absence, registration removal and branch
+outcomes separately. Branch retirement can fail after the checkout and its
+registration are already gone. Supply only dry-run output to the importer.

@@ -7,12 +7,12 @@ export async function inventoryGit(
   path: string,
   args: string[],
   signal: AbortSignal,
-  limits: { timeoutMs?: number; maxBuffer?: number } = {},
+  limits: { timeoutMs?: number; maxBuffer?: number; rejectStderr?: boolean } = {},
 ): Promise<string> {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
   );
-  const { stdout } = await exec(
+  const { stdout, stderr } = await exec(
     "git",
     [
       "-c",
@@ -39,5 +39,6 @@ export async function inventoryGit(
       maxBuffer: limits.maxBuffer ?? 8 * 1024 * 1024,
     },
   );
+  if (limits.rejectStderr && stderr) throw new Error("Git inventory returned diagnostics");
   return stdout;
 }

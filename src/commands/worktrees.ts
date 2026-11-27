@@ -5,9 +5,18 @@ import { inventoryGit as git } from "../adapters/git/inventory-command.js";
 
 import { parseWorktreePorcelain, type GitWorktreeRecord } from "../adapters/git/porcelain.js";
 import { missingAdminSizes, registeredCheckoutPath } from "../adapters/git/worktree-admin-size.js";
+import {
+  directPr,
+  openClawPrProject,
+  reportPrWorktrees,
+  type PrProject,
+} from "../rules/openclaw/pr-worktrees.js";
+import { readPrGcPreview } from "../rules/openclaw/pr-gc-preview.js";
+import { selectedBinding } from "../rules/git/selected-binding.js";
 import { projectWorktreeRoots } from "../rules/git/project-worktree-roots.js";
 import { coveringMount, readStorageMounts } from "../core/storage-mounts.js";
 import { sameObservation } from "../core/storage-observation.js";
+import { isArtifactAgentState } from "../core/artifact-measurement.js";
 import { measurePath } from "../core/measure.js";
 import { redactAuditValue } from "../core/redaction.js";
 import { isPathInside } from "../core/safety.js";
@@ -50,6 +59,7 @@ type Options = {
   root: string[];
   repo: string[];
   projectRoots?: boolean;
+  openclawPrGcStdin?: boolean;
   measure?: boolean;
   maxEntries?: string;
   gwtStatusStdin?: boolean;
@@ -87,8 +97,22 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
   const started = new Date();
   const home = absolute(options.home);
   const env = dependencies.environment ?? process.env;
+  if (
+    options.openclawPrGcStdin &&
+    (!options.projectRoots ||
+      options.repo.length !== 1 ||
+      options.gwtStatusStdin ||
+      options.root.length)
+  )
+    throw new Error(
+      "--openclaw-pr-gc-stdin requires --project-roots, exactly one --repo, no additional --root, and exclusive stdin",
+    );
+  const importOwner = options.openclawPrGcStdin ? absolute(options.repo[0]!) : undefined;
+  const preview = importOwner
+    ? await readPrGcPreview(dependencies.input ?? process.stdin, importOwner)
+    : undefined;
   const configured = [...options.root];
-  if (!configured.length) {
+  if (!configured.length && !importOwner) {
     configured.push(join(home, ".codex", "worktrees"));
     if (env.CODEX_HOME) configured.push(join(absolute(env.CODEX_HOME), "worktrees"));
     if (env.DOTFILES_WORKTREES_ROOT) configured.push(absolute(env.DOTFILES_WORKTREES_ROOT));
@@ -110,6 +134,7 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     : new Map();
   const deadline = AbortSignal.timeout(TIME_BUDGET_MS);
   const roots: Root[] = [];
+  const prProjects = new Map<string, PrProject>();
   const entries = new Map<string, Entry>();
   const registrations = new Map<string, GitWorktreeRecord>();
   const owners = new Map<string, string>();
@@ -129,6 +154,23 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     };
     entries.set(path, value);
     return value;
+  }
+
+  function bindRecord(item: Entry, record: GitWorktreeRecord) {
+    item.lifecycle = lifecycleFor(statuses.get(item.path), record.head);
+    item.ownerSignoff = ownerSignoffFor(statuses.get(item.path), record.head);
+    item.locked = record.locked !== undefined;
+    item.gwtLock = /^gwt-finish\.v2:[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/iu.test(
+      record.locked ?? "",
+    );
+    item.prunable = record.prunable !== undefined;
+    if (
+      item.kind === "registered-linked" &&
+      item.gwtLock &&
+      ((item.lifecycle === "finished" && item.ownerSignoff === "released") ||
+        (item.lifecycle === "cancelled" && item.ownerSignoff === "cancelled"))
+    )
+      item.disposition = "review-native-closeout";
   }
 
   async function readRepository(path: string, explicit = false) {
@@ -177,14 +219,37 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     for await (const child of children) {
       if (++inspected > DISCOVERY_LIMIT || deadline.aborted) throw new Error("discovery limit");
       directEntries++;
-      if (!child.isDirectory() && !child.isSymbolicLink()) continue;
-      directoryEntries++;
+      // In preview-only mode the owner consumes direct pr-N children. Keep failed
+      // templates and unrelated nested checkouts out of this traversal.
+      const prProject = prProjects.get(directory);
       const path = join(directory, child.name);
+      const pr = directPr(path, directory);
+      if (importOwner && directory === join(importOwner, ".worktrees") && !pr) continue;
+      if (!child.isDirectory() && !child.isSymbolicLink()) {
+        if (prProject && pr) entry(path, "unresolved").unresolvedReason = "unverified-checkout";
+        continue;
+      }
+      directoryEntries++;
       if (entries.has(path)) continue;
       try {
         const stats = await lstat(path, { bigint: true });
         if (stats.isSymbolicLink() || !stats.isDirectory() || stats.dev !== device) {
           entry(path, "unresolved");
+          continue;
+        }
+        if (pr && (prProject || (importOwner && directory === join(importOwner, ".worktrees")))) {
+          const item = entry(path, "unresolved");
+          const record = prProject?.records.get(pr);
+          if (!prProject || !projectMounts || !record?.head || record.bare) continue;
+          const binding = await selectedBinding(path, prProject.owner, projectMounts);
+          if (!binding) continue;
+          prProject.bindings.set(pr, binding);
+          item.kind = "registered-linked";
+          item.directoryAgeDays = Math.max(
+            0,
+            Math.floor((started.getTime() - Number(stats.mtimeMs)) / 86_400_000),
+          );
+          bindRecord(item, record);
           continue;
         }
         let marker;
@@ -227,20 +292,7 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
           if ((await registeredCheckoutPath(resolve(admin))) !== path) continue;
           item.kind = "registered-linked";
         }
-        item.lifecycle = lifecycleFor(statuses.get(path), record.head);
-        item.ownerSignoff = ownerSignoffFor(statuses.get(path), record.head);
-        item.locked = record.locked !== undefined;
-        item.gwtLock = /^gwt-finish\.v2:[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/iu.test(
-          record.locked ?? "",
-        );
-        item.prunable = record.prunable !== undefined;
-        if (
-          item.kind === "registered-linked" &&
-          item.gwtLock &&
-          ((item.lifecycle === "finished" && item.ownerSignoff === "released") ||
-            (item.lifecycle === "cancelled" && item.ownerSignoff === "cancelled"))
-        )
-          item.disposition = "review-native-closeout";
+        bindRecord(item, record);
       } catch {
         entry(path, "unresolved").unresolvedReason = "inspection-incomplete";
         problems.push({ path, code: "WORKTREE_INSPECTION_INCOMPLETE" });
@@ -268,8 +320,22 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
           problems.push({ path, code: "WORKTREE_PROJECT_OWNER_REQUIRED" });
           continue;
         }
-        const { available, withheld } = await projectWorktreeRoots(path, home, projectMounts);
-        for (const root of available) paths.add(root);
+        const { available, withheld } = await projectWorktreeRoots(
+          path,
+          home,
+          projectMounts,
+          !!importOwner,
+        );
+        for (const root of available) {
+          paths.add(root);
+        }
+        const container = join(path, ".worktrees");
+        if (available.includes(container)) {
+          const records = repositories.get(join(path, ".git"));
+          const project =
+            records && (await openClawPrProject(path, projectMounts, records, deadline));
+          if (project) prProjects.set(container, project);
+        }
         for (const root of withheld) {
           withheldContainers.push(root);
           problems.push({ path: root, code: "WORKTREE_PROJECT_ROOT_INCOMPLETE" });
@@ -304,6 +370,7 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     presence: "directory" | "missing" | "unresolved";
   }[] = [];
   for (const [path, ownerRepository] of explicitRegistrations) {
+    if (importOwner && !directPr(path, join(importOwner, ".worktrees"))) continue;
     if (withinRoot(roots, path) || entries.has(path)) continue;
     const claims = conflicting.get(path);
     if (claims) {
@@ -333,6 +400,7 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
   }
   let historicalMissing = 0;
   for (const path of new Set([...registrations.keys(), ...statuses.keys()])) {
+    if (importOwner && !directPr(path, join(importOwner, ".worktrees"))) continue;
     if (entries.has(path) || !withinRoot(roots, path)) continue;
     try {
       // Only inspect a literal registration below a verified container. A linked
@@ -396,9 +464,16 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
     if (owner) item.ownerRepository = owner;
     if (options.measure && (item.kind === "registered-linked" || item.kind === "standalone")) {
       try {
-        const result = await measurePath(item.path, { maxEntries, signal: measurementDeadline });
+        const result = await measurePath(item.path, {
+          maxEntries,
+          signal: measurementDeadline,
+          ...(prProjects.has(dirname(item.path)) ? { protectEntry: isArtifactAgentState } : {}),
+        });
         item.size = {
-          status: result.truncated || result.mountBoundaries ? "lower-bound" : "complete",
+          status:
+            result.truncated || result.mountBoundaries || result.protectedEntries
+              ? "lower-bound"
+              : "complete",
           logicalBytes: result.bytes,
         };
       } catch {
@@ -465,7 +540,38 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
       : null,
     partialMeasurements: items.filter((i) => i.size && i.size.status !== "complete").length,
   };
+  const prOwners = new Set([...prProjects.values()].map((project) => project.owner.path));
+  if (importOwner) prOwners.add(importOwner);
+  const openClawPrWorktrees = [];
+  if (prOwners.size) {
+    const currentMounts = preview
+      ? await (dependencies.readMounts ?? readStorageMounts)(process.platform)
+      : projectMounts;
+    for (const path of prOwners) {
+      const container = join(path, ".worktrees");
+      const available = roots.some(
+        (root) => root.path === container && root.status === "available",
+      );
+      const local =
+        currentMounts &&
+        (
+          await projectWorktreeRoots(path, home, currentMounts, true).catch(() => undefined)
+        )?.available.includes(container);
+      openClawPrWorktrees.push(
+        await reportPrWorktrees(
+          path,
+          prProjects.get(container),
+          path === importOwner ? preview : undefined,
+          items,
+          !!(available && local),
+          currentMounts,
+          measurementDeadline,
+        ),
+      );
+    }
+  }
   return {
+    ...(openClawPrWorktrees.length ? { openClawPrWorktrees } : {}),
     startedAt: started.toISOString(),
     roots,
     summary,
@@ -475,11 +581,21 @@ export async function inventoryWorktrees(options: Options, dependencies: Depende
   };
 }
 
-export async function executeWorktreesCommand(options: Options): Promise<string> {
-  const report = await inventoryWorktrees(options);
+export async function executeWorktreesCommand(
+  options: Options,
+  dependencies: Dependencies = {},
+): Promise<string> {
+  const report = await inventoryWorktrees(options, dependencies);
   const { startedAt, ...data } = report;
   const status =
     (options.root.length && data.roots.some((root) => root.status !== "available")) ||
+    data.openClawPrWorktrees?.some(
+      (report) =>
+        !report.containerAvailable ||
+        !report.ownerVerified ||
+        report.source === "invalid" ||
+        ["unavailable", "partial"].includes(report.currentNativeEvidence),
+    ) ||
     data.problems.length ||
     data.summary.unresolved ||
     data.summary.externalUnresolved ||
@@ -509,6 +625,13 @@ export async function executeWorktreesCommand(options: Options): Promise<string>
           ]
         : []),
       `Outside selected roots, explicit repositories register ${summary.externalRegisteredDirectories} existing directories, ${summary.externalMissing} missing and ${summary.externalUnresolved} unresolved. Sizes require selecting their container.`,
+      ...(view.openClawPrWorktrees ?? []).flatMap((report) => [
+        `OpenClaw PR worktrees (${report.source}): ${report.summary.reportedWouldRemove} reported merged/closed, ${report.summary.corroboratedWouldRemove} corroborated, ${report.summary.ownerReview} for owner review, ${report.summary.skipped} skipped, ${report.summary.unknown} unknown. Reported checkout logical bytes observed: ${report.summary.reportedCheckoutLogicalBytes ?? "unknown"} (${report.summary.reportedSizesComplete} complete, ${report.summary.reportedSizesPartial} partial, ${report.summary.reportedSizesUnknown} unmeasured). Reclaim unknown.`,
+        ...report.rows.map(
+          (row) =>
+            `  PR #${row.pr}  ${row.native}${"prState" in row ? " " + row.prState : ""}  ${row.grade}  ${row.reason}  ${row.path}`,
+        ),
+      ]),
       ...view.roots.map((root) => `Root ${root.status}: ${root.path}`),
       ...view.entries
         .filter((item) => item.disposition !== "recorded-removed")

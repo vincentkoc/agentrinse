@@ -1,3 +1,4 @@
+import { prWorktreeRule } from "../openclaw/pr-worktrees.js";
 import { laneCacheRules } from "../openclaw/lane-caches.js";
 
 // Native evidence is described here so listing rules never wakes a service or inspects a guest.
@@ -17,6 +18,7 @@ export const ownerEvidence = [
       "Pack metadata covers stable packs, temporary packs and sidecars. The owner checks count-objects garbage, in-flight writers, promisor objects, keep markers, refs and maintenance headroom.",
   },
   ...laneCacheRules,
+  prWorktreeRule,
   {
     id: "codebase-memory.registration",
     owner: "Codebase Memory",

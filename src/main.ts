@@ -271,6 +271,11 @@ export function buildProgram(): Command {
       "read JSON from gwt finish-status --all --read-only on stdin",
       false,
     )
+    .option(
+      "--openclaw-pr-gc-stdin",
+      "correlate OpenClaw scripts/pr gc --dry-run stdout with one project owner",
+      false,
+    )
     .option("--measure", "measure bounded logical checkout bytes", false)
     .option("--max-entries <count>", "measurement entry limit per checkout", "10000")
     .option("--redact", "redact paths in output", false)

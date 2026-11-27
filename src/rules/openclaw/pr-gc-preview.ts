@@ -1,0 +1,164 @@
+// scripts/pr gc --dry-run writes relative paths and has no success marker.
+// Optional framing binds the operator-supplied owner and successful command exit.
+export const previewOwnerPrefix = "agentrinse-openclaw-pr-gc-v1 ";
+export const previewComplete = "agentrinse-openclaw-pr-gc-complete";
+const noCandidates = "No merged/closed PR worktrees eligible for removal.";
+const maxBytes = 4 * 1024 * 1024;
+const maxLines = 20_000;
+
+export type PreviewRow =
+  | { native: "would-remove"; prState: "MERGED" | "CLOSED" }
+  | { native: "failed-template" }
+  | { native: "skipped"; reason: string }
+  | { native: "conflict" };
+
+export type Preview = {
+  source: "supplied-stdout" | "owner-bound-complete" | "invalid";
+  rows: Map<string, PreviewRow>;
+  invalidLines: number;
+  duplicateRows: number;
+  excludedNonPrNames: number;
+  preservationDiagnostics: number;
+  lockRecoveryDiagnostics: number;
+};
+
+function parseRow(line: string): [string, PreviewRow] | undefined {
+  const parts = /^(would remove|skipping) \.worktrees\/pr-([1-9][0-9]*) \(([^()]+)\)$/u.exec(line);
+  if (!parts) return;
+  const [, verb, pr, detail] = parts;
+  if (verb === "would remove") {
+    if (detail === "failed template clone") return [pr!, { native: "failed-template" }];
+    for (const prState of ["MERGED", "CLOSED"] as const)
+      if (detail === "PR #" + pr + " state=" + prState)
+        return [pr!, { native: "would-remove", prState }];
+  } else {
+    const reasons: Record<string, string> = {
+      "merge evidence preserved": "merge-evidence-preserved",
+      "cleanup incomplete": "cleanup-incomplete",
+      ["PR #" + pr + " has an active scripts/pr operation"]: "active-operation",
+      ["PR #" + pr + " operation lock state is indeterminate"]: "indeterminate-operation-lock",
+    };
+    if (Object.hasOwn(reasons, detail!))
+      return [pr!, { native: "skipped", reason: reasons[detail!]! }];
+    for (const reason of [
+      "not reported to its supervisor",
+      "unreadable",
+      "orphaned",
+      "indeterminate",
+    ])
+      if (detail === "PR #" + pr + " operation lock is " + reason)
+        return [
+          pr!,
+          { native: "skipped", reason: "operation-lock-" + reason.replaceAll(" ", "-") },
+        ];
+  }
+}
+
+export async function readPrGcPreview(
+  input: AsyncIterable<Uint8Array>,
+  owner: string,
+): Promise<Preview> {
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  for await (const chunk of input) {
+    bytes += chunk.byteLength;
+    if (bytes > maxBytes) throw new Error("OpenClaw PR GC preview exceeds 4 MiB");
+    chunks.push(chunk);
+  }
+  const value = new TextDecoder("utf-8", { fatal: true }).decode(Buffer.concat(chunks));
+  const lines = value.split("\n");
+  const terminated = lines.pop() === "";
+  if (lines.length > maxLines) throw new Error("OpenClaw PR GC preview exceeds 20000 lines");
+  const result: Preview = {
+    source: "supplied-stdout",
+    rows: new Map(),
+    invalidLines: 0,
+    duplicateRows: 0,
+    excludedNonPrNames: 0,
+    preservationDiagnostics: 0,
+    lockRecoveryDiagnostics: 0,
+  };
+  const framed = lines[0]?.startsWith(previewOwnerPrefix);
+  if (framed) {
+    if (lines.shift() !== previewOwnerPrefix + owner) result.invalidLines++;
+    if (lines.at(-1) === previewComplete) lines.pop();
+    else result.invalidLines++;
+  }
+  if (!terminated || !lines.length) result.invalidLines++;
+  let summary = false;
+  const preservation = new Set<string>(),
+    recovery = new Set<string>();
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (line === noCandidates && !summary && index === lines.length - 1) {
+      summary = true;
+      continue;
+    }
+    // Native stderr may be captured with stdout. Recognize only diagnostics
+    // attributable to an actual skip row; never retain or execute recovery commands.
+    const preserved =
+      /^Preserving \.worktrees\/pr-([1-9][0-9]*): worktree has local changes or is locked\. Review its contents and ownership before cleanup\.$/u.exec(
+        line,
+      );
+    if (preserved) {
+      if (preservation.has(preserved[1]!)) result.invalidLines++;
+      preservation.add(preserved[1]!);
+      continue;
+    }
+    const help =
+      /^After verifying that no PR #([1-9][0-9]*) tools remain, recover the exact owner with:$/u.exec(
+        line,
+      );
+    if (help) {
+      const command =
+        /^  scripts\/pr lock-recover ([1-9][0-9]*) (?:[a-f0-9]{40}|[a-f0-9]{64}) --confirmed-no-running-tools$/u.exec(
+          lines[index + 1] ?? "",
+        );
+      if (command?.[1] !== help[1] || recovery.has(help[1]!)) result.invalidLines++;
+      else {
+        recovery.add(help[1]!);
+        index++;
+      }
+      continue;
+    }
+    const excluded =
+      /^skipping \.worktrees\/(pr-[A-Za-z0-9._-]*) \(could not parse PR number\)$/u.exec(line);
+    if (excluded && !/^pr-[1-9][0-9]*$/u.test(excluded[1]!)) {
+      result.excludedNonPrNames++;
+      continue;
+    }
+    const row = line.length <= 4096 && parseRow(line);
+    if (!row) {
+      result.invalidLines++;
+      continue;
+    }
+    const [pr, claim] = row;
+    if (result.rows.has(pr)) {
+      result.rows.set(pr, { native: "conflict" });
+      result.duplicateRows++;
+    } else result.rows.set(pr, claim);
+  }
+  for (const pr of preservation) {
+    const claim = result.rows.get(pr);
+    if (claim?.native !== "skipped" || claim.reason !== "cleanup-incomplete") result.invalidLines++;
+  }
+  for (const pr of recovery) {
+    const claim = result.rows.get(pr);
+    if (claim?.native !== "skipped" || !claim.reason.startsWith("operation-lock-"))
+      result.invalidLines++;
+  }
+  result.preservationDiagnostics = preservation.size;
+  result.lockRecoveryDiagnostics = recovery.size;
+  const wouldRemove = [...result.rows.values()].some(
+    (r) => r.native === "would-remove" || r.native === "failed-template",
+  );
+  if (summary && wouldRemove) result.invalidLines++;
+  if (framed && !summary && !wouldRemove) result.invalidLines++;
+  result.source =
+    result.invalidLines || result.duplicateRows
+      ? "invalid"
+      : framed
+        ? "owner-bound-complete"
+        : "supplied-stdout";
+  return result;
+}
