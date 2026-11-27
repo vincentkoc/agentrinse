@@ -292,9 +292,16 @@ async function moleHandoff(
   }
 }
 
+function renderDiagnostics(diagnostics: readonly Diagnostic[]): string[] {
+  return diagnostics.length === 0
+    ? []
+    : ["", "Diagnostics:", ...diagnostics.map(({ code, message }) => `  ${code}: ${message}`)];
+}
+
 function renderCloseout(
   summary: CloseoutSummary,
   actions: CleanupPlan["actions"],
+  diagnostics: readonly Diagnostic[],
   run?: CleanupRun,
 ): string {
   const lines = [
@@ -309,6 +316,7 @@ function renderCloseout(
     `Audit: ${summary.auditPath}`,
     `Plan: ${summary.planPath}`,
     `Config: ${summary.configPath}`,
+    ...renderDiagnostics(diagnostics),
   ];
   if (summary.run !== undefined && run !== undefined) {
     lines.push(
@@ -353,13 +361,7 @@ function renderFleet(
       ...summary.topBlockers.map((blocker) => `  ${blocker.code}: ${blocker.count}`),
     );
   }
-  if (diagnostics.length > 0) {
-    lines.push(
-      "",
-      "Diagnostics:",
-      ...diagnostics.map((diagnostic) => `  ${diagnostic.code}: ${diagnostic.message}`),
-    );
-  }
+  lines.push(...renderDiagnostics(diagnostics));
   if (summary.run !== undefined && run !== undefined) {
     lines.push(
       "",
@@ -680,7 +682,7 @@ export async function executeCleanCommand(
           }),
         )
       : summary.profile === "closeout"
-        ? renderCloseout(summary, plan.actions, run)
+        ? renderCloseout(summary, plan.actions, audit.diagnostics, run)
         : renderFleet(summary, audit.diagnostics, run),
   };
 }
