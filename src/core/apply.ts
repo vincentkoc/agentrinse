@@ -148,6 +148,11 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
   const processProbe = (path: string): Promise<ProcessOwnershipResult> =>
     findProcessesUsingPath(path, { timeoutMs: config.audit.processOwnershipTimeoutMs });
   const plan = verifyCleanupPlan(options.input, config, clock());
+  async function currentPolicy() {
+    return options.dependencies?.loadCurrentConfig
+      ? agentRinseConfigSchema.parse(await options.dependencies.loadCurrentConfig())
+      : config;
+  }
   const layout = stateLayout(options.stateRoot);
   const physicalStateRoot = await resolvePhysicalPath(layout.root);
   for (const action of plan.actions) {
@@ -408,6 +413,12 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
                   options.dependencies?.loadCurrentConfig === undefined
                     ? undefined
                     : agentRinseConfigSchema.parse(await options.dependencies.loadCurrentConfig());
+                if (
+                  currentConfig &&
+                  sha256Json({ ...currentConfig, pins: config.pins }) !== plan.configDigest
+                ) {
+                  throw new ApplySafetyError("worktree cleanup policy changed after planning");
+                }
                 const protectionConfigs =
                   currentConfig === undefined ? [config] : [config, currentConfig];
                 const roots = (
@@ -494,15 +505,19 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             quarantineDirectory: layout.providerQuarantine,
             dependencies: {
               clock,
-              authorizeTarget: (selectedAction) =>
-                authorizeProviderFileAction(
+              authorizeTarget: async (selectedAction) => {
+                const current = await currentPolicy();
+                if (sha256Json(current) !== plan.configDigest)
+                  throw new ApplySafetyError("provider file cleanup policy changed after planning");
+                await authorizeProviderFileAction(
                   selectedAction,
                   plan.home,
-                  config,
+                  current,
                   process.platform,
                   process.env,
                   clock(),
-                ),
+                );
+              },
               authorization: {
                 expiresAtMs: Date.parse(plan.expiresAt),
                 now: clock,
@@ -568,6 +583,14 @@ export async function applyCleanupPlan(options: ApplyCleanupPlanOptions): Promis
             ...(options.signal === undefined ? {} : { signal: options.signal }),
             dependencies: {
               clock,
+              recheckPolicy: async () => {
+                if (sha256Json(await currentPolicy()) !== plan.configDigest)
+                  throw new DatabaseExecutionError(
+                    "database cleanup policy changed after planning",
+                    "skipped-stale",
+                    "DATABASE_POLICY_CHANGED",
+                  );
+              },
               authorization: {
                 expiresAtMs: Date.parse(plan.expiresAt),
                 now: clock,

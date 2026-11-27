@@ -45,6 +45,7 @@ export class DatabaseExecutionError extends Error {
 
 export type DatabaseExecutionDependencies = CodexDatabaseDependencies & {
   clock?: () => Date;
+  recheckPolicy?: () => Promise<void>;
   inspectDatabase?: typeof inspectCodexDatabase;
   inspectProcesses?: typeof inspectCodexProcesses;
   inspectOpenHandles?: typeof inspectDatabaseOpenHandles;
@@ -449,6 +450,7 @@ export async function executeDatabaseVacuum(
             entry,
           );
         }
+        await dependencies.recheckPolicy?.();
         assertAuthorized(dependencies);
         throwIfInterrupted(options.signal);
 

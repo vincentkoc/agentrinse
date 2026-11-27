@@ -1,4 +1,6 @@
 import { requiresCacheTag } from "./cache-tag.js";
+import { artifactPolicy } from "../../config/rule-options.js";
+import { artifactNameSchema } from "../../contracts/action.js";
 import type { AgentRinseConfig } from "../../config/schema.js";
 import type { inspectArtifactGitState } from "../../core/artifact-git-state.js";
 import type { Finding } from "../../contracts/finding.js";
@@ -75,11 +77,20 @@ export function artifactInspectionBlocker(
 
 export function artifactDecisionBeforeHolderProbe(
   resource: ResourceSnapshot,
-  policy: Pick<AgentRinseConfig["artifacts"], "minBytes" | "minAgeMinutes">,
+  options: Pick<AgentRinseConfig["artifacts"], "minBytes" | "minAgeMinutes" | "byName">,
 ): (ArtifactBlocker & { state: "blocked" | "protected" }) | undefined {
   const { facts } = resource;
   const blocker = artifactInspectionBlocker(facts);
   if (blocker) return { state: "blocked", ...blocker };
+  const name = artifactNameSchema.safeParse(facts.name);
+  const policy = name.success ? artifactPolicy(options, name.data) : { ...options, enabled: true };
+  if (!policy.enabled)
+    return {
+      state: "protected",
+      confidence: "certain",
+      code: "artifact-rule-disabled",
+      message: "Cleanup for this artifact name is disabled by configuration.",
+    };
   if (resource.measuredBytes === undefined || resource.measuredBytes < policy.minBytes)
     return {
       state: "protected",

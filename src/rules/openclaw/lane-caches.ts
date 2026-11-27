@@ -17,10 +17,22 @@ export const prDependenciesRule = {
 };
 
 export const laneCacheRules = [crabboxStagingRule, prDependenciesRule];
-export const reviewAgeMs = 48 * 60 * 60 * 1000;
+export const defaultReviewAgeMinutes = 48 * 60;
+export const reviewAgeMs = defaultReviewAgeMinutes * 60_000;
+export function lastUseReview(now: number, lastUse: number, minutes: number) {
+  const reached = now - lastUse >= minutes * 60_000;
+  if (minutes === defaultReviewAgeMinutes) return reached ? "at-least-48-hours" : "under-48-hours";
+  return reached ? "at-least-configured-age" : "under-configured-age";
+}
 
-export function directoryMtimeReview(stats: BigIntStats, now: number) {
+export function directoryMtimeReview(
+  stats: BigIntStats,
+  now: number,
+  minutes = defaultReviewAgeMinutes,
+) {
   const age = BigInt(now) * 1_000_000n - stats.mtimeNs;
   if (age < 0n || stats.mtimeNs <= 0n) return "unknown";
-  return age > BigInt(reviewAgeMs) * 1_000_000n ? "older-than-48-hours" : "within-48-hours";
+  const older = age > BigInt(minutes) * 60_000_000_000n;
+  if (minutes === defaultReviewAgeMinutes) return older ? "older-than-48-hours" : "within-48-hours";
+  return older ? "older-than-configured-age" : "within-configured-age";
 }

@@ -51,7 +51,9 @@ export function formatStorageReport(view: StorageReport["data"], status: Storage
           r.root +
           "  mirror index: " +
           r.mirrorIndex +
-          "; receipts omitted: " +
+          "; review age: " +
+          r.reviewAgeMinutes +
+          " minutes; receipts omitted: " +
           r.receiptsOmitted +
           "; withheld entries: " +
           r.excluded,
@@ -78,7 +80,9 @@ export function formatStorageReport(view: StorageReport["data"], status: Storage
           ns.coverage +
           "  " +
           ns.path +
-          "  live lane holds unverified; " +
+          "  live lane holds unverified; review age: " +
+          view.prDependencies!.reviewAgeMinutes +
+          " minutes; " +
           ns.otherEntries +
           " other entries, " +
           ns.excluded +

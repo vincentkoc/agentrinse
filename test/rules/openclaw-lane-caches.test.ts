@@ -15,7 +15,11 @@ import { inventoryStorage } from "../../src/commands/storage.js";
 import { formatStorageReport } from "../../src/commands/storage-output.js";
 import { storageRuleCatalog } from "../../src/commands/storage-rules.js";
 import { parseStorageMounts } from "../../src/core/storage-mounts.js";
-import { directoryMtimeReview, reviewAgeMs } from "../../src/rules/openclaw/lane-caches.js";
+import {
+  directoryMtimeReview,
+  reviewAgeMs,
+  lastUseReview,
+} from "../../src/rules/openclaw/lane-caches.js";
 import { collectPrDependencies } from "../../src/rules/openclaw/pr-dependencies.js";
 import { createFixtureDirectory } from "../helpers/fixture-directory.js";
 
@@ -154,4 +158,17 @@ it("preserves the strict 48-hour boundary and reports future timestamps and inco
     status: "degraded",
     data: { prDependencies: { namespaces: [{ coverage: "entry-limit" }] } },
   });
+});
+
+it("uses distinct directory and native receipt equality boundaries for a custom review clock", async () => {
+  const root = await realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-age-rule-")));
+  const now = 1_800_000_000_000,
+    minutes = 4320,
+    past = now - minutes * 60_000;
+  await utimes(root, past / 1000, past / 1000);
+  const stats = await lstat(root, { bigint: true });
+  expect(directoryMtimeReview(stats, now, minutes)).toBe("within-configured-age");
+  expect(directoryMtimeReview(stats, now + 1, minutes)).toBe("older-than-configured-age");
+  expect(lastUseReview(now, past, minutes)).toBe("at-least-configured-age");
+  expect(lastUseReview(now, past + 1, minutes)).toBe("under-configured-age");
 });

@@ -1,6 +1,8 @@
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 
+import { artifactProjectEnabled } from "../config/action-policy.js";
+import { artifactPolicy } from "../config/rule-options.js";
 import { hasCacheTag, requiresCacheTag } from "../rules/build/cache-tag.js";
 import { artifactMeasurementChanged, isArtifactAgentState } from "./artifact-measurement.js";
 import type { AgentRinseConfig } from "../config/schema.js";
@@ -42,13 +44,6 @@ function stale(
   };
 }
 
-function isConfigured(action: ArtifactRemoveAction, config: AgentRinseConfig): boolean {
-  const targetRoot = resolve(action.target.projectRoot);
-  return config.artifacts.projects.some(
-    (project) => resolve(project.root) === targetRoot && project.names.includes(action.target.name),
-  );
-}
-
 export async function revalidateArtifactRemove(
   action: ArtifactRemoveAction,
   home: string,
@@ -72,7 +67,7 @@ export async function revalidateArtifactRemove(
     targetPath !== expectedPath ||
     !isPathInside(home, projectRoot) ||
     !isPathInside(projectRoot, targetPath) ||
-    !isConfigured(action, config)
+    !artifactProjectEnabled(action, config)
   ) {
     return stale(
       action,
@@ -220,10 +215,12 @@ export async function revalidateArtifactRemove(
       );
     }
 
+    const policy = artifactPolicy(config.artifacts, action.target.name);
     const ageMs = (dependencies.now?.() ?? new Date()).getTime() - measurement.newestMtimeMs;
     if (
-      measurement.bytes < config.artifacts.minBytes ||
-      ageMs < config.artifacts.minAgeMinutes * 60_000
+      !policy.enabled ||
+      measurement.bytes < policy.minBytes ||
+      ageMs < policy.minAgeMinutes * 60_000
     ) {
       return stale(
         action,

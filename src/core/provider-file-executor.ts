@@ -155,24 +155,28 @@ export async function executeProviderFileQuarantine(
       "PROVIDER_FILE_PLATFORM_UNSUPPORTED",
     );
   }
-  if (dependencies.authorizeTarget === undefined) {
+  const authorizeTarget = dependencies.authorizeTarget;
+  if (authorizeTarget === undefined) {
     throw new ProviderFileExecutionError(
       "provider-file execution requires an approved provider policy",
       "skipped-stale",
       "PROVIDER_FILE_POLICY_REFUSED",
     );
   }
-  try {
-    await dependencies.authorizeTarget(action);
-  } catch (error) {
-    throw new ProviderFileExecutionError(
-      error instanceof Error ? error.message : String(error),
-      "skipped-stale",
-      "PROVIDER_FILE_POLICY_REFUSED",
-      undefined,
-      { cause: error },
-    );
-  }
+  const checkPolicy = async (entry?: ProviderFileQuarantineEntry) => {
+    try {
+      await authorizeTarget(action);
+    } catch (error) {
+      throw new ProviderFileExecutionError(
+        error instanceof Error ? error.message : String(error),
+        "skipped-stale",
+        "PROVIDER_FILE_POLICY_REFUSED",
+        entry,
+        { cause: error },
+      );
+    }
+  };
+  await checkPolicy();
 
   await ensurePrivateDirectory(options.quarantineDirectory);
   const quarantineDirectoryHandle = await openPinnedDirectory(options.quarantineDirectory);
@@ -293,6 +297,7 @@ export async function executeProviderFileQuarantine(
         entry,
       );
     }
+    await checkPolicy(entry);
     assertAuthorized(dependencies, entry);
     if (dependencies.move !== undefined) {
       await dependencies.move(action.target.path, quarantinePath);

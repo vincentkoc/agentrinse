@@ -26,6 +26,49 @@ agentrinse config validate
 If the default path does not exist, audit uses safe built-in defaults.
 An explicitly requested missing or invalid file is an error.
 
+## Portable rule profiles
+
+`config policy` prints JSON with the installed provider rule IDs, effective retention
+values, built-in floors, project artifact names and inventory-only storage rules.
+`config render` starts from the selected config (or defaults) and writes a complete
+validated version 1 document to stdout. Give the result a separate filename.
+
+```sh
+agentrinse config render \
+  --set '/worktrees/minAgeMinutes=4320' \
+  --set '/providerRules/claude.changelog-cache/minAgeMinutes=86400' \
+  --set '/artifacts/byName/node_modules/minBytes=536870912' \
+  --set '/storage/rules=["npm.content","openclaw.pr-dependencies"]' \
+  --set '/storage/reviewAgeMinutes/openclaw.pr-dependencies=4320' > review-profile.json
+agentrinse config validate --config review-profile.json
+agentrinse config policy --config review-profile.json
+agentrinse storage --config review-profile.json --json
+agentrinse clean --profile closeout --config review-profile.json --max-risk recoverable
+```
+
+The final command previews the current checkout. The worktree threshold here is
+72 hours since the newest measured change. Cleanliness, branch reachability,
+provider ownership, pins, locks, holders, and measurement checks still apply.
+
+Each `--set` uses slash-separated field names and a JSON value. Dots in rule IDs
+or artifact names are literal. Quote JSON strings, and set lists such as
+`/artifacts/projects` or `/pins` as whole JSON arrays. Assignments apply in order.
+Unknown fields, rule IDs and invalid values fail rendering.
+
+| Config field                                                 | Effect                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `worktrees.enabled`, `minAgeMinutes`, `quarantineTtlMinutes` | Control quarantine independently of Git inventory. Closeout and fleet previews honor the switch.                                                                                                                                                                                                                                                                                                             |
+| `artifacts.byName.<name>`                                    | Override `enabled`, `minAgeMinutes` or `minBytes` for an exact artifact name. Other values inherit the global thresholds. A project must still explicitly list that name.                                                                                                                                                                                                                                    |
+| `providerRules.<id>`                                         | Set `enabled`, `minAgeMinutes` or `quarantineTtlMinutes` per built-in provider file rule. Both durations can be raised above their published floor. Disabling quarantine preserves ownership discovery.                                                                                                                                                                                                      |
+| `codexVacuum.enabled`                                        | Disable experimental database compaction independently of Codex inventory. Enabling it still requires the explicit offline audit flag, risk ceiling and native proofs.                                                                                                                                                                                                                                       |
+| `storage.families`, `storage.rules`, `storage.system`        | Choose default read-only inventory families, named catalog locations and system locations. An explicit CLI scope such as `--family`, `--rule`, `--system` or `--repo` replaces the profile selection for that call. `--measure` and `--json` preserve the selection. A configured rule for another platform is reported as skipped. Explicit-path rules such as `npm.rescue` still require a literal `--at`. |
+| `storage.reviewAgeMinutes.<id>`                              | Set the review clock separately for `crabbox.staging` or `openclaw.pr-dependencies`. The default is 2,880 minutes. Directory mtime must exceed the threshold. A verified Crabbox last-use timestamp qualifies at equality. Reports include the cutoff in minutes. These clocks never authorize retirement.                                                                                                   |
+
+For a saved audit, planning can drop previously eligible actions under a tighter
+policy. A looser profile requires a new audit to discover new candidates. Use the
+same profile for `audit`, `plan` and `apply`. Changing it after generating a plan
+invalidates the plan digest.
+
 ## Schema
 
 ```json
@@ -82,7 +125,7 @@ An explicitly requested missing or invalid file is an error.
 }
 ```
 
-Unknown keys are discarded by the current schema. Project roots must be
+Existing version 1 sections ignore legacy extension keys when loading a file. New rule sections and explicit render assignments reject unknown fields. Project roots must be
 unique absolute paths. Cleanup targets from different project entries may not
 overlap.
 

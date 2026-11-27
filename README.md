@@ -326,6 +326,8 @@ roots:
 ```bash
 agentrinse config init
 agentrinse config path
+agentrinse config policy
+agentrinse config render --set '/worktrees/minAgeMinutes=4320' > review-profile.json
 ```
 
 edit the generated JSON and add explicit artifact roots:

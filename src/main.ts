@@ -9,6 +9,8 @@ import {
   executeConfigInitCommand,
   executeConfigPathCommand,
   executeConfigShowCommand,
+  executeConfigRenderCommand,
+  executeConfigPolicyCommand,
   executeConfigValidateCommand,
 } from "./commands/config.js";
 import { renderCompletion } from "./commands/completion.js";
@@ -107,6 +109,8 @@ export function buildProgram(): Command {
 
   program
     .command("storage")
+    .option("--config <path>", "use saved storage selection defaults")
+    .option("--home <path>", "home directory for inventory and config resolution")
     .description(
       "Inventory explicit hidden storage and native mount metadata without creating a plan.",
     )
@@ -169,7 +173,9 @@ export function buildProgram(): Command {
     .option("--redact", "redact paths in output", false)
     .option("--json", "emit versioned machine output", false)
     .action(async (options) => {
-      process.stdout.write(await executeStorageCommand({ ...options, home: homedir() }));
+      process.stdout.write(
+        await executeStorageCommand({ ...options, home: options.home ?? homedir() }),
+      );
     });
 
   program
@@ -472,6 +478,42 @@ export function buildProgram(): Command {
         config: options.config,
       });
       process.stdout.write(result.output);
+    });
+
+  config
+    .command("render")
+    .description("Print a validated effective JSON profile after applying overrides in order.")
+    .option("--home <path>", "home directory used for default resolution")
+    .option("--config <path>", "input JSON config")
+    .option(
+      "--set </field/path=JSON>",
+      "set a typed field or replace an entire array; repeatable",
+      collectOption,
+      [],
+    )
+    .action(async (options) => {
+      process.stdout.write(
+        await executeConfigRenderCommand(
+          { home: options.home ?? homedir(), config: options.config },
+          options.set,
+        ),
+      );
+    });
+
+  config
+    .command("policy")
+    .description(
+      "Print effective cleanup options, built-in provider floors and inventory-only rule IDs as JSON.",
+    )
+    .option("--home <path>", "home directory used for default resolution")
+    .option("--config <path>", "explicit JSON config")
+    .action(async (options) => {
+      process.stdout.write(
+        await executeConfigPolicyCommand({
+          home: options.home ?? homedir(),
+          config: options.config,
+        }),
+      );
     });
 
   config

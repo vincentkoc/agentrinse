@@ -6,6 +6,11 @@ import { z } from "zod";
 
 import { actionRiskSchema, artifactNameSchema, type ArtifactName } from "../contracts/action.js";
 
+import {
+  artifactOverridesSchema,
+  providerRulesSchema,
+  storageOptionsSchema,
+} from "./rule-options.js";
 import { DEFAULT_WORKTREE_RETENTION } from "./defaults.js";
 
 export const adapterIdSchema = z.enum([
@@ -120,6 +125,7 @@ export const agentRinseConfigSchema = z
           .int()
           .nonnegative()
           .default(64 * 1024 * 1024),
+        byName: artifactOverridesSchema.optional(),
         processCheck: z.literal("required").default("required"),
       })
       .default(() => ({
@@ -130,6 +136,7 @@ export const agentRinseConfigSchema = z
       })),
     worktrees: z
       .object({
+        enabled: z.boolean().optional(),
         minAgeMinutes: z
           .number()
           .int()
@@ -145,6 +152,9 @@ export const agentRinseConfigSchema = z
       .default(() => ({
         ...DEFAULT_WORKTREE_RETENTION,
       })),
+    codexVacuum: z.strictObject({ enabled: z.boolean().optional() }).optional(),
+    providerRules: providerRulesSchema.optional(),
+    storage: storageOptionsSchema.optional(),
     pins: z.array(pinSchema).default([]),
     plan: z
       .object({
