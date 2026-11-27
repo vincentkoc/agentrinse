@@ -2,7 +2,7 @@
 
 Status: active implementation
 
-Target version: 1.0.0
+Target version: 1.1.0
 
 Created: 2026-07-23
 

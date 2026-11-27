@@ -20,7 +20,7 @@ Run `agentrinse doctor` to verify the current machine without mutating it.
 
 ## macOS
 
-macOS is Tier 1 for `1.0.0`.
+macOS is Tier 1 for `1.1.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - `lsof` process ownership proof
@@ -38,7 +38,7 @@ cleanup.
 
 ## Linux
 
-Linux is Tier 2 for `1.0.0`.
+Linux is Tier 2 for `1.1.0`.
 
 - provider, Git, Docker, and configured artifact inventory
 - same-user `/proc` process ownership inspection
@@ -58,13 +58,13 @@ automatically.
 ## WSL
 
 WSL follows the Linux contract for paths and processes inside the WSL
-filesystem. Do not use `1.0.0` to mutate Windows-mounted project trees unless
+filesystem. Do not use `1.1.0` to mutate Windows-mounted project trees unless
 doctor and a disposable canary prove path identity, ownership, rename, and
 mount behavior for that exact setup.
 
 ## Native Windows
 
-Native Windows is audit-only before `1.0.0`.
+Native Windows supports read-only audits.
 
 Audit and plan evidence persists with verified current-user or local
 Administrators ownership and explicit current-user, `SYSTEM`, and

@@ -6,6 +6,8 @@ The project follows semantic versioning after its first supported release.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-27
+
 ### Added
 
 - `worktree-grades` grades up to 64 named linked checkouts for one durable Git owner. It checks full-roster membership, provider protections and configured pins, and reports any unresolved selections without saving a plan.
