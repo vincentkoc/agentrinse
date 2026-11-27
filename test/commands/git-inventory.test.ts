@@ -7,6 +7,8 @@ import {
   inventoryGitOwners,
   type GitInventoryOptions,
 } from "../../src/commands/git-inventory.js";
+import * as pinned from "../../src/core/pinned-file.js";
+import { observePackHeader } from "../../src/rules/git/temporary-pack-header.js";
 import * as loose from "../../src/rules/git/inventory-loose.js";
 import { parseStorageMounts } from "../../src/core/storage-mounts.js";
 import { createFixtureDirectory } from "../helpers/fixture-directory.js";
@@ -30,6 +32,113 @@ const input = (value: unknown) =>
 const lock = "gwt-finish.v2:11223344-1234-1234-1234-123456789abc";
 describe("git-inventory", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("counts only stable empty and complete headers, without opening object bodies or aliases", async () => {
+    const { repo, options } = await setup();
+    const pack = join(repo, ".git", "objects", "pack");
+    const v2 = Buffer.from("5041434b0000000200000008", "hex");
+    const v3 = Buffer.from("5041434b0000000300000000", "hex");
+    const invalid = Buffer.from("5041434b0000000400000000", "hex");
+    for (const [name, content] of Object.entries({
+      tmp_pack_empty: Buffer.alloc(0),
+      tmp_pack_v2: v2,
+      tmp_pack_v3: v3,
+      tmp_pack_short: v2.subarray(0, 4),
+      tmp_pack_opaque: Buffer.alloc(12),
+      tmp_pack_invalid: invalid,
+      tmp_pack_body: Buffer.concat([v2, Buffer.from("private body")]),
+      tmp_idx_ignore: v3,
+      tmp_unrecognized: v2,
+    }))
+      await writeFile(join(pack, name), content);
+    await link(join(pack, "tmp_pack_v2"), join(pack, "tmp_pack_alias"));
+    await writeFile(join(pack, "tmp_pack_singleV2"), v2);
+    await symlink(join(pack, "tmp_pack_singleV2"), join(pack, "tmp_pack_link"));
+
+    const opened = vi.spyOn(pinned, "openPinnedProviderFile");
+    const baseline = await inventoryGitOwners(options, { mounts });
+    expect(baseline.data.summary.packHeaders.observed).toBeNull();
+    expect(opened.mock.calls.filter(([p]) => p.startsWith(pack))).toHaveLength(0);
+    const output = await executeGitInventory(
+      { ...options, packHeaders: true, json: true, redact: true },
+      { mounts },
+    );
+    const data = JSON.parse(output).data;
+    expect(data.summary.packHeaders).toMatchObject({
+      requested: true,
+      readsAttempted: 4,
+      observed: { empty: 1, headerOnly: 2, unknown: 4, withheld: 2, readLimitSkipped: 0 },
+    });
+    expect(data.repositories[0].packs.observedPackHeaders).toEqual(
+      data.summary.packHeaders.observed,
+    );
+    expect(data.reclaimableBytes).toBeNull();
+    expect(output).not.toContain("private body");
+    expect(output).not.toContain("tmp_pack_singleV2");
+    expect(output).not.toContain(repo);
+    expect(
+      opened.mock.calls
+        .filter(([p]) => p.startsWith(pack))
+        .map(([p]) => p)
+        .sort(),
+    ).toEqual(
+      ["tmp_pack_v3", "tmp_pack_opaque", "tmp_pack_invalid", "tmp_pack_singleV2"]
+        .map((n) => join(pack, n))
+        .sort(),
+    );
+  });
+
+  it("withholds header counts when the pack entry budget or final binding prevents observation", async () => {
+    const { repo, home, options } = await setup();
+    const pack = join(repo, ".git", "objects", "pack");
+    await writeFile(join(pack, "tmp_pack_saved"), Buffer.from("5041434b0000000200000001", "hex"));
+    const limited = await inventoryGitOwners(
+      { ...options, packHeaders: true, maxEntries: "1" },
+      { mounts },
+    );
+    expect(limited.data.summary.packHeaders).toMatchObject({
+      requested: true,
+      coverage: "unavailable",
+      observed: null,
+      readsAttempted: 0,
+    });
+    afterLooseScan(async () => {
+      await rename(pack, join(home, "previous-pack"));
+      await mkdir(pack);
+    });
+    const changed = await inventoryGitOwners(
+      { ...options, packHeaders: true, looseObjects: true },
+      { mounts },
+    );
+    expect(changed.data.summary.packHeaders).toMatchObject({
+      coverage: "unavailable",
+      observed: null,
+      readsAttempted: 1,
+    });
+    expect(changed.data.repositories[0]?.changedSections).toContain("packs");
+  });
+
+  it("holds replaced files and exhausted header reads", async () => {
+    const { repo } = await setup();
+    const pack = join(repo, ".git", "objects", "pack");
+    const name = join(pack, "tmp_pack_fixture");
+    const header = Buffer.from("5041434b0000000200000008", "hex");
+    await writeFile(name, header);
+    const dir = await lstat(pack, { bigint: true });
+    const initial = await lstat(name, { bigint: true });
+    const open = pinned.openPinnedProviderFile;
+    const spy = vi.spyOn(pinned, "openPinnedProviderFile");
+    await expect(observePackHeader(name, initial, dir, { remaining: 0 })).resolves.toBe(
+      "readLimitSkipped",
+    );
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockImplementationOnce(async (...args) => {
+      await rename(name, join(pack, "retained"));
+      await writeFile(name, header);
+      return open(...args);
+    });
+    await expect(observePackHeader(name, initial, dir, { remaining: 1 })).resolves.toBe("withheld");
+  });
 
   // Change the actual filesystem after the independent scans and before the owner is credited.
   function afterLooseScan(change: () => Promise<void>) {

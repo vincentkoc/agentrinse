@@ -200,6 +200,11 @@ export function buildProgram(): Command {
       "count canonical loose object names in direct hex fanouts using the shared budget",
       false,
     )
+    .option(
+      "--pack-headers",
+      "inspect bounded header-only temporary packs without reading object bodies",
+      false,
+    )
     .option("--gwt-status-stdin", "read native lifecycle evidence from stdin", false)
     .option("--max-entries <count>", "shared direct storage entry budget", "1000000")
     .option("--redact", "redact paths and identifiers", false)
