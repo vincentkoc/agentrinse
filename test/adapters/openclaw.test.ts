@@ -11,6 +11,8 @@ import { createAuditAdapters } from "../../src/adapters/registry.js";
 import { DEFAULT_CONFIG } from "../../src/config/defaults.js";
 import { runAudit } from "../../src/core/audit.js";
 import { createCleanupPlan } from "../../src/core/plan.js";
+import { revalidateArtifactRemove } from "../../src/core/artifact-revalidation.js";
+import { runFixtureGit } from "../helpers/git.js";
 import { applyCleanupPlan } from "../../src/core/apply.js";
 import { ReachabilityIndex } from "../../src/core/reachability.js";
 import { executeProviderFileQuarantine } from "../../src/core/provider-file-executor.js";
@@ -23,13 +25,25 @@ async function tempHome() {
   return realpath(createFixtureDirectory(join(tmpdir(), "agentrinse-claw-")));
 }
 
+function globalFixture(path: string, schema: number) {
+  const db = new DatabaseSync(path);
+  db.exec(`CREATE TABLE schema_meta(meta_key TEXT, role TEXT, schema_version INTEGER) STRICT;
+    CREATE TABLE worktrees(id TEXT,path TEXT,repo_root TEXT,owner_kind TEXT,removed_at INTEGER,snapshot_ref TEXT) STRICT;
+    CREATE TABLE worktree_templates(repo_root TEXT, common_dir TEXT, worktree_root TEXT, path TEXT) STRICT;
+    CREATE TABLE projects(repo_root TEXT) STRICT;`);
+  db.prepare("INSERT INTO schema_meta VALUES('primary','global',?)").run(schema);
+  return db;
+}
+
 describe("OpenClaw storage", () => {
-  it("reads bounded owner counts and withholds them for a pending WAL or unsupported schema", async () => {
-    const path = join(await tempHome(), "openclaw-agent.sqlite");
-    const db = new DatabaseSync(path);
-    db.exec(`
+  it.each([38, 42])(
+    "reads bounded counts from agent schema %i and withholds pending WAL data",
+    async (schema) => {
+      const path = join(await tempHome(), "openclaw-agent.sqlite");
+      const db = new DatabaseSync(path);
+      db.exec(`
       CREATE TABLE schema_meta(meta_key TEXT, role TEXT, schema_version INTEGER) STRICT;
-      INSERT INTO schema_meta VALUES('primary','agent',38);
+      INSERT INTO schema_meta VALUES('primary','agent',${schema});
       CREATE TABLE session_nodes(session_key TEXT, archived_at INTEGER, pinned_at INTEGER, status TEXT) STRICT;
       INSERT INTO session_nodes VALUES('private-key-one',NULL,1,'running'),('private-key-two',2,NULL,'done');
       CREATE TABLE transcript_events(body TEXT) STRICT;
@@ -37,66 +51,207 @@ describe("OpenClaw storage", () => {
       CREATE TABLE memory_index_sources(body TEXT) STRICT;
       CREATE TABLE memory_embedding_cache(body TEXT) STRICT;
     `);
-    db.close();
-    expect(await inspectOpenClawDatabase(path, "agent", 10)).toMatchObject({
-      status: "observed",
-      truncated: false,
-      counts: {
-        sessionRows: 2,
-        pinnedSessions: 1,
-        runningSessions: 1,
-        archivedSessions: 1,
-        transcriptEvents: 1,
-        memorySources: 0,
-      },
-    });
-    expect(await inspectOpenClawDatabase(path, "agent", 1)).toMatchObject({
-      truncated: true,
-      counts: { sessionRows: 1 },
-    });
-    expect(await inspectOpenClawDatabase(path, "global", 10)).toEqual({ status: "unsupported" });
-    await writeFile(path + "-wal", "pending");
-    expect(await inspectOpenClawDatabase(path, "agent", 10)).toEqual({ status: "uncheckpointed" });
-  });
+      db.close();
+      expect(await inspectOpenClawDatabase(path, "agent", 10)).toMatchObject({
+        status: "observed",
+        schemaVersion: schema,
+        truncated: false,
+        counts: {
+          sessionRows: 2,
+          pinnedSessions: 1,
+          runningSessions: 1,
+          archivedSessions: 1,
+          transcriptEvents: 1,
+          memorySources: 0,
+        },
+      });
+      expect(await inspectOpenClawDatabase(path, "agent", 1)).toMatchObject({
+        truncated: true,
+        counts: { sessionRows: 1 },
+      });
+      expect(await inspectOpenClawDatabase(path, "global", 10)).toEqual({ status: "unsupported" });
+      const newer = new DatabaseSync(path);
+      newer.exec("UPDATE schema_meta SET schema_version = 43");
+      newer.close();
+      expect(await inspectOpenClawDatabase(path, "agent", 10)).toEqual({ status: "unsupported" });
+      await writeFile(path + "-wal", "pending");
+      expect(await inspectOpenClawDatabase(path, "agent", 10)).toEqual({
+        status: "uncheckpointed",
+      });
+    },
+  );
 
-  it("protects external checkout and workspace paths and fails closed when owner evidence is incomplete", async () => {
+  it.each([36, 40])(
+    "protects verified global schema %i owners and withholds incomplete evidence",
+    async (schema) => {
+      const home = await tempHome();
+      const root = join(home, ".openclaw");
+      const configured = join(home, "external-workspace");
+      const checkout = join(home, "old-root", "owned");
+      await mkdir(join(root, "state"), { recursive: true });
+      await writeFile(
+        join(root, "openclaw.json"),
+        JSON.stringify({ agents: { entries: { main: { workspace: configured } } } }),
+      );
+      const db = globalFixture(join(root, "state", "openclaw.sqlite"), schema);
+      db.prepare("INSERT INTO worktrees VALUES('id',?,?,'session',NULL,'snapshot')").run(
+        checkout,
+        configured,
+      );
+      const templatePaths = ["source", "common", "pool", "template"].map((name) =>
+        join(home, name),
+      );
+      const project = join(home, "registered-project");
+      db.prepare("INSERT INTO worktree_templates VALUES(?,?,?,?)").run(...templatePaths);
+      db.prepare("INSERT INTO projects VALUES(?)").run(project);
+      db.close();
+      const index = new ReachabilityIndex();
+      await openClawOwnership(root, home, {}, 10, index);
+      const now = new Date().toISOString();
+      for (const path of [configured, checkout, ...templatePaths, project]) {
+        expect(index.rootsFor(join(path, "dist"), now).map((r) => r.code)).toContain(
+          "openclaw-owned-path",
+        );
+      }
+      expect(index.rootsFor(join(home, "unrelated"), now)).toEqual([]);
+      const limited = new ReachabilityIndex();
+      const result = await openClawOwnership(root, home, {}, 2, limited);
+      expect(result.registry).toMatchObject({
+        status: "observed",
+        truncated: true,
+        counts: { registeredWorktrees: 1, registeredTemplates: 1, registeredProjects: 0 },
+      });
+      expect(limited.rootsFor(join(home, "unrelated"), now).map((r) => r.code)).toContain(
+        "openclaw-ownership-incomplete",
+      );
+      await writeFile(
+        join(root, "openclaw.json"),
+        JSON.stringify({ $include: "another-file.json5" }),
+      );
+      const unresolved = new ReachabilityIndex();
+      await openClawOwnership(root, home, {}, 10, unresolved);
+      expect(unresolved.rootsFor(join(home, "unrelated"), now).map((r) => r.code)).toContain(
+        "openclaw-ownership-incomplete",
+      );
+    },
+  );
+
+  it("uses effective state and agent engines before trusting the local registry", async () => {
     const home = await tempHome();
     const root = join(home, ".openclaw");
-    const configured = join(home, "external-workspace");
-    const checkout = join(home, "old-root", "owned");
-    await mkdir(join(root, "state"), { recursive: true });
-    await writeFile(
-      join(root, "openclaw.json"),
-      JSON.stringify({ agents: { entries: { main: { workspace: configured } } } }),
-    );
-    const db = new DatabaseSync(join(root, "state", "openclaw.sqlite"));
-    db.exec(`CREATE TABLE schema_meta(meta_key TEXT, role TEXT, schema_version INTEGER) STRICT;
-      INSERT INTO schema_meta VALUES('primary','global',36);
-      CREATE TABLE worktrees(id TEXT,path TEXT,repo_root TEXT,owner_kind TEXT,removed_at INTEGER,snapshot_ref TEXT) STRICT;`);
-    db.prepare("INSERT INTO worktrees VALUES('id',?,?,'session',NULL,'snapshot')").run(
-      checkout,
-      configured,
-    );
+    const state = join(root, "state");
+    await mkdir(state, { recursive: true });
+    const path = join(state, "openclaw.sqlite");
+    const db = globalFixture(path, 40);
     db.close();
-    const index = new ReachabilityIndex();
-    await openClawOwnership(root, home, {}, 10, index);
-    const now = new Date().toISOString();
-    for (const path of [configured, checkout]) {
-      expect(index.rootsFor(join(path, "dist"), now).map((r) => r.code)).toContain(
-        "openclaw-owned-path",
-      );
+    const sqlite = { engine: "sqlite" };
+    const postgres = { engine: "postgres" };
+    const bothLocal = { state: sqlite, agent: sqlite };
+    const assess = async (database: unknown) => {
+      await writeFile(join(root, "openclaw.json"), JSON.stringify({ database }));
+      const index = new ReachabilityIndex();
+      const owner = await openClawOwnership(root, home, {}, 10, index);
+      const codes = index
+        .rootsFor(join(home, "unrelated", "dist"), new Date().toISOString())
+        .map((e) => e.code);
+      return { registry: owner.registry.status, codes };
+    };
+    for (const database of [
+      {},
+      { families: {} },
+      { families: { workboard: postgres } },
+      { engine: "postgres", families: bothLocal },
+    ]) {
+      expect(await assess(database)).toEqual({ registry: "observed", codes: [] });
     }
-    expect(index.rootsFor(join(home, "unrelated"), now)).toEqual([]);
-    await writeFile(
-      join(root, "openclaw.json"),
-      JSON.stringify({ $include: "another-file.json5" }),
-    );
-    const unresolved = new ReachabilityIndex();
-    await openClawOwnership(root, home, {}, 10, unresolved);
-    expect(unresolved.rootsFor(join(home, "unrelated"), now).map((r) => r.code)).toContain(
-      "openclaw-ownership-incomplete",
-    );
+    for (const database of [
+      postgres,
+      { families: { state: postgres } },
+      { families: { agent: postgres } },
+      { engine: "postgres", families: { agent: sqlite } },
+      { engine: "postgres", families: { state: sqlite } },
+      { families: { state: {} } },
+      { families: null },
+      { engine: "unexpected", families: bothLocal },
+      { engine: "postgres", families: bothLocal, postgres: { ownership: "installation" } },
+      { postgres: { ownership: "unknown" } },
+    ]) {
+      expect(await assess(database)).toEqual({
+        registry: "owner-unresolved",
+        codes: ["openclaw-ownership-incomplete"],
+      });
+    }
+    const changed = new DatabaseSync(path);
+    changed.exec("UPDATE schema_meta SET schema_version = 42");
+    changed.close();
+    expect(await assess(sqlite)).toEqual({
+      registry: "unsupported",
+      codes: ["openclaw-ownership-incomplete"],
+    });
+    await writeFile(path + "-journal", "pending");
+    expect(await assess(sqlite)).toEqual({
+      registry: "uncheckpointed",
+      codes: ["openclaw-ownership-incomplete"],
+    });
   });
+
+  it.runIf(["darwin", "linux"].includes(process.platform))(
+    "plans an unrelated ignored build and rechecks newly registered owners before removal",
+    async () => {
+      const home = await tempHome();
+      const root = join(home, ".openclaw");
+      const dbPath = join(root, "state", "openclaw.sqlite");
+      const project = join(home, "source");
+      const target = join(project, "dist");
+      await mkdir(join(root, "state"), { recursive: true });
+      await mkdir(target, { recursive: true });
+      await writeFile(join(root, "openclaw.json"), "{}");
+      globalFixture(dbPath, 40).close();
+      await runFixtureGit(["-C", project, "init", "--quiet"], { home });
+      await writeFile(join(project, ".gitignore"), "dist/\n");
+      await writeFile(join(target, "output"), "build");
+      await utimes(join(target, "output"), new Date(0), new Date(0));
+      await utimes(target, new Date(0), new Date(0));
+      const config = structuredClone(DEFAULT_CONFIG);
+      config.adapters.openclaw = { enabled: true, root };
+      config.artifacts = {
+        ...config.artifacts,
+        projects: [{ root: project, names: ["dist"] }],
+        minAgeMinutes: 0,
+        minBytes: 0,
+      };
+      const processProbe = async () => ({ status: "idle" as const, matches: [] as [] });
+      const audit = async () =>
+        runAudit({
+          home,
+          config,
+          adapters: createAuditAdapters(config, process.platform, {
+            environment: {},
+            processProbe,
+          }).filter((a) => ["openclaw", "artifacts"].includes(a.id)),
+        });
+      const plan = createCleanupPlan(await audit(), config);
+      expect(plan.actions).toHaveLength(1);
+      const action = plan.actions[0]!;
+      if (action.type !== "artifacts.remove") throw new Error("Expected an artifact removal");
+      expect(action.target.path).toBe(target);
+      const db = new DatabaseSync(dbPath);
+      db.prepare("INSERT INTO worktree_templates VALUES(?,?,?,?)").run(
+        project,
+        join(project, ".git"),
+        join(home, "pool"),
+        join(home, "template"),
+      );
+      db.close();
+      expect(createCleanupPlan(await audit(), config).actions).toEqual([]);
+      expect(
+        await revalidateArtifactRemove(action, home, config, { cwd: project, processProbe }),
+      ).toMatchObject({
+        status: "stale",
+        diagnostic: { code: "OPENCLAW_ARTIFACT_PROTECTED" },
+      });
+    },
+  );
 
   it.runIf(["darwin", "linux"].includes(process.platform))(
     "plans, journals and restores only an old, owner-generated shell snapshot",

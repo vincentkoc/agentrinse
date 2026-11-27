@@ -8,7 +8,7 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
-- OpenClaw inventory supports the 2026.11.10 shared and agent SQLite schemas. Cleanup can proceed for unrelated targets when the worktree registry is verified.
+- OpenClaw inventory supports the 2026.11.10 shared and agent SQLite schemas. Verified worktrees, templates and registered project roots stay protected while unrelated targets can proceed.
 
 ## [1.2.0] - 2026-11-27
 

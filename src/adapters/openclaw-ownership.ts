@@ -19,15 +19,20 @@ function object(value: unknown): value is Record<string, unknown> {
 
 function usesLocalSqlite(database: unknown): boolean {
   if (database === undefined) return true;
-  if (!object(database) || (database.engine !== undefined && database.engine !== "sqlite"))
-    return false;
+  if (!object(database)) return false;
+  const engine = database.engine === undefined ? "sqlite" : database.engine;
+  if (engine !== "sqlite" && engine !== "postgres") return false;
+  // Installation-wide ownership requires PostgreSQL for every configurable family.
+  if (database.postgres !== undefined) {
+    if (!object(database.postgres)) return false;
+    const ownership = database.postgres.ownership;
+    if (ownership !== undefined && ownership !== "state-directory") return false;
+  }
   const families = database.families;
-  return (
-    families === undefined ||
-    (object(families) &&
-      [families.state, families.agent].every(
-        (family) => family === undefined || (object(family) && family.engine === "sqlite"),
-      ))
+  if (families === undefined) return engine === "sqlite";
+  if (!object(families)) return false;
+  return [families.state, families.agent].every((family) =>
+    family === undefined ? engine === "sqlite" : object(family) && family.engine === "sqlite",
   );
 }
 
@@ -121,6 +126,7 @@ export async function openClawOwnership(
   if (!index) return { config, registry };
   const paths = new Set([root, ...config.paths.keys()]);
   if (registry.status === "observed") {
+    for (const path of registry.additionalRoots) paths.add(path);
     for (const record of registry.worktrees) {
       paths.add(record.path);
       paths.add(record.repoRoot);
