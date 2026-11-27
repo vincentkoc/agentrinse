@@ -13,6 +13,8 @@ export type OpenClawWorktree = {
   hasSnapshot: boolean;
 };
 
+const supportedSchemaVersions = { agent: [38, 42], global: [36, 40] };
+
 type Inspection =
   | { status: "uncheckpointed" | "unsupported" | "changed" | "unreadable" }
   | {
@@ -64,12 +66,10 @@ function inspectTables(db: DatabaseSync, role: "agent" | "global", limit: number
     "SELECT 1 FROM pragma_table_list WHERE schema='main' AND name=? AND type='table' AND strict=1",
   );
   if (!tables.every((name) => ordinary.get(name))) return { status: "unsupported" };
-  const schemaVersion = role === "agent" ? 38 : 36;
-  if (
-    !db
-      .prepare("SELECT 1 FROM schema_meta WHERE meta_key='primary' AND role=? AND schema_version=?")
-      .get(role, schemaVersion)
-  ) {
+  const schemaVersion = db
+    .prepare("SELECT schema_version FROM schema_meta WHERE meta_key='primary' AND role=?")
+    .get(role)?.schema_version;
+  if (typeof schemaVersion !== "number" || !supportedSchemaVersions[role].includes(schemaVersion)) {
     return { status: "unsupported" };
   }
 

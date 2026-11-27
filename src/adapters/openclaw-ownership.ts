@@ -17,6 +17,20 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function usesLocalSqlite(database: unknown): boolean {
+  if (database === undefined) return true;
+  if (!object(database) || (database.engine !== undefined && database.engine !== "sqlite"))
+    return false;
+  const families = database.families;
+  return (
+    families === undefined ||
+    (object(families) &&
+      [families.state, families.agent].every(
+        (family) => family === undefined || (object(family) && family.engine === "sqlite"),
+      ))
+  );
+}
+
 async function configPaths(root: string, home: string, environment: NodeJS.ProcessEnv) {
   const paths = new Map<string, "workspace" | "worktreeStorage" | "sessions" | "provider">();
   const path = join(root, "openclaw.json");
@@ -81,11 +95,8 @@ async function configPaths(root: string, home: string, environment: NodeJS.Proce
           add(agent.agentDir, "provider");
         }
       } else if (config.agents !== undefined) throw new Error("Invalid agent roster");
-      const engine = object(config.database) ? config.database.engine : undefined;
       return {
-        complete:
-          config.database === undefined ||
-          (object(config.database) && (engine === undefined || engine === "sqlite")),
+        complete: usesLocalSqlite(config.database),
         paths,
       };
     } finally {
