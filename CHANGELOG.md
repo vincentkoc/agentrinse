@@ -9,6 +9,7 @@ The project follows semantic versioning after its first supported release.
 ### Fixed
 
 - `clean --profile closeout` displays audit diagnostics in its terminal summary.
+- OpenClaw inventory recognizes configured workspaces directly under the profile directory and reports `MEMORY.md` and `memory/` separately.
 
 ## [1.2.0] - 2026-11-27
 
