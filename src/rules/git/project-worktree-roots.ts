@@ -5,12 +5,17 @@ import { mountIndex, type StorageMount } from "../../core/storage-mounts.js";
 
 const containers = [[".worktrees"], [".claude", "worktrees"]] as const;
 
-export async function projectWorktreeRoots(owner: string, home: string, mounts: StorageMount[]) {
+export async function projectWorktreeRoots(
+  owner: string,
+  home: string,
+  mounts: StorageMount[],
+  prOnly = false,
+) {
   const available: string[] = [];
   const withheld: string[] = [];
   const device = (await lstat(owner)).dev;
   const mountPaths = mountIndex(mounts);
-  for (const parts of containers) {
+  for (const parts of prOnly ? [containers[0]] : containers) {
     let current = owner;
     try {
       for (const part of parts) {

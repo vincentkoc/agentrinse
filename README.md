@@ -143,6 +143,12 @@ gwt finish-status --all --read-only | agentrinse worktrees --root "$(gwt root)" 
 the default checks `~/.codex/worktrees`, `$CODEX_HOME/worktrees` and
 `$DOTFILES_WORKTREES_ROOT` where configured. Repeat `--root` to replace the
 defaults. Supply `--repo` for owners with no surviving checkout in those roots.
+For an OpenClaw primary checkout, `--openclaw-pr-gc-stdin` joins a native
+`scripts/pr gc --dry-run` preview to direct PR directories and registrations.
+It reports skipped and unreported PRs, checks for ignored or untracked work,
+and separates measured logical bytes from unknown reclaim. See [OpenClaw PR
+review checkouts](docs/storage.md#openclaw-pr-review-checkouts).
+
 Add `--project-roots` to include existing `.worktrees` and `.claude/worktrees`
 containers under each explicitly named primary checkout. Linked checkouts and
 symlinked containers are reported as problems. A derived container also requires
