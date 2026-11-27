@@ -13,6 +13,8 @@ Run `agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --redact --json`.
 
 For many unpacked objects, add `--loose-objects`. It counts regular names against Git’s object format without opening object contents. For partial results, compare `fanoutsComplete` with `fanoutsObserved` to see how many directories stayed stable during their scan.
 
+Use `--pack-headers` when temporary pack names dominate disk usage. Read the empty and header-only counts alongside unknown, withheld and budget-skipped counts. A short, partial or damaged file can contain the only surviving copy of object data. A recognized header proves only what occupies those first 12 bytes. Leave content validation and retained-copy proof to Git's owning repository.
+
 Check the envelope status, per-owner coverage and entry budget first. A repository can retain verified counts while listing changed sections in `changedSections`. Retry those sections when the repository is quiet. Compare temporary filenames with unique inodes, mixed links and unobserved links. Allocated file blocks can share physical extents. A temporary name, lock, orphan-looking sidecar or Git-prunable registration supplies inventory evidence. Reclaimable bytes remain unknown.
 
 When the checkout allocator supports it, stream its read-only inventory projection directly into the CLI using `gwt finish-status --all --read-only --inventory-json | agentrinse git-inventory --repo-root "$REPOSITORY_PARENT" --gwt-status-stdin`. Add `--worktree-root "$MANAGED_CONTAINER"` for a custom container. Legacy finish-status arrays establish reported signoff only. The native allocator must check current holders, protected history, recovery and retirement before a closeout.
@@ -25,4 +27,5 @@ When a full Git audit times out, run `agentrinse worktree-grades --repo "$OWNER"
 
 - Use `worktrees --root "$CONTAINER"` for physical checkouts without a known owner registration. Read `unresolvedReason` to distinguish an observed empty group from one containing files or an incomplete inspection. Use `storage-rules` and `storage` for developer caches, staging areas and volume evidence.
 - For a bounded provider audit, use `audit --no-state --quick --providers codex,claude --phase-timeout 5s --json --redact`. Quick scans skip size measurement.
+- Use documented read-only provider and allocator commands for ownership and activity. Keep provider SQLite databases, their schemas and WAL files, and session transcripts out of ad hoc cleanup queries. If the owner cannot establish activity, keep the candidate protected.
 - Keep a disk census read-only. For an explicitly requested cleanup, inspect a fresh scoped plan and its protection reasons. Use only the documented owner and recovery path for an authorized action. Native Windows supports audit only.

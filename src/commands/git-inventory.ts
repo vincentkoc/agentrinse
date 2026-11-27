@@ -15,6 +15,7 @@ import { protectedStorageName } from "../core/storage-measurement.js";
 import { gitObjectFormat, inventoryLooseObjects } from "../rules/git/inventory-loose.js";
 import { inventoryPath } from "../rules/git/inventory-path.js";
 import { GitIdentityLedger } from "../rules/git/inventory-bytes.js";
+import { packHeaderCounts, packHeaderReadLimit } from "../rules/git/temporary-pack-header.js";
 import { inventoryPackStore } from "../rules/git/inventory-packs.js";
 import {
   inventoryRegistrations,
@@ -30,6 +31,7 @@ export type GitInventoryOptions = {
   maxEntries?: string;
   gwtStatusStdin?: boolean;
   looseObjects?: boolean;
+  packHeaders?: boolean;
   redact?: boolean;
   json?: boolean;
 };
@@ -83,6 +85,7 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
   const budget = { remaining: Number(max) },
     discovery = { remaining: 50_000 },
     slotsBudget = { remaining: 100_000 };
+  const headerBudget = options.packHeaders ? { remaining: packHeaderReadLimit } : undefined;
   const explicit = new Set(options.repo.map((p) => repoPath(p, home)));
   const paths = new Set(explicit),
     parents = [...new Set(options.repoRoot.map((p) => repoPath(p, home)))].sort();
@@ -188,7 +191,7 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
     const packLedger = new GitIdentityLedger();
     const adminLedger = new GitIdentityLedger();
     const reviews: ReviewRegistrations[] = [];
-    const packs = await inventoryPackStore(owner.common, mounts, budget, packLedger);
+    const packs = await inventoryPackStore(owner.common, mounts, budget, packLedger, headerBudget);
     const worktrees = await inventoryRegistrations(
       owner,
       roots,
@@ -234,6 +237,8 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
       changedSections.length ||
       (looseObjects && looseObjects.coverage !== "complete") ||
       packs.changedTemporaryNames ||
+      packs.observedPackHeaders?.withheld ||
+      packs.observedPackHeaders?.readLimitSkipped ||
       !["direct-complete", "missing"].includes(packs.packCoverage) ||
       packs.objectRootCoverage !== "direct-complete" ||
       packs.excluded ||
@@ -263,8 +268,40 @@ export async function inventoryGitOwners(options: GitInventoryOptions, deps: Dep
       r.finishedEvidence = null;
       conflictingRegistrations++;
     }
+  const headerCounts = packHeaderCounts();
+  let observedHeaderStores = 0,
+    completeHeaderStores = 0;
+  for (const repo of repositories) {
+    const counts = repo.packs?.observedPackHeaders;
+    if (!counts) continue;
+    observedHeaderStores++;
+    if (repo.packs?.headerCoverage === "complete") completeHeaderStores++;
+    for (const key of Object.keys(counts) as (keyof typeof counts)[])
+      headerCounts[key] += counts[key];
+  }
+  const headerScopeIncomplete =
+    completeHeaderStores !== stores.size ||
+    repoRoots.some((root) => root.coverage !== "direct-complete" || root.excluded > 0) ||
+    repositories.some((repo) => !repo.commonDirectory);
+  const headerCoverage = !headerBudget
+    ? "not-requested"
+    : !headerScopeIncomplete
+      ? "complete"
+      : observedHeaderStores
+        ? "partial"
+        : "unavailable";
   const bytes = ledger.report(),
     summary = {
+      packHeaders: {
+        requested: !!headerBudget,
+        coverage: headerCoverage,
+        observedStores: headerBudget ? observedHeaderStores : null,
+        completeStores: headerBudget ? completeHeaderStores : null,
+        observed:
+          headerBudget && (observedHeaderStores || !headerScopeIncomplete) ? headerCounts : null,
+        readsAttempted: headerBudget ? packHeaderReadLimit - headerBudget.remaining : null,
+        readLimit: packHeaderReadLimit,
+      },
       looseObjects: {
         requested: !!options.looseObjects,
         regularNames: options.looseObjects
@@ -359,6 +396,11 @@ export async function executeGitInventory(
     `Git inventory (${status}): ${s.commonStores} stores, ${s.partialOwners} partial or withheld owners.`,
     `Observed direct Git files: ${b.uniqueFiles.files} unique identities, ${b.uniqueFiles.logicalBytes} logical bytes, ${b.uniqueFiles.allocatedBytes} allocated bytes; ${b.changedIdentitiesOmitted} changing identities omitted.`,
     `Temporary pack-directory names: ${b.temporaryNames.observedNames}, ${b.temporaryNames.uniqueIdentities.files} unique inodes, ${b.temporaryNames.uniqueIdentities.allocatedBytes} allocated bytes; all observed links temporary: ${b.temporaryNames.allLinksAccountedForAndTemporary.allocatedBytes} allocated bytes; shared with other names: ${b.temporaryNames.alsoHasNonTemporaryName.allocatedBytes}; unknown links: ${b.temporaryNames.unobservedLinks.allocatedBytes}.`,
+    s.packHeaders.observed
+      ? `Temporary pack evidence (${s.packHeaders.coverage}, ${s.packHeaders.completeStores}/${s.commonStores} complete stores): ${s.packHeaders.observed.empty} empty, ${s.packHeaders.observed.headerOnly} header only, ${s.packHeaders.observed.unknown} unknown contents, ${s.packHeaders.observed.withheld} withheld, ${s.packHeaders.observed.readLimitSkipped} skipped at the read limit.`
+      : s.packHeaders.requested
+        ? "Temporary pack header evidence unavailable for the selected scope."
+        : "Temporary pack headers were not inspected. Use --pack-headers to inspect them.",
     `Loose objects: ${s.looseObjects.requested ? `${s.looseObjects.regularNames} observed regular names, ${s.looseObjects.completeStores}/${s.commonStores} complete stores` : "not measured; use --loose-objects"}.`,
     `Observed linked registrations: ${s.linkedRegistrations} (${s.nativeListedRegistrations} Git-listed, ${s.adminBacklinkOnly} admin-backlink only), ${s.reciprocal} reciprocal, ${s.missing} missing (${s.missingPrunable} prunable, ${s.missingLocked} locked), ${s.prunable} Git-prunable, ${s.locked} locked, ${s.unresolved} unresolved.`,
     `Direct files of missing registrations: ${b.missingAdminFiles.allocatedBytes} allocated bytes. Reclaimable bytes unknown.`,

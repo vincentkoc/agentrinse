@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { observePackHeader, packHeaderCounts } from "./temporary-pack-header.js";
 import { packFileKind } from "./pack-storage.js";
 import {
   GitNameTotals,
@@ -38,6 +39,7 @@ export async function inventoryPackStore(
   mounts: StorageMount[],
   budget: EntryBudget,
   ledger: GitIdentityLedger,
+  headerBudget?: EntryBudget,
 ) {
   const objects = join(common, "objects"),
     pack = join(objects, "pack");
@@ -90,15 +92,28 @@ export async function inventoryPackStore(
           file: stats.isFile() ? gitFileObservation(kind, stats) : null,
           temporaryPath: temporaryName(kind) ? path : null,
           changed: false,
+          headerCandidate: headerBudget && kind === "temporary-pack-name" ? stats : undefined,
           pair: kind === "pack" || kind === "index" ? name.slice(0, name.lastIndexOf(".")) : null,
         };
       })
-    : { coverage: "mount-boundary" as const, excluded: 0, entries: [] };
+    : { coverage: "mount-boundary" as const, observed: false, excluded: 0, entries: [] };
   // A writer can grow an existing temporary pack without changing its parent directory.
   const temporaries = packs.entries.filter((row) => row.temporaryPath && row.file);
+  const headers = headerBudget ? packHeaderCounts() : undefined;
+  // Reserve the shared header-read budget in a reproducible order within each store.
+  if (headerBudget) temporaries.sort((a, b) => (a.temporaryPath! < b.temporaryPath! ? -1 : 1));
   for (let start = 0; start < temporaries.length; start += 32) {
     await Promise.all(
       temporaries.slice(start, start + 32).map(async (row) => {
+        const header =
+          headerBudget && row.headerCandidate && initialPack?.stats
+            ? await observePackHeader(
+                row.temporaryPath!,
+                row.headerCandidate,
+                initialPack.stats,
+                headerBudget,
+              )
+            : undefined;
         try {
           const now = (await observeStoragePath(row.temporaryPath!, mounts)).stats;
           if (!now) {
@@ -115,6 +130,8 @@ export async function inventoryPackStore(
             observed.links !== row.file!.links;
         } catch {
           row.changed = true;
+        } finally {
+          if (headers && header) headers[row.changed ? "withheld" : header]++;
         }
       }),
     );
@@ -146,8 +163,19 @@ export async function inventoryPackStore(
   }
   const pairsComplete =
     packs.coverage === "direct-complete" && packs.excluded === 0 && unexpected === 0;
+  const headersObserved = !changedDirectory && (packs.observed || packs.coverage === "missing");
+  const completeHeaderScope =
+    (pairsComplete || packs.coverage === "missing") &&
+    !headers?.withheld &&
+    !headers?.readLimitSkipped;
   return {
     packCoverage: packs.coverage,
+    ...(headers && headersObserved
+      ? {
+          observedPackHeaders: headers,
+          headerCoverage: completeHeaderScope ? "complete" : "partial",
+        }
+      : {}),
     objectRootCoverage: scratch.coverage,
     excluded: packs.excluded + scratch.excluded + unexpected,
     changedTemporaryNames: temporaries.filter((row) => row.changed).length,

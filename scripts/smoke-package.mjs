@@ -42,22 +42,31 @@ const skill = await readFile(
   join(installRoot, "node_modules", "agentrinse", "skills", "agentrinse", "SKILL.md"),
   "utf8",
 );
-if (!skill.startsWith("---\nname: agentrinse\n") || !skill.includes("git-inventory")) {
+if (
+  !skill.startsWith("---\nname: agentrinse\n") ||
+  !skill.includes("--pack-headers") ||
+  !skill.includes("SQLite")
+) {
   throw new Error("Installed package is missing the AgentRinse operator skill");
 }
 const censusRoot = join(root, "empty-owner-parent");
 await mkdir(censusRoot);
 const census = JSON.parse(
   (
-    await execFileAsync(executable, ["git-inventory", "--repo-root", censusRoot, "--json"], {
-      cwd: root,
-    })
+    await execFileAsync(
+      executable,
+      ["git-inventory", "--repo-root", censusRoot, "--pack-headers", "--json"],
+      {
+        cwd: root,
+      },
+    )
   ).stdout,
 );
 if (
   census.command !== "git-inventory" ||
   census.schemaVersion !== 1 ||
-  census.data.summary.commonStores !== 0
+  census.data.summary.commonStores !== 0 ||
+  census.data.summary.packHeaders.observed.empty !== 0
 ) {
   throw new Error("Installed Git inventory contract mismatch");
 }
