@@ -13,6 +13,8 @@ export type OpenClawWorktree = {
   hasSnapshot: boolean;
 };
 
+const supportedSchemaVersions = { agent: [38, 42], global: [36, 40] };
+
 type Inspection =
   | { status: "uncheckpointed" | "unsupported" | "changed" | "unreadable" }
   | {
@@ -21,6 +23,7 @@ type Inspection =
       truncated: boolean;
       counts: Record<string, number>;
       worktrees: OpenClawWorktree[];
+      additionalRoots: string[];
       sessions: { id: string; archived: boolean; pinned: boolean; running: boolean }[];
     };
 
@@ -59,23 +62,22 @@ function inspectTables(db: DatabaseSync, role: "agent" | "global", limit: number
           "memory_index_sources",
           "memory_embedding_cache",
         ]
-      : ["schema_meta", "worktrees"];
+      : ["schema_meta", "worktrees", "worktree_templates", "projects"];
   const ordinary = db.prepare(
     "SELECT 1 FROM pragma_table_list WHERE schema='main' AND name=? AND type='table' AND strict=1",
   );
   if (!tables.every((name) => ordinary.get(name))) return { status: "unsupported" };
-  const schemaVersion = role === "agent" ? 38 : 36;
-  if (
-    !db
-      .prepare("SELECT 1 FROM schema_meta WHERE meta_key='primary' AND role=? AND schema_version=?")
-      .get(role, schemaVersion)
-  ) {
+  const schemaVersion = db
+    .prepare("SELECT schema_version FROM schema_meta WHERE meta_key='primary' AND role=?")
+    .get(role)?.schema_version;
+  if (typeof schemaVersion !== "number" || !supportedSchemaVersions[role].includes(schemaVersion)) {
     return { status: "unsupported" };
   }
 
   const counts: Record<string, number> = {};
   let truncated = false;
   const worktrees: OpenClawWorktree[] = [];
+  const additionalRoots = new Set<string>();
   const sessions: Extract<Inspection, { status: "observed" }>["sessions"] = [];
   if (role === "agent") {
     const rows = db
@@ -136,8 +138,37 @@ function inspectTables(db: DatabaseSync, role: "agent" | "global", limit: number
       });
     }
     counts.registeredWorktrees = worktrees.length;
+    // Templates and registered projects can own source paths before any checkout exists.
+    let remaining = limit - worktrees.length;
+    for (const [countKey, query] of [
+      [
+        "registeredTemplates",
+        "SELECT substr(repo_root,1,4097), substr(common_dir,1,4097), substr(worktree_root,1,4097), substr(path,1,4097) FROM worktree_templates LIMIT ?",
+      ],
+      ["registeredProjects", "SELECT substr(repo_root,1,4097) FROM projects LIMIT ?"],
+    ] as const) {
+      const rows = db.prepare(query).all(remaining + 1);
+      truncated ||= rows.length > remaining;
+      const accepted = rows.slice(0, remaining);
+      for (const row of accepted) {
+        for (const path of Object.values(row)) {
+          if (!validOwnerPath(path)) return { status: "unsupported" };
+          additionalRoots.add(path);
+        }
+      }
+      counts[countKey] = accepted.length;
+      remaining -= accepted.length;
+    }
   }
-  return { status: "observed", schemaVersion, truncated, counts, worktrees, sessions };
+  return {
+    status: "observed",
+    schemaVersion,
+    truncated,
+    counts,
+    worktrees,
+    additionalRoots: [...additionalRoots],
+    sessions,
+  };
 }
 
 function validOwnerPath(value: unknown): value is string {

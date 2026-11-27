@@ -17,6 +17,25 @@ function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function usesLocalSqlite(database: unknown): boolean {
+  if (database === undefined) return true;
+  if (!object(database)) return false;
+  const engine = database.engine === undefined ? "sqlite" : database.engine;
+  if (engine !== "sqlite" && engine !== "postgres") return false;
+  // Installation-wide ownership requires PostgreSQL for every configurable family.
+  if (database.postgres !== undefined) {
+    if (!object(database.postgres)) return false;
+    const ownership = database.postgres.ownership;
+    if (ownership !== undefined && ownership !== "state-directory") return false;
+  }
+  const families = database.families;
+  if (families === undefined) return engine === "sqlite";
+  if (!object(families)) return false;
+  return [families.state, families.agent].every((family) =>
+    family === undefined ? engine === "sqlite" : object(family) && family.engine === "sqlite",
+  );
+}
+
 async function configPaths(root: string, home: string, environment: NodeJS.ProcessEnv) {
   const paths = new Map<string, "workspace" | "worktreeStorage" | "sessions" | "provider">();
   const workspaces = new Set<string>();
@@ -85,11 +104,8 @@ async function configPaths(root: string, home: string, environment: NodeJS.Proce
           add(agent.agentDir, "provider");
         }
       } else if (config.agents !== undefined) throw new Error("Invalid agent roster");
-      const engine = object(config.database) ? config.database.engine : undefined;
       return {
-        complete:
-          config.database === undefined ||
-          (object(config.database) && (engine === undefined || engine === "sqlite")),
+        complete: usesLocalSqlite(config.database),
         paths,
         workspaces,
       };
@@ -115,6 +131,7 @@ export async function openClawOwnership(
   if (!index) return { config, registry };
   const paths = new Set([root, ...config.paths.keys()]);
   if (registry.status === "observed") {
+    for (const path of registry.additionalRoots) paths.add(path);
     for (const record of registry.worktrees) {
       paths.add(record.path);
       paths.add(record.repoRoot);

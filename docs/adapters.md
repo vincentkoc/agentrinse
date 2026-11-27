@@ -178,13 +178,19 @@ be enabled in config for apply. The safe risk ceiling excludes the action. Apply
 checks the approved path, content identity, age, owner processes and open handles.
 The original is retained for seven days and can be restored with `agentrinse undo`.
 
-Database counts use SQLite immutable reads for the OpenClaw 2026.11.6 contracts
-(agent schema 38 and global schema 36). The audit reads bounded, non-content
-columns and reports truncation. Outstanding WAL or rollback data, unsupported
-schemas and changing files withhold logical counts. A direct JSON configuration
-can identify additional owner paths. External configs, includes, unresolved
-paths and non-SQLite configurations leave ownership incomplete. Git and artifact
-cleanup stay protected when the adapter cannot resolve ownership. External
+Database counts use SQLite immutable reads for OpenClaw 2026.11.6 (global schema
+36 and agent schema 38) and 2026.11.10 (global schema 40 and agent schema 42).
+The audit reads bounded, non-content columns and reports truncation. Outstanding
+WAL or rollback data, unsupported schemas and changing files withhold logical
+counts. The session `running` flag reflects stored status. A direct JSON
+configuration can identify additional owner paths. Registered projects protect
+their repository roots. Preparing and ready worktree templates protect their
+source repository, Git common directory, worktree root and template path even
+before a checkout exists. All three registries share the row budget.
+External configs, includes, unresolved paths and non-SQLite state or agent
+databases leave ownership incomplete. Explicit family engines take precedence
+over the global default. Git and artifact cleanup stay protected when the
+adapter cannot resolve ownership. External
 registry and config references carry no measured byte total. The quick audit
 only probes known top-level paths.
 
