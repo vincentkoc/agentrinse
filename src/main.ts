@@ -17,6 +17,7 @@ import { renderCompletion } from "./commands/completion.js";
 import { executeDoctorCommand } from "./commands/doctor.js";
 import { executeHistoryCommand } from "./commands/history.js";
 import { executeLockRecoverCommand, executeLockStatusCommand } from "./commands/lock.js";
+import { executePrGcDiff } from "./commands/openclaw-pr-gc-diff.js";
 import { executePlanCommand } from "./commands/plan.js";
 import { executePurgeCommand } from "./commands/purge.js";
 import {
@@ -244,6 +245,17 @@ export function buildProgram(): Command {
           home: options.home ?? homedir(),
         }),
       );
+    });
+
+  program
+    .command("openclaw-pr-gc-diff")
+    .description("Compare a frozen OpenClaw PR GC preview with a native apply log.")
+    .requiredOption("--repo <path>", "canonical owner recorded with the logs")
+    .requiredOption("--preview <file>", "frozen native dry-run output")
+    .requiredOption("--apply-log <file>", "native apply stdout and stderr")
+    .option("--json", "emit versioned machine output", false)
+    .action(async (options) => {
+      process.stdout.write(await executePrGcDiff(options));
     });
 
   program

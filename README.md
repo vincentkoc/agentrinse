@@ -146,7 +146,7 @@ defaults. Supply `--repo` for owners with no surviving checkout in those roots.
 For an OpenClaw primary checkout, `--openclaw-pr-gc-stdin` joins a native
 `scripts/pr gc --dry-run` preview to direct PR directories and registrations.
 It reports skipped and unreported PRs, checks for ignored or untracked work,
-and separates measured logical bytes from unknown reclaim. See [OpenClaw PR
+and separates measured logical bytes from unknown reclaim. Compare a frozen preview with a native apply log using `openclaw-pr-gc-diff`. See [OpenClaw PR
 review checkouts](docs/storage.md#openclaw-pr-review-checkouts).
 
 Add `--project-roots` to include existing `.worktrees` and `.claude/worktrees`

@@ -8,6 +8,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Added
 
+- `openclaw-pr-gc-diff` compares a frozen native preview and apply log, including PRs acted on outside the preview and partial branch cleanup.
+
 - `worktrees --project-roots` recognizes OpenClaw PR review checkouts. `--openclaw-pr-gc-stdin` correlates native preview rows, current registrations, locks and untracked or ignored material with bounded logical size measurements.
 
 - `config policy` lists effective cleanup and inventory rules. `config render --set` builds reusable profiles for worktrees, individual provider files, Codex compaction, named build artifacts, and system or application storage. OpenClaw and Crabbox storage review clocks can be set independently.
