@@ -96,6 +96,19 @@ it.skipIf(process.platform === "win32")(
       ["7", "checkout-unverified"],
       ["8", "untracked-or-ignored-material-needs-review"],
     ]);
+    const incomplete = await run(
+      stream.replace(
+        previewComplete,
+        "Refusing PR worktree cleanup: damaged worktree metadata\n" + previewComplete,
+      ),
+    );
+    expect(incomplete).toMatchObject({
+      source: "incomplete",
+      unattributedMetadataRefusals: 1,
+      invalidLines: 0,
+      summary: { ownerReview: 0 },
+    });
+    expect(incomplete.rows.find((row) => row.pr === "1")?.reason).toBe("preview-incomplete");
     const ordinary = await inventoryWorktrees(
       { ...options, openclawPrGcStdin: false, root: [root] },
       { readMounts },

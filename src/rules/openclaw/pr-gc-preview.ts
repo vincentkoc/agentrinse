@@ -2,6 +2,7 @@
 // Optional framing binds the operator-supplied owner and successful command exit.
 export const previewOwnerPrefix = "agentrinse-openclaw-pr-gc-v1 ";
 export const previewComplete = "agentrinse-openclaw-pr-gc-complete";
+export const damagedMetadataRefusal = "Refusing PR worktree cleanup: damaged worktree metadata";
 const noCandidates = "No merged/closed PR worktrees eligible for removal.";
 export const prGcMaxBytes = 4 * 1024 * 1024;
 export const prGcMaxLines = 20_000;
@@ -15,8 +16,9 @@ export type PreviewRow =
   | { native: "conflict" };
 
 export type Preview = {
-  source: "supplied-stdout" | "owner-bound-complete" | "invalid";
+  source: "supplied-stdout" | "owner-bound-complete" | "incomplete" | "invalid";
   rows: Map<string, PreviewRow>;
+  unattributedMetadataRefusals: number;
   invalidLines: number;
   duplicateRows: number;
   excludedNonPrNames: number;
@@ -107,6 +109,7 @@ export function parsePrGcPreview(value: string, owner: string): Preview {
   const result: Preview = {
     source: "supplied-stdout",
     rows: new Map(),
+    unattributedMetadataRefusals: 0,
     invalidLines: 0,
     duplicateRows: 0,
     excludedNonPrNames: 0,
@@ -125,6 +128,11 @@ export function parsePrGcPreview(value: string, owner: string): Preview {
     recovery = new Set<string>();
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!;
+    // This native diagnostic can precede or follow removal and has no PR ID.
+    if (line === damagedMetadataRefusal) {
+      result.unattributedMetadataRefusals++;
+      continue;
+    }
     if (line === noCandidates && !summary && index === lines.length - 1) {
       summary = true;
       continue;
@@ -192,8 +200,10 @@ export function parsePrGcPreview(value: string, owner: string): Preview {
   result.source =
     result.invalidLines || result.duplicateRows
       ? "invalid"
-      : framed
-        ? "owner-bound-complete"
-        : "supplied-stdout";
+      : result.unattributedMetadataRefusals
+        ? "incomplete"
+        : framed
+          ? "owner-bound-complete"
+          : "supplied-stdout";
   return result;
 }

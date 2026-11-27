@@ -255,6 +255,7 @@ export async function reportPrWorktrees(
       reason = "untracked-or-ignored-material-needs-review";
     } else if (untrackedOrIgnored !== "none-observed")
       reason = "untracked-or-ignored-material-unverified";
+    else if (preview?.source === "incomplete") reason = "preview-incomplete";
     else if (preview?.source === "owner-bound-complete") {
       grade = "eligible-for-owner-review";
       reason = "corroborated-preview";
@@ -304,6 +305,7 @@ export async function reportPrWorktrees(
     containerAvailable,
     currentNativeEvidence,
     source: preview?.source ?? "not-supplied",
+    unattributedMetadataRefusals: preview?.unattributedMetadataRefusals ?? 0,
     invalidLines: preview?.invalidLines ?? 0,
     duplicateRows: preview?.duplicateRows ?? 0,
     excludedNonPrNames: preview?.excludedNonPrNames ?? 0,

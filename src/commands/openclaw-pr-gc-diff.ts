@@ -67,6 +67,7 @@ export async function executePrGcDiff(
   return (
     [
       "OpenClaw PR GC log comparison (" + data.coverage + ")",
+      `Unattributed metadata refusals: ${data.unattributedMetadataRefusals.preview} in preview, ${data.unattributedMetadataRefusals.apply} in apply.`,
       "Attempts outside the frozen preview: " +
         (data.outsideAttempts.join(", ") || "none observed"),
       "Possible outside attempts: " + (data.possibleOutsideAttempts.join(", ") || "none observed"),

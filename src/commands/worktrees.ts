@@ -594,6 +594,7 @@ export async function executeWorktreesCommand(
         !report.containerAvailable ||
         !report.ownerVerified ||
         report.source === "invalid" ||
+        report.source === "incomplete" ||
         ["unavailable", "partial"].includes(report.currentNativeEvidence),
     ) ||
     data.problems.length ||
@@ -627,6 +628,7 @@ export async function executeWorktreesCommand(
       `Outside selected roots, explicit repositories register ${summary.externalRegisteredDirectories} existing directories, ${summary.externalMissing} missing and ${summary.externalUnresolved} unresolved. Sizes require selecting their container.`,
       ...(view.openClawPrWorktrees ?? []).flatMap((report) => [
         `OpenClaw PR worktrees (${report.source}): ${report.summary.reportedWouldRemove} reported merged/closed, ${report.summary.corroboratedWouldRemove} corroborated, ${report.summary.ownerReview} for owner review, ${report.summary.skipped} skipped, ${report.summary.unknown} unknown. Reported checkout logical bytes observed: ${report.summary.reportedCheckoutLogicalBytes ?? "unknown"} (${report.summary.reportedSizesComplete} complete, ${report.summary.reportedSizesPartial} partial, ${report.summary.reportedSizesUnknown} unmeasured). Reclaim unknown.`,
+        `Unattributed metadata refusals: ${report.unattributedMetadataRefusals}.`,
         ...report.rows.map(
           (row) =>
             `  PR #${row.pr}  ${row.native}${"prState" in row ? " " + row.prState : ""}  ${row.grade}  ${row.reason}  ${row.path}`,
