@@ -1,6 +1,7 @@
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { isPathInside } from "../core/safety.js";
 import { suppliedLocations } from "../rules/storage/supplied-locations.js";
+import { laneCacheRules } from "../rules/openclaw/lane-caches.js";
 import type { StorageOptions } from "./storage.js";
 import type { Location } from "../rules/storage/location.js";
 
@@ -60,6 +61,7 @@ export function selectStorageLocations(
     [...rules].some(
       (id) =>
         !catalog.some((entry) => entry.id === id) &&
+        !laneCacheRules.some((entry) => entry.id === id) &&
         ![...supplied, ...projectAreas].some((entry) => entry.rule === id),
     )
   )

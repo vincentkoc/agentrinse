@@ -1,3 +1,5 @@
+import { laneCacheRules } from "../openclaw/lane-caches.js";
+
 // Native evidence is described here so listing rules never wakes a service or inspects a guest.
 export const ownerEvidence = [
   {
@@ -14,13 +16,7 @@ export const ownerEvidence = [
     requires:
       "Pack metadata covers stable packs, temporary packs and sidecars. The owner checks count-objects garbage, in-flight writers, promisor objects, keep markers, refs and maintenance headroom.",
   },
-  {
-    id: "crabbox.staging",
-    owner: "Crabbox",
-    inventory: "storage --family crabbox --crabbox-root <staging> --measure",
-    requires:
-      "Receipt-backed staging reports mirror age and allocated bytes. The native staging inspector owns pagination, mirror reuse, leases and retirement decisions.",
-  },
+  ...laneCacheRules,
   {
     id: "codebase-memory.registration",
     owner: "Codebase Memory",
