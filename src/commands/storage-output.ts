@@ -61,6 +61,8 @@ export function formatStorageReport(view: StorageReport["data"], status: Storage
             e.classification +
             "  " +
             e.path +
+            "  directory mtime: " +
+            e.directoryMtimeReview +
             ("lastUseReview" in e && e.lastUseReview ? "  " + e.lastUseReview : "") +
             (e.measurement
               ? "  " +
@@ -71,6 +73,33 @@ export function formatStorageReport(view: StorageReport["data"], status: Storage
               : ""),
         ),
       ]),
+      ...(view.prDependencies?.namespaces.flatMap((ns) => [
+        "OpenClaw PR dependencies  " +
+          ns.coverage +
+          "  " +
+          ns.path +
+          "  live lane holds unverified; " +
+          ns.otherEntries +
+          " other entries, " +
+          ns.excluded +
+          " excluded",
+        ...ns.entries.map(
+          (entry) =>
+            "  " +
+            entry.kind +
+            "  " +
+            entry.path +
+            "  directory mtime: " +
+            entry.directoryMtimeReview +
+            (entry.measurement
+              ? "  " +
+                entry.measurement.extent +
+                (entry.measurement.fileBytes
+                  ? "  " + entry.measurement.fileBytes.allocatedBytes + " observed allocated bytes"
+                  : " bytes unknown")
+              : ""),
+        ),
+      ]) ?? []),
       ...present.map(
         (a) =>
           a.rule +

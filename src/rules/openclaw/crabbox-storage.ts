@@ -14,10 +14,10 @@ import {
 import { coveringMount, type StorageMount } from "../../core/storage-mounts.js";
 
 import { currentStagingIdentity, directoryIdentity } from "./crabbox-identity.js";
+import { directoryMtimeReview, reviewAgeMs } from "./lane-caches.js";
 
 const prefix = "openclaw-crabbox-sync-";
 const limit = 32 * 1024;
-const mirrorReviewAgeMs = 48 * 60 * 60 * 1000;
 
 const receipt = z.object({
   version: z.literal(2),
@@ -154,9 +154,7 @@ async function inspectReceipt(
         ...(reuse
           ? {
               lastUseReview:
-                now - mirror!.lastUsed >= mirrorReviewAgeMs
-                  ? "at-least-48-hours"
-                  : "under-48-hours",
+                now - mirror!.lastUsed >= reviewAgeMs ? "at-least-48-hours" : "under-48-hours",
             }
           : {}),
         ...(mirror ? { idle: mirror.idle, lastUsedMs: validLastUse ? mirror.lastUsed : null } : {}),
@@ -221,6 +219,7 @@ export async function collectCrabboxStorage(
     const { fingerprint: _, ...evidence } = observation;
     entries.push({
       path: entry.path,
+      directoryMtimeReview: directoryMtimeReview(entry.stats, now),
       ...evidence,
       ...(measure
         ? { measurement: measurement ?? { extent: "unknown", reason: "unverified-receipt" } }
