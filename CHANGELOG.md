@@ -9,6 +9,7 @@ The project follows semantic versioning after its first supported release.
 ### Fixed
 
 - `doctor` verifies saved plan configurations against the values recorded when the plan was created. Plans from older releases remain readable after new configuration defaults are added.
+- A cancelled or timed-out Git worktree audit stops the active Git command and skips remaining checkouts. Its partial report retains observations completed before the deadline.
 
 ## [1.0.0] - 2026-11-27
 
