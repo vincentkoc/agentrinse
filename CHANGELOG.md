@@ -16,6 +16,8 @@ The project follows semantic versioning after its first supported release.
 
 ### Fixed
 
+- OpenClaw PR GC reports count native damaged-metadata refusals without attributing them to a PR. These refusals leave preview and apply coverage incomplete.
+
 - OpenClaw PR GC reports distinguish a native process working-directory hold from partial cleanup when comparing preview and apply output.
 
 - `clean --profile closeout` displays audit diagnostics in its terminal summary.

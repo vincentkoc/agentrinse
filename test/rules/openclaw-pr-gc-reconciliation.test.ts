@@ -170,3 +170,45 @@ it("distinguishes native cwd holds from partial checkout and branch cleanup", ()
   );
   expect(mismatch).toMatchObject({ applySource: "invalid", possibleOutsideAttempts: ["11"] });
 });
+
+it("counts exact unbound metadata refusals independently of interleaved PR outcomes", () => {
+  const refusal = "Refusing PR worktree cleanup: damaged worktree metadata";
+  const before = preview.replace(previewComplete, refusal + "\n" + previewComplete);
+  const lines = [refusal, removed, refusal, "skipping .worktrees/pr-10 (cleanup incomplete)"];
+  const report = reconcilePrGc(owner, before, frame(...lines));
+  expect(report).toMatchObject({
+    previewSource: "incomplete",
+    applySource: "incomplete",
+    coverage: "unverified",
+    unattributedMetadataRefusals: { preview: 1, apply: 2 },
+    previewInvalidLines: 0,
+    applyInvalidLines: 0,
+    possibleOutsideAttempts: ["10"],
+    reportedRemoved: 1,
+  });
+  expect(report.rows.find((row) => row.pr === "8")?.outcome).toBe("reported-removed");
+  expect(report.rows.find((row) => row.pr === "10")).toMatchObject({
+    outcome: "cleanup-incomplete",
+    outsidePreview: "possible-attempt",
+  });
+  expect(report.rows.find((row) => row.pr === "10")).not.toHaveProperty("reportedHold");
+  expect(reconcilePrGc(owner, preview, frame(removed, refusal))).toMatchObject({
+    coverage: "unverified",
+    reportedRemoved: 1,
+    incompleteOutcomes: 0,
+  });
+  const typo = refusal + ".";
+  expect(
+    reconcilePrGc(
+      owner,
+      preview.replace(previewComplete, typo + "\n" + previewComplete),
+      frame(removed, typo),
+    ),
+  ).toMatchObject({
+    previewSource: "invalid",
+    applySource: "invalid",
+    unattributedMetadataRefusals: { preview: 0, apply: 0 },
+    previewInvalidLines: 1,
+    applyInvalidLines: 1,
+  });
+});

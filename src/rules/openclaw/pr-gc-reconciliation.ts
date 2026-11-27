@@ -1,4 +1,9 @@
-import { parsePrGcPreview, prGcMaxLines, type PreviewRow } from "./pr-gc-preview.js";
+import {
+  damagedMetadataRefusal,
+  parsePrGcPreview,
+  prGcMaxLines,
+  type PreviewRow,
+} from "./pr-gc-preview.js";
 
 const applyOwnerPrefix = "agentrinse-openclaw-pr-apply-v1 ";
 const exitLine = /^agentrinse-openclaw-pr-apply-exit (0|[1-9][0-9]{0,2})$/u;
@@ -48,6 +53,7 @@ function applyOutput(value: string, owner: string) {
       continue;
     }
     if (
+      line === damagedMetadataRefusal ||
       line.startsWith("skipping ") ||
       line.startsWith("Preserving ") ||
       line.startsWith("After verifying ") ||
@@ -126,8 +132,21 @@ function applyOutput(value: string, owner: string) {
     )
       invalidLines++;
   }
-  const source = invalidLines ? "invalid" : framed ? "owner-framed" : "supplied-output";
-  return { source, exitCode, invalidLines, branches, rows: parsed.rows };
+  const source = invalidLines
+    ? "invalid"
+    : parsed.unattributedMetadataRefusals
+      ? "incomplete"
+      : framed
+        ? "owner-framed"
+        : "supplied-output";
+  return {
+    source,
+    exitCode,
+    invalidLines,
+    branches,
+    rows: parsed.rows,
+    unattributedMetadataRefusals: parsed.unattributedMetadataRefusals,
+  };
 }
 
 function reportedOutcome(row: PreviewRow | undefined, hasBranches: boolean) {
@@ -196,6 +215,10 @@ export function reconcilePrGc(owner: string, previewText: string, applyText: str
     previewSource: preview.source,
     applySource: apply.source,
     applyExit: apply.exitCode,
+    unattributedMetadataRefusals: {
+      preview: preview.unattributedMetadataRefusals,
+      apply: apply.unattributedMetadataRefusals,
+    },
     previewInvalidLines: preview.invalidLines,
     previewDuplicateRows: preview.duplicateRows,
     applyInvalidLines: apply.invalidLines,

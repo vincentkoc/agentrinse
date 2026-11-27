@@ -170,6 +170,11 @@ status to distinguish a completed invocation from a partial log:
 ) > gc-apply.txt
 ```
 
+A damaged-worktree-metadata refusal has no PR number. Both reports count
+these diagnostics separately; the comparison stays incomplete and the preview
+cannot qualify a checkout for owner review. Check each affected checkout,
+registration and branch independently.
+
 The frame records the operator's capture. It cannot authenticate its producer.
 Files must be local, single-link regular files outside protected storage, with
 at most 4 MiB and 20,000 lines each. Supply physical paths on macOS or Linux.
